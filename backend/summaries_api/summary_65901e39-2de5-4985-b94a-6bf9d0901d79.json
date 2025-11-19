@@ -1,0 +1,106 @@
+{
+  "overall_summary": "SEEING BEYOND THE IMAGE: ECG AND ANATOMICAL KNOWLEDGE-GUIDED MYOCARDIAL SCAR SEGMENTATION FROM LATE GADOLINIUM-ENHANCED IMAGES Farheen Ramzan\u22c6B Yusuf Kiberu\u2021 Nikesh Jathanna\u2021 Meryem Jabrane\u22c8 Vicente Grau\u00b6 Shahnaz Jamil-Copley\u2021\u00a7 Richard H. Clayton\u22c4 Chen (Cherise) Chen\u22c1B \u22c6School of Computer Science, University of Sheffield, UK \u2021 Department of Cardiology, Trent Cardiac Centre, Nottingham City Hospital, Nottingham University Hospitals NHS Trust, UK \u00a7 School of Medicine, University Of Oxford, UK \u00b6 Department of Engineering Science, Oxford, University University of Oxford, US arXiv:2511. 14702v1 [cs. CV] 18 Nov 2025. remains challenging due to low signal-to-noise ratio, het- erogeneous enhancement, motion artifacts, and scanner and pathology variability. We address this by integrating electrocardiography (ECG) and AHA-17 atlas to provide complementary electrophysiological context and shape prior. Although ECG is routinely used to localize scarred myocardial regions clinically , its integration with cardiac MRI for pixel-level analysis remains largely underex- plored. Existing multimodal scar segmentation frameworks mainly combine MRI sequences and are not directly ap- plicable to ECG\u2013MRI fusion. Joint learning from ECG and MRI is inherently challenging dueto modality heterogene- ity, dimensional differences. \u2022 We introduce the 17-segment AHA model as an anatomical prior to guide multimodal fusion and enhance the alignment between ECG-derived features and myocar- dial scar regions, significantly improving segmentation accuracy. The mixed features are then modulated by a Temporal FiLM layer inspired by , which adjusts feature interactions based on the time interval between ECg and MRI acquisitions tinterval = |tMRI \u2212tECG|, producing temporally aligned and physiologically consistent fused features. We then apply residual connections to stabilize training which allows the network to neglect the feature fusion part when the ECG is not reliable and informative. Fol- lowing established geometric implementations , slice-level from 12-lead median waveforms. The whole network is optimized with a composite loss: Ltotal = Lseg + \u03bbECG, Lecg = \u03bbentLent = LSEg + LGE + LECg , LSEG is the mean squared error loss (consisting of Dice + cross-entropy) and Lleng = the mean square error loss between reconstructed and the true ECG signals. \u03bbecG is a coefficient, which gradually increases the ECG contribution during the first few warm-up epochs following a quadratic warmup schedule. We introduce a regularization loss based on the entropy of gating weights w as Lent = \u2212P LGE \u2713 0. 8204 0. 9090 0. Our multi-modal approach significantly outperforms the image-only baseline. Using only LGE-MRI, the baseline achieves a Dice of 0. 6149, reflecting the challenges of scar segmentation under contrast variability and artifacts. Adding ECG features, anatomical priors, and time-aware fusion yields a markedly higher Dice score of 0 to 0. 8463, demonstrating a substantial improvement over 37%. Directly fusing MRI and ECG is challenging. Adding the anatomical prior significantly improves the Dice score from 0. 5916 to 0, demonstrating an improvement over 38%. ECGs were digitized from scanned papers using the open-source toolkit in with manual bounding boxes and visual quality control; discard- ing failed conversions. The LV blood pool, healthy my- ocardium, and scar were annotated by trained cardiologists with additional quality check. This yielded 103 high-quality MRI\u2013ECG pairs, split 7:1:2 for training, validation, and test- ing. to obtain standardized ECG representations. We employed the ECG dual-attention net- work as the ICG autoencoder. The ECG-driven gains are promising but remain incremental, likely constrained by the quality and limited information from digitized paper ECGs. Future gains may be achieved by.",
+  "section_summaries": {
+    "introduction": "SEEING BEYOND THE IMAGE: ECG AND ANATOMICAL KNOWLEDGE-GUIDED MYOCARDIAL SCAR SEGMENTATION FROM LATE GADOLINIUM-ENHANCED IMAGES Farheen Ramzan\u22c6B Yusuf Kiberu\u2021 Nikesh Jathanna\u2021 Meryem Jabrane\u22c8 Vicente Grau\u00b6 Shahnaz Jamil-Copley\u2021\u00a7 Richard H. Clayton\u22c4 Chen (Cherise) Chen\u22c1B \u22c6School of Computer Science, University of Sheffield, UK \u2021 Department of Cardiology, Trent Cardiac Centre, Nottingham City Hospital, Nottingham University Hospitals NHS Trust, UK \u00a7 School of Medicine, University Of Oxford, UK \u00b6 Department of Engineering Science, Oxford, University University of Oxford, US arXiv:2511. 14702v1 [cs. CV] 18 Nov 2025.",
+    "abstract": "remains challenging due to low signal-to-noise ratio, het- erogeneous enhancement, motion artifacts, and scanner and pathology variability. We address this by integrating electrocardiography (ECG) and AHA-17 atlas to provide complementary electrophysiological context and shape prior. Although ECG is routinely used to localize scarred myocardial regions clinically , its integration with cardiac MRI for pixel-level analysis remains largely underex- plored. Existing multimodal scar segmentation frameworks mainly combine MRI sequences and are not directly ap- plicable to ECG\u2013MRI fusion. Joint learning from ECG and MRI is inherently challenging dueto modality heterogene- ity, dimensional differences.",
+    "methodology": "\u2022 We introduce the 17-segment AHA model as an anatomical prior to guide multimodal fusion and enhance the alignment between ECG-derived features and myocar- dial scar regions, significantly improving segmentation accuracy. The mixed features are then modulated by a Temporal FiLM layer inspired by , which adjusts feature interactions based on the time interval between ECg and MRI acquisitions tinterval = |tMRI \u2212tECG|, producing temporally aligned and physiologically consistent fused features. We then apply residual connections to stabilize training which allows the network to neglect the feature fusion part when the ECG is not reliable and informative. Fol- lowing established geometric implementations , slice-level from 12-lead median waveforms.",
+    "discussion": "The whole network is optimized with a composite loss: Ltotal = Lseg + \u03bbECG, Lecg = \u03bbentLent = LSEg + LGE + LECg , LSEG is the mean squared error loss (consisting of Dice + cross-entropy) and Lleng = the mean square error loss between reconstructed and the true ECG signals. \u03bbecG is a coefficient, which gradually increases the ECG contribution during the first few warm-up epochs following a quadratic warmup schedule. We introduce a regularization loss based on the entropy of gating weights w as Lent = \u2212P LGE \u2713 0. 8204 0. 9090 0.",
+    "results": "Our multi-modal approach significantly outperforms the image-only baseline. Using only LGE-MRI, the baseline achieves a Dice of 0. 6149, reflecting the challenges of scar segmentation under contrast variability and artifacts. Adding ECG features, anatomical priors, and time-aware fusion yields a markedly higher Dice score of 0 to 0. 8463, demonstrating a substantial improvement over 37%. Directly fusing MRI and ECG is challenging. Adding the anatomical prior significantly improves the Dice score from 0. 5916 to 0, demonstrating an improvement over 38%.",
+    "experiments": "ECGs were digitized from scanned papers using the open-source toolkit in with manual bounding boxes and visual quality control; discard- ing failed conversions. The LV blood pool, healthy my- ocardium, and scar were annotated by trained cardiologists with additional quality check. This yielded 103 high-quality MRI\u2013ECG pairs, split 7:1:2 for training, validation, and test- ing. to obtain standardized ECG representations. We employed the ECG dual-attention net- work as the ICG autoencoder. The ECG-driven gains are promising but remain incremental, likely constrained by the quality and limited information from digitized paper ECGs. Future gains may be achieved by."
+  },
+  "section_keywords": {
+    "introduction": [
+      "cardiology",
+      "myocardial",
+      "cardiac",
+      "ecg",
+      "scar"
+    ],
+    "abstract": [
+      "electrocardiography",
+      "ecg",
+      "cardiac",
+      "mri",
+      "segmentation"
+    ],
+    "methodology": [
+      "ecg",
+      "segmentation",
+      "waveforms",
+      "segment",
+      "scar"
+    ],
+    "discussion": [
+      "ecg",
+      "lseg",
+      "regularization",
+      "optimized",
+      "entropy"
+    ],
+    "results": [
+      "baseline",
+      "mri",
+      "scar",
+      "ecg",
+      "priors"
+    ],
+    "experiments": [
+      "ecg",
+      "ecgs",
+      "autoencoder",
+      "cardiologists",
+      "scanned"
+    ]
+  },
+  "overall_keywords": [
+    "electrocardiography",
+    "cardiology",
+    "cardiac",
+    "ecg",
+    "myocardial",
+    "mri",
+    "cardiologists",
+    "ecgs",
+    "segmentation",
+    "electrophysiological"
+  ],
+  "entities": {
+    "metrics": [
+      "accuracy",
+      "precision",
+      "cross-entropy"
+    ],
+    "models": [],
+    "datasets": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"Specifically, Temporal FiLM is a MLP, which takes the tinterval as in- put, and then produce affine scale \u03b3 and shift pa...\"]\n    S2[\"We then apply residual connections to stabilize training which allows the network to neglect the feature fusion part whe...\"]\n    S3[\"The final fused feature is defined as: ffused = f + fmixed \u00d7 (1 + \u03b3) + \u03b2.\"]\n    S4[\"Fol- lowing established geometric implementations [9], slice-level from 12-lead median waveforms and an ECG decoder DECG...\"]\n    S5[\"Table 1: Scar segmentation results on the test set: image- only baseline vs. proposed multimodal pipeline with mod- ule ...\"]\n    S6[\"All improvements over the baseline are statistically signifi- cant (paired t-test, p < 0.001).\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> S5\n    S5 --> S6\n    S6 --> End\n",
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "methodology",
+    "discussion",
+    "results",
+    "experiments"
+  ],
+  "num_words_original": 2682,
+  "num_words_summary": 557,
+  "title": "Seeing Beyond the Image: ECG and Anatomical Knowledge-Guided Myocardial Scar Segmentation from Late Gadolinium-Enhanced Images",
+  "authors": [
+    "Farheen Ramzan",
+    "Yusuf Kiberu",
+    "Nikesh Jathanna",
+    "Meryem Jabrane",
+    "Vicente Grau",
+    "Shahnaz Jamil-Copley",
+    "Richard H. Clayton",
+    "Chen",
+    "Chen"
+  ],
+  "arxiv_id": "2511.14702v1",
+  "published": "2025-11-18 17:42:20+00:00",
+  "primary_category": "cs.CV",
+  "abstract_original": "",
+  "pdf_path": "arxiv_papers\\2511.14702v1.pdf"
+}

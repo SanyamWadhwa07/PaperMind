@@ -1,0 +1,105 @@
+{
+  "overall_summary": "Brain health is crucial for human life, and accurate diagnosis is vital for effective treatment. The distribution of labeled images across these three classes is detailed in. Overview of the Preprocessed Brain Tumor Dataset Distribution. Flow diagram depicting (a) Fast R-CNN, (b) U-Net, and (c) Transfer learning, Medical imaging. AI, which simulates human-like intelligence, has many applications in medicine, including the fight against brain tumors. AI has become an important tool for enhancing these processes, offering great potential for early diagnosis and treatment of brain tumors. This real-time data can be analyzed by AI algorithms to provide immediate and accurate insights into a patient's condition. AI-driven models, especially when combined with IoT, have shown remarkable efficacy in brain tumor classification tasks. For instance, advanced models like U-NET and fine-tuned EfficientNets have demonstrated high performance in accurately classifying tumor types. CNNs have revolutionized image. Fast R-CNN's RoI-based approach allows the model to assign varying weights to different regions of the image, focusing more on areas critical for identifying tumor boundaries. Training used sparse categorical cross-entropy loss, Adam optimizer (lr=0. 001), and class weights for balanced representation. Stratified K-Fold cross-validation with 5 folds ensured robust evaluation across varied data splits, monitoring metrics like loss and accuracy over 30 epochs per fold. A Dense layer with softmax activation was added to produce class predictions. We tracked model performance metrics, including accuracy, throughout training. Given the class imbalance in our dataset, we computed class weights to provide higher influence to underrepresented classes during training, enhancing model. These metrics underscore U-Net's superior performance in brain tumor classification. The AUC values highlight the robust classification capabilities of these models. These results validate our integrated framework, emphasizing the potential of advanced deep-learning techniques in medical image analysis. The utilization of U-NET and transfer learning-based CNN models not only enhances classification accuracy but also ensures reliability in distinguishing between different types of brain tumors. This study provides a strong foundation for further research and clinical application, highlighting the importance of leveraging sophisticated neural network architectures for improved diagnostic outcomes in healthcare. While AI technology is not intended to replace doctors, it serves to support and enhance their work significantly. As demonstrated in this study, AI will increasingly play a vital role in human health, from early diagnosis. For future research, we propose investigating the use of region-based CNNs and deep segmentation techniques to improve the detection of brain tumors. This approach could potentially enhance the accuracy and specificity of tumor detection by focusing on localized regions of interest within the brain images. This shift has the potential to provide more comprehensive and information-rich feature maps, thereby improving the model\u2019s pattern recognition capabilities. In conclusion, the deployment of advanced deep learning models, especially U-Net, in the field of medical image classification using hybrid deep learning and transfer learning models. In addition, the application of these models in the classification of brain tumor classification tasks is transformative. The application of advanced Deep Learning Model (U-Net) in the treatment and diagnosis of Brain Tumor Type and grade using a multi-level CNN architecture represents a forward- looking approach in the ongoing quest to advance brain tumor detection. These innovative methodologies could significantly contribute to more accurate, reliable, and efficient diagnostic tools in medical imaging.",
+  "section_summaries": {
+    "introduction": "Brain health is crucial for human life, and accurate diagnosis is vital for effective treatment. The distribution of labeled images across these three classes is detailed in. Overview of the Preprocessed Brain Tumor Dataset Distribution. Flow diagram depicting (a) Fast R-CNN, (b) U-Net, and (c) Transfer learning, Medical imaging. AI, which simulates human-like intelligence, has many applications in medicine, including the fight against brain tumors. AI has become an important tool for enhancing these processes, offering great potential for early diagnosis and treatment of brain tumors. This real-time data can be analyzed by AI algorithms to provide immediate and accurate insights into a patient's condition. AI-driven models, especially when combined with IoT, have shown remarkable efficacy in brain tumor classification tasks. For instance, advanced models like U-NET and fine-tuned EfficientNets have demonstrated high performance in accurately classifying tumor types. CNNs have revolutionized image.",
+    "methodology": "Fast R-CNN's RoI-based approach allows the model to assign varying weights to different regions of the image, focusing more on areas critical for identifying tumor boundaries. Training used sparse categorical cross-entropy loss, Adam optimizer (lr=0. 001), and class weights for balanced representation. Stratified K-Fold cross-validation with 5 folds ensured robust evaluation across varied data splits, monitoring metrics like loss and accuracy over 30 epochs per fold. A Dense layer with softmax activation was added to produce class predictions. We tracked model performance metrics, including accuracy, throughout training. Given the class imbalance in our dataset, we computed class weights to provide higher influence to underrepresented classes during training, enhancing model.",
+    "results": "These metrics underscore U-Net's superior performance in brain tumor classification. The AUC values highlight the robust classification capabilities of these models. These results validate our integrated framework, emphasizing the potential of advanced deep-learning techniques in medical image analysis. The utilization of U-NET and transfer learning-based CNN models not only enhances classification accuracy but also ensures reliability in distinguishing between different types of brain tumors. This study provides a strong foundation for further research and clinical application, highlighting the importance of leveraging sophisticated neural network architectures for improved diagnostic outcomes in healthcare. While AI technology is not intended to replace doctors, it serves to support and enhance their work significantly. As demonstrated in this study, AI will increasingly play a vital role in human health, from early diagnosis.",
+    "conclusion": "For future research, we propose investigating the use of region-based CNNs and deep segmentation techniques to improve the detection of brain tumors. This approach could potentially enhance the accuracy and specificity of tumor detection by focusing on localized regions of interest within the brain images. This shift has the potential to provide more comprehensive and information-rich feature maps, thereby improving the model\u2019s pattern recognition capabilities. In conclusion, the deployment of advanced deep learning models, especially U-Net, in the field of medical image classification using hybrid deep learning and transfer learning models. In addition, the application of these models in the classification of brain tumor classification tasks is transformative. The application of advanced Deep Learning Model (U-Net) in the treatment and diagnosis of Brain Tumor Type and grade using a multi-level CNN architecture represents a forward- looking approach in the ongoing quest to advance brain tumor detection. These innovative methodologies could significantly contribute to more accurate, reliable, and efficient diagnostic tools in medical imaging."
+  },
+  "section_keywords": {
+    "introduction": [
+      "cnn",
+      "cnns",
+      "ai",
+      "imaging",
+      "tumor"
+    ],
+    "methodology": [
+      "softmax",
+      "cnn",
+      "weights",
+      "training",
+      "imbalance"
+    ],
+    "results": [
+      "cnn",
+      "neural",
+      "classification",
+      "deep",
+      "ai"
+    ],
+    "conclusion": [
+      "cnn",
+      "cnns",
+      "deep",
+      "tumor",
+      "tumors"
+    ]
+  },
+  "overall_keywords": [
+    "cnn",
+    "cnns",
+    "neural",
+    "softmax",
+    "ai",
+    "flow",
+    "classifying",
+    "imaging",
+    "tumor",
+    "recognition"
+  ],
+  "entities": {
+    "models": [
+      "Inception",
+      "VGG19",
+      "EfficientNet",
+      "ResNet",
+      "EfficientNET",
+      "VGG16",
+      "Inception-",
+      "LSTM",
+      "ResNet-50",
+      "ResNet-101",
+      "inception",
+      "ResNet50",
+      "Resnet"
+    ],
+    "datasets": [
+      "ImageNet"
+    ],
+    "metrics": [
+      "accuracy",
+      "precision",
+      "recall",
+      "AUC",
+      "Accuracy",
+      "cross-entropy",
+      "IoU",
+      "F1-score",
+      "ROC",
+      "Recall",
+      "Precision"
+    ],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"This reduces computational overhead and training time, making it well-suited for large datasets such as those encountere...\"]\n    S2[\"For brain cancer segmentation, as Figure 2(b) after preprocessing and employing effective segmentation methodologies, we...\"]\n    S3[\"\u2011based transfer learning Our model utilizes transfer learning with InceptionV3 pretrained on ImageNet for classifying br...\"]\n    S4[\"Training used sparse categorical cross-entropy loss, Adam optimizer (lr=0.001), and class weights for balanced represent...\"]\n    S5[\"This approach leverages transfer learning effectively, adapting InceptionV3\u2019s features for precise brain tumor classific...\"]\n    S6[\"In this study, we employed transfer learning using EfficientNetB4 pretrained on ImageNet for the task of classifying bra...\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> S5\n    S5 --> S6\n    S6 --> End\n",
+  "sections_found": [
+    "introduction",
+    "methodology",
+    "results",
+    "conclusion"
+  ],
+  "num_words_original": 8271,
+  "num_words_summary": 542,
+  "title": "Brain Tumor Detection Through Diverse CNN Architectures in IoT Healthcare Industries: Fast R-CNN, U-Net, Transfer Learning-Based CNN, and Fully Connected CNN",
+  "authors": [
+    "Mohsen Asghari Ilani",
+    "Yaser M. Banad"
+  ],
+  "arxiv_id": "2509.05821v1",
+  "published": "2025-09-06 20:03:51+00:00",
+  "primary_category": "eess.IV",
+  "abstract_original": "",
+  "pdf_path": "arxiv_papers\\2509.05821v1.pdf"
+}

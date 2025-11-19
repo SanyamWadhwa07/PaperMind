@@ -1,0 +1,62 @@
+{
+  "overall_summary": "Learning and Testing Convex Functions Renato Ferreira Pinto Jr. Cassandra Marcussen Columbia University Harvard University Elchanan Mossel Shivam Nadimpalli MIT MIT arXiv:2511.11498v1 [cs.DS] 14 Nov 2025 2\u2225L2(B\u221e,\u00b5) + f2 \u2212f\u2217 2 L2(\u03b3) \u2264L + 2\u03b5\u2032 \u22642L. To justify the first use of Lemma 25, we claim that eg satisfies eg(x) \u2212f(x), and eg satisfies g(x, g) \u2212g(g) \u2208L2, \u03b5. We also claim that e satisfies g (x) and g (y) \u2264 g(y) , and g \u2208G (x,g) \u2264g(y). We then claim that E satisfies g , g, g(n) \u2264G(y), and g(z) \u2264 G(y,g.",
+  "section_summaries": {
+    "introduction": "Learning and Testing Convex Functions Renato Ferreira Pinto Jr. Cassandra Marcussen Columbia University Harvard University Elchanan Mossel Shivam Nadimpalli MIT MIT arXiv:2511.11498v1 [cs.DS] 14 Nov 2025",
+    "results": "2\u2225L2(B\u221e,\u00b5) + f2 \u2212f\u2217 2 L2(\u03b3) \u2264L + 2\u03b5\u2032 \u22642L. To justify the first use of Lemma 25, we claim that eg satisfies eg(x) \u2212f(x), and eg satisfies g(x, g) \u2212g(g) \u2208L2, \u03b5. We also claim that e satisfies g (x) and g (y) \u2264 g(y) , and g \u2208G (x,g) \u2264g(y). We then claim that E satisfies g , g, g(n) \u2264G(y), and g(z) \u2264 G(y,g."
+  },
+  "section_keywords": {
+    "introduction": [],
+    "results": [
+      "lemma",
+      "l2",
+      "2\u03b5",
+      "f2",
+      "justify"
+    ]
+  },
+  "overall_keywords": [
+    "convex",
+    "lemma",
+    "functions",
+    "f2",
+    "l2",
+    "justify",
+    "2\u03b5",
+    "elchanan",
+    "satisfies",
+    "learning"
+  ],
+  "entities": {
+    "metrics": [
+      "recall",
+      "Recall",
+      "accuracy",
+      "precision"
+    ],
+    "models": [],
+    "datasets": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": null,
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "results",
+    "related_work",
+    "discussion"
+  ],
+  "num_words_original": 14619,
+  "num_words_summary": 93,
+  "title": "Learning and Testing Convex Functions",
+  "authors": [
+    "Renato Ferreira Pinto",
+    "Cassandra Marcussen",
+    "Elchanan Mossel",
+    "Shivam Nadimpalli"
+  ],
+  "arxiv_id": "2511.11498v1",
+  "published": "2025-11-14 17:19:44+00:00",
+  "primary_category": "cs.DS",
+  "abstract_original": "We consider the problems of \\emph{learning} and \\emph{testing} real-valued convex functions over Gaussian space. Despite the extensive study of function convexity across mathematics, statistics, and computer science, its learnability and testability have largely been examined only in discrete or restricted settings -- typically with respect to the Hamming distance, which is ill-suited for real-valued functions.\n  In contrast, we study these problems in high dimensions under the standard Gaussian measure, assuming sample access to the function and a mild smoothness condition, namely Lipschitzness. A smoothness assumption is natural and, in fact, necessary even in one dimension: without it, convexity cannot be inferred from finitely many samples. As our main results, we give:\n  - Learning Convex Functions: An agnostic proper learning algorithm for Lipschitz convex functions that achieves error $\\varepsilon$ using $n^{O(1/\\varepsilon^2)}$ samples, together with a complementary lower bound of $n^{\\mathrm{poly}(1/\\varepsilon)}$ samples in the \\emph{correlational statistical query (CSQ)} model.\n  - Testing Convex Functions: A tolerant (two-sided) tester for convexity of Lipschitz functions with the same sample complexity (as a corollary of our learning result), and a one-sided tester (which never rejects convex functions) using $O(\\sqrt{n}/\\varepsilon)^n$ samples."
+}

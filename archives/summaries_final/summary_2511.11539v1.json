@@ -1,0 +1,55 @@
+{
+  "overall_summary": "In the context of clustering, (Chierichetti et al. 2017) ini- tiated the study of fair clustering to address the issue of dis- parate impact and promote fair representation. We re- fer to the related works for different variants of the clustering problems that have been studied under fairness constraints. As previously highlighted, a range of effective clustering algorithms are available for various clustering paradigms; however, these methods may yield unfair or biased results when the training data itself is biased. To counteract this, post-processing existing clustering solutions to mitigate bias and achieve fairness is often neces- sary, ideally with only minimal adjustments to the cluster as- signments. Despite the fundamental nature of this problem, it has received limited attention within the broader context of this study, and has been the subject of much discussion in the literature on the topic.",
+  "section_summaries": {
+    "introduction": "In the context of clustering, (Chierichetti et al. 2017) ini- tiated the study of fair clustering to address the issue of dis- parate impact and promote fair representation. We re- fer to the related works for different variants of the clustering problems that have been studied under fairness constraints. As previously highlighted, a range of effective clustering algorithms are available for various clustering paradigms; however, these methods may yield unfair or biased results when the training data itself is biased. To counteract this, post-processing existing clustering solutions to mitigate bias and achieve fairness is often neces- sary, ideally with only minimal adjustments to the cluster as- signments. Despite the fundamental nature of this problem, it has received limited attention within the broader context of this study, and has been the subject of much discussion in the literature on the topic."
+  },
+  "section_keywords": {
+    "introduction": [
+      "fairness",
+      "cluster",
+      "unfair",
+      "clustering",
+      "bias"
+    ]
+  },
+  "overall_keywords": [
+    "fairness",
+    "cluster",
+    "unfair",
+    "clustering",
+    "bias",
+    "biased",
+    "mitigate",
+    "algorithms",
+    "fair",
+    "constraints"
+  ],
+  "entities": {
+    "metrics": [
+      "Recall",
+      "recall"
+    ],
+    "models": [],
+    "datasets": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": null,
+  "sections_found": [
+    "introduction",
+    "abstract"
+  ],
+  "num_words_original": 16441,
+  "num_words_summary": 140,
+  "title": "Generalizing Fair Clustering to Multiple Groups: Algorithms and Applications",
+  "authors": [
+    "Diptarka Chakraborty",
+    "Kushagra Chatterjee",
+    "Debarati Das",
+    "Tien-Long Nguyen"
+  ],
+  "arxiv_id": "2511.11539v1",
+  "published": "2025-11-14 18:19:18+00:00",
+  "primary_category": "cs.LG",
+  "abstract_original": "Clustering is a fundamental task in machine learning and data analysis, but it frequently fails to provide fair representation for various marginalized communities defined by multiple protected attributes -- a shortcoming often caused by biases in the training data. As a result, there is a growing need to enhance the fairness of clustering outcomes, ideally by making minimal modifications, possibly as a post-processing step after conventional clustering. Recently, Chakraborty et al. [COLT'25] initiated the study of \\emph{closest fair clustering}, though in a restricted scenario where data points belong to only two groups. In practice, however, data points are typically characterized by many groups, reflecting diverse protected attributes such as age, ethnicity, gender, etc.\n  In this work, we generalize the study of the \\emph{closest fair clustering} problem to settings with an arbitrary number (more than two) of groups. We begin by showing that the problem is NP-hard even when all groups are of equal size -- a stark contrast with the two-group case, for which an exact algorithm exists. Next, we propose near-linear time approximation algorithms that efficiently handle arbitrary-sized multiple groups, thereby answering an open question posed by Chakraborty et al. [COLT'25].\n  Leveraging our closest fair clustering algorithms, we further achieve improved approximation guarantees for the \\emph{fair correlation clustering} problem, advancing the state-of-the-art results established by Ahmadian et al. [AISTATS'20] and Ahmadi et al. [2020]. Additionally, we are the first to provide approximation algorithms for the \\emph{fair consensus clustering} problem involving multiple (more than two) groups, thus addressing another open direction highlighted by Chakraborty et al. [COLT'25]."
+}

@@ -1,0 +1,84 @@
+{
+  "overall_summary": "Anatomical structure segmentation can pro- vide surgeons with early warnings of regions that pose surgical risks. However, pixel-level annotated video stream datasets for pituitary surgeries are extremely rare. To address this challenge, we introduce a new dataset for Pituitary Anatomy Segmentation (PAS). One major challenge in pituitaries anatomy segmentation is the inconsistency in feature representation due to occlusions, camera motion, and surgical bleeding. By incorporating a Feature Fusion module, F2PASeg is proposed to refine anatomical structure segments by leveraging both high-resolution image features and deep semantic embeddings, enhancing robustness against intraoper- ative variations. The proposed PASeg, a video-based segmenta- tion model enhancing feature fusion for complex scenes. (a), features from Image Encoder Conv. (b) is the modified mask decoder containing images and labels. The feature fusion module enables the model to effectively incorporate historical predictions and supplementary prompts. Compared to previous works , our dataset offers more training images and higher resolution, providing a more comprehensive repre- sentation of anatomical variations. illustrates the proportions of the six anatomical structures across the 100 cases in the dataset. As a result, the dataset expands to 9,331 images, with 88 cases for training and 12 for validation, and 20 cases remain unchanged for testing. Bounding box prompts are provided for each anatomical structure every 10 frames. Input images are processed at multiple scales, with the image encoder generating 1024-resolution outputs. provides a visual compar- ison of segmentation results. F2PASeg demonstrates superior segmentation in dynamically changing regions, particularly those affected by bleeding or instru- ment occlusion during surgery. The feature fusion module improves segmentation continuity, en- suring that predictions remain more stable and aligned with the prompt frames. The detailed results with different configurations are listed in. These results indicate that our model enhances segmentation performance by effectively modeling the relation- ships between anatomical structures within the feature fusion modules. Notably, F2pASeg reduces incorrect segmentation of surgical instruments relative to the original model. Each image has been meticulously annotated with the correct segmentation, and the correct segments have been identified as being Suppressed.",
+  "section_summaries": {
+    "introduction": "Anatomical structure segmentation can pro- vide surgeons with early warnings of regions that pose surgical risks. However, pixel-level annotated video stream datasets for pituitary surgeries are extremely rare. To address this challenge, we introduce a new dataset for Pituitary Anatomy Segmentation (PAS). One major challenge in pituitaries anatomy segmentation is the inconsistency in feature representation due to occlusions, camera motion, and surgical bleeding. By incorporating a Feature Fusion module, F2PASeg is proposed to refine anatomical structure segments by leveraging both high-resolution image features and deep semantic embeddings, enhancing robustness against intraoper- ative variations. The proposed PASeg, a video-based segmenta- tion model enhancing feature fusion for complex scenes. (a), features from Image Encoder Conv. (b) is the modified mask decoder containing images and labels. The feature fusion module enables the model to effectively incorporate historical predictions and supplementary prompts.",
+    "experiments": "Compared to previous works , our dataset offers more training images and higher resolution, providing a more comprehensive repre- sentation of anatomical variations. illustrates the proportions of the six anatomical structures across the 100 cases in the dataset. As a result, the dataset expands to 9,331 images, with 88 cases for training and 12 for validation, and 20 cases remain unchanged for testing. Bounding box prompts are provided for each anatomical structure every 10 frames. Input images are processed at multiple scales, with the image encoder generating 1024-resolution outputs.",
+    "results": "provides a visual compar- ison of segmentation results. F2PASeg demonstrates superior segmentation in dynamically changing regions, particularly those affected by bleeding or instru- ment occlusion during surgery. The feature fusion module improves segmentation continuity, en- suring that predictions remain more stable and aligned with the prompt frames. The detailed results with different configurations are listed in. These results indicate that our model enhances segmentation performance by effectively modeling the relation- ships between anatomical structures within the feature fusion modules. Notably, F2pASeg reduces incorrect segmentation of surgical instruments relative to the original model. Each image has been meticulously annotated with the correct segmentation, and the correct segments have been identified as being Suppressed."
+  },
+  "section_keywords": {
+    "introduction": [
+      "segmentation",
+      "surgeries",
+      "occlusions",
+      "features",
+      "scenes"
+    ],
+    "experiments": [
+      "anatomical",
+      "images",
+      "dataset",
+      "image",
+      "frames"
+    ],
+    "results": [
+      "segmentation",
+      "occlusion",
+      "segments",
+      "f2paseg",
+      "surgery"
+    ]
+  },
+  "overall_keywords": [
+    "surgeries",
+    "occlusion",
+    "occlusions",
+    "scenes",
+    "segmentation",
+    "deep",
+    "encoder",
+    "features",
+    "anatomy",
+    "mask"
+  ],
+  "entities": {
+    "models": [
+      "Transformer",
+      "Vision Transformer"
+    ],
+    "metrics": [
+      "accuracy",
+      "mIoU",
+      "cross-entropy"
+    ],
+    "frameworks": [
+      "PyTorch"
+    ],
+    "datasets": [],
+    "techniques": []
+  },
+  "methodology_flowchart": null,
+  "sections_found": [
+    "introduction",
+    "experiments",
+    "results"
+  ],
+  "num_words_original": 2743,
+  "num_words_summary": 339,
+  "title": "F2PASeg: Feature Fusion for Pituitary Anatomy Segmentation in Endoscopic Surgery",
+  "authors": [
+    "Lumin Chen",
+    "Zhiying Wu",
+    "Tianye Lei",
+    "Xuexue Bai",
+    "Ming Feng",
+    "Yuxi Wang",
+    "Gaofeng Meng",
+    "Zhen Lei",
+    "Hongbin Liu"
+  ],
+  "arxiv_id": "2508.05465v1",
+  "published": "2025-08-07 15:04:07+00:00",
+  "primary_category": "cs.CV",
+  "abstract_original": "",
+  "pdf_path": "arxiv_papers\\2508.05465v1.pdf"
+}

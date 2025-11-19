@@ -1,0 +1,92 @@
+{
+  "overall_summary": "Honesty over Accuracy: Trustworthy Language Models through Reinforced Hesitation Mohamad Amin Mohamadi\u2217 Tianhao Wang\u2020 Zhiyuan Li\u2217 arXiv:2511.11500v1 [cs.LG] 14 Nov 2025 - 9: Update \u03c0t+1 using RLO with rewards {r}p\u2208B 10: end for in models that quickly fall below the baseline threshold of always abstaining. In , their hesitation curves remain essentially flat as \u03bb grows, and in some cases accuracy even degrades under higher penalties. This suggests that these models become more prone to confidently wrong answers rather than learning to defer, hinting that accuracy-maximization at training time overrides the model\u2019s own epistemic signals at inference time (see Appendix B. 4 for examples). This structural failure demands a structural solution: we cannot prompt our way out of a problem baked into the gradients. This is what we explore through proposing Reinforced. This controlled design isolates \u03bb as the sole causal factor, preventing confounds from architecture, data, or optimization variations. This design makes abstention unambiguous while keeping the answer verifiable. We track a set of behavioral and computational metrics throughout training. Behavioral measures disaggregate responses into four categories: correct, wrong, I don\u2019t know (abstention), and format violations. The penalty \u03bb determines optimal abstention thresholds, with models learning three distinct strategies to maximize expected reward (Figures 5 and 6). This progression from aggressive answering through selective hesitation to conservative abstention demonstrates how Reinforced Hesitation controls the accuracy-trustworthiness trade-off through reward structure. The most compelling evidence that models are optimizing the RH. Middle: Remarkably, zero hesitation across all models and all penalty conditions despite medical context. Right: Wrong answer rates remain high (6-36%) with no reduction from penalties. reveals a striking finding: despite evaluating 11 models across 5 penalty conditions on 1,273 medical questions, we observe exactly zero instances of abstention. Left: Expected rewards deeply negative due to low baseline accuracy. Middle: Several models show penalty-sensitive abstention, with GPT-4o reaching 20. 76% at \u03bb = 100, and GSM8K (top), MedQA (middle), and GPQA\u2019s graduate-level science questions elicit meaningful abstention from several models (). DeepSeek-Chat similarly responds. Despite these limitations, RH provides a foundational framework for incorporating calibrated abstention into language model training, opening paths for future refinement. By making honesty a first-class training objective, we enable models that earn trust not through perfect accuracy but through calibrated humility about their boundaries. This work challenges the field to move beyond accuracy maximization toward evaluation paradigms that properly account for the asymmetric costs of errors. As language models increasingly influence critical decisions, teaching them when not to answer becomes as important as teaching them what to say. Future work should extend RH to domains with subjective correctness, larger model scales, and continuous confidence scores instead of binary abstention. Most importantly, new benchmarks must explicitly encode error costs and reward calibrated uncertainty alongside accuracy, moving beyond current leaderboards that optimize solely for accuracy.",
+  "section_summaries": {
+    "introduction": "Honesty over Accuracy: Trustworthy Language Models through Reinforced Hesitation Mohamad Amin Mohamadi\u2217 Tianhao Wang\u2020 Zhiyuan Li\u2217 arXiv:2511.11500v1 [cs.LG] 14 Nov 2025",
+    "methodology": "- 9: Update \u03c0t+1 using RLO with rewards {r}p\u2208B 10: end for in models that quickly fall below the baseline threshold of always abstaining. In , their hesitation curves remain essentially flat as \u03bb grows, and in some cases accuracy even degrades under higher penalties. This suggests that these models become more prone to confidently wrong answers rather than learning to defer, hinting that accuracy-maximization at training time overrides the model\u2019s own epistemic signals at inference time (see Appendix B. 4 for examples). This structural failure demands a structural solution: we cannot prompt our way out of a problem baked into the gradients. This is what we explore through proposing Reinforced.",
+    "experiments": "This controlled design isolates \u03bb as the sole causal factor, preventing confounds from architecture, data, or optimization variations. This design makes abstention unambiguous while keeping the answer verifiable. We track a set of behavioral and computational metrics throughout training. Behavioral measures disaggregate responses into four categories: correct, wrong, I don\u2019t know (abstention), and format violations. The penalty \u03bb determines optimal abstention thresholds, with models learning three distinct strategies to maximize expected reward (Figures 5 and 6). This progression from aggressive answering through selective hesitation to conservative abstention demonstrates how Reinforced Hesitation controls the accuracy-trustworthiness trade-off through reward structure. The most compelling evidence that models are optimizing the RH.",
+    "results": "Middle: Remarkably, zero hesitation across all models and all penalty conditions despite medical context. Right: Wrong answer rates remain high (6-36%) with no reduction from penalties. reveals a striking finding: despite evaluating 11 models across 5 penalty conditions on 1,273 medical questions, we observe exactly zero instances of abstention. Left: Expected rewards deeply negative due to low baseline accuracy. Middle: Several models show penalty-sensitive abstention, with GPT-4o reaching 20. 76% at \u03bb = 100, and GSM8K (top), MedQA (middle), and GPQA\u2019s graduate-level science questions elicit meaningful abstention from several models (). DeepSeek-Chat similarly responds.",
+    "conclusion": "Despite these limitations, RH provides a foundational framework for incorporating calibrated abstention into language model training, opening paths for future refinement. By making honesty a first-class training objective, we enable models that earn trust not through perfect accuracy but through calibrated humility about their boundaries. This work challenges the field to move beyond accuracy maximization toward evaluation paradigms that properly account for the asymmetric costs of errors. As language models increasingly influence critical decisions, teaching them when not to answer becomes as important as teaching them what to say. Future work should extend RH to domains with subjective correctness, larger model scales, and continuous confidence scores instead of binary abstention. Most importantly, new benchmarks must explicitly encode error costs and reward calibrated uncertainty alongside accuracy, moving beyond current leaderboards that optimize solely for accuracy."
+  },
+  "section_keywords": {
+    "introduction": [],
+    "methodology": [
+      "models",
+      "learning",
+      "accuracy",
+      "model",
+      "rewards"
+    ],
+    "experiments": [
+      "reward",
+      "behavioral",
+      "responses",
+      "trustworthiness",
+      "aggressive"
+    ],
+    "results": [
+      "abstention",
+      "penalty",
+      "penalties",
+      "hesitation",
+      "baseline"
+    ],
+    "conclusion": [
+      "accuracy",
+      "confidence",
+      "trust",
+      "models",
+      "evaluation"
+    ]
+  },
+  "overall_keywords": [
+    "reinforced",
+    "verifiable",
+    "models",
+    "trustworthiness",
+    "trustworthy",
+    "trust",
+    "confidently",
+    "honesty",
+    "accuracy",
+    "answering"
+  ],
+  "entities": {
+    "models": [
+      "llama",
+      "GPT-4o",
+      "gpt-4o",
+      "Gemini",
+      "Llama"
+    ],
+    "metrics": [
+      "accuracy",
+      "Accuracy"
+    ],
+    "datasets": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"Reasoning-tuned systems (e.g., RLVR-style training) like Gemini 2.5 Pro, Kimi-K2 and DeepSeek- Reasoner show no special ...\"]\n    S2[\"The universal failure across different models, parameter scales, and penalty regimes indicates this isn\u2019t a bug but a fe...\"]\n    S3[\"Training must make hesitation not just possible but valuable.\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> End\n",
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "methodology",
+    "experiments",
+    "related_work",
+    "conclusion",
+    "results",
+    "discussion"
+  ],
+  "num_words_original": 9236,
+  "num_words_summary": 468,
+  "title": "Honesty over Accuracy: Trustworthy Language Models through Reinforced Hesitation",
+  "authors": [
+    "Mohamad Amin Mohamadi",
+    "Tianhao Wang",
+    "Zhiyuan Li"
+  ],
+  "arxiv_id": "2511.11500v1",
+  "published": "2025-11-14 17:20:45+00:00",
+  "primary_category": "cs.LG",
+  "abstract_original": "Modern language models fail a fundamental requirement of trustworthy intelligence: knowing when not to answer. Despite achieving impressive accuracy on benchmarks, these models produce confident hallucinations, even when wrong answers carry catastrophic consequences. Our evaluations on GSM8K, MedQA and GPQA show frontier models almost never abstain despite explicit warnings of severe penalties, suggesting that prompts cannot override training that rewards any answer over no answer. As a remedy, we propose Reinforced Hesitation (RH): a modification to Reinforcement Learning from Verifiable Rewards (RLVR) to use ternary rewards (+1 correct, 0 abstention, -$\u03bb$ error) instead of binary. Controlled experiments on logic puzzles reveal that varying $\u03bb$ produces distinct models along a Pareto frontier, where each training penalty yields the optimal model for its corresponding risk regime: low penalties produce aggressive answerers, high penalties conservative abstainers. We then introduce two inference strategies that exploit trained abstention as a coordination signal: cascading routes queries through models with decreasing risk tolerance, while self-cascading re-queries the same model on abstention. Both outperform majority voting with lower computational cost. These results establish abstention as a first-class training objective that transforms ``I don't know'' from failure into a coordination signal, enabling models to earn trust through calibrated honesty about their limits."
+}

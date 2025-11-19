@@ -1,0 +1,92 @@
+{
+  "overall_summary": "We utilize a publicly available dataset containing MRI images categorized into four classes: glioma, meningioma and pituitary tumor, and no tumor. Our primary objective is to build a light weight deep learning model that can automatically classify brain tumor types with high accuracy. The CNN architecture is optimized through hyperparameter tuning using Keras Tuner, enabling systematic exploration of network parameters. Experimental results demonstrate that the proposed model achieves a classification accuracy of 98. 78%, indicating its potential as a diagnostic aid in clinical settings. The proposed method offers a low-complexity yet effective solution for assisting in early brain tumor diagnosis. Furthermore, we employ 5-fold cross- validation to ensure robust evaluation and minimize the risk of overfitting to a single data split. The rest of this paper is organized as follows: Section II reviews related work in the area of brain tumor classification using CNNs. Convolutional Neural Networks (CNNs) have emerged as the leading approach for brain tumor Classification,. Each training iteration used a batch size of 32 and was conducted over 50 epochs with real-time data augmentation applied via ImageDataGenerator. This is followed by a sequence of four convolutional layers, each employing ReLU activation functions and 'same' padding to preserve spatial dimensions. This design enables the network to capture hierarchical and increasingly abstract spatial features. After the convolutionals blocks, the feature maps are flattened and passed through a fully connected dense layer comprising 384 neurons with ReLU activated. A dropout layer with a rate of 0. 3 is applied subsequently to mitigate overfitting by randomly deactivating neurons during training. During each fold, the training data was augmented using random rotations, brightness adjustments, slight translations,. The model achieved consistently strong results across the various evaluation metrics. The initial proposed model achieved a test accuracy of 98. 24%. The final model achieved an additional test accuracy, demonstrating a slightly improved generalization capability. This configuration resulted the model to have 4,150,766 total parameters which is far less than the pre-trained models that typically have over 10 Million parameters. In addition to the classification metrics, a confusion matrix is plotted to visually examine misclassification patterns (). While the classification report quantifies class-wise performance, the matrix reveals specific error trends. On the other hand, the Notumor class achieved perfect classification, with all 405 samples correctly identified. This further validates the model's ability to detect the absence of tumor. With a test accuracy of 98. 78% and strong class-wise precision, recall, and F1-scores, the model exceeded initial expectations. Several design choices contributed to the model\u2019s success. Data augmentation techniques, including rotation, brightness variation, and minor shifts, helped improve generalization by exposing the model to a broader range of input conditions.",
+  "section_summaries": {
+    "introduction": "We utilize a publicly available dataset containing MRI images categorized into four classes: glioma, meningioma and pituitary tumor, and no tumor. Our primary objective is to build a light weight deep learning model that can automatically classify brain tumor types with high accuracy. The CNN architecture is optimized through hyperparameter tuning using Keras Tuner, enabling systematic exploration of network parameters. Experimental results demonstrate that the proposed model achieves a classification accuracy of 98. 78%, indicating its potential as a diagnostic aid in clinical settings. The proposed method offers a low-complexity yet effective solution for assisting in early brain tumor diagnosis. Furthermore, we employ 5-fold cross- validation to ensure robust evaluation and minimize the risk of overfitting to a single data split. The rest of this paper is organized as follows: Section II reviews related work in the area of brain tumor classification using CNNs. Convolutional Neural Networks (CNNs) have emerged as the leading approach for brain tumor Classification,.",
+    "methodology": "Each training iteration used a batch size of 32 and was conducted over 50 epochs with real-time data augmentation applied via ImageDataGenerator. This is followed by a sequence of four convolutional layers, each employing ReLU activation functions and 'same' padding to preserve spatial dimensions. This design enables the network to capture hierarchical and increasingly abstract spatial features. After the convolutionals blocks, the feature maps are flattened and passed through a fully connected dense layer comprising 384 neurons with ReLU activated. A dropout layer with a rate of 0. 3 is applied subsequently to mitigate overfitting by randomly deactivating neurons during training. During each fold, the training data was augmented using random rotations, brightness adjustments, slight translations,.",
+    "results": "The model achieved consistently strong results across the various evaluation metrics. The initial proposed model achieved a test accuracy of 98. 24%. The final model achieved an additional test accuracy, demonstrating a slightly improved generalization capability. This configuration resulted the model to have 4,150,766 total parameters which is far less than the pre-trained models that typically have over 10 Million parameters. In addition to the classification metrics, a confusion matrix is plotted to visually examine misclassification patterns (). While the classification report quantifies class-wise performance, the matrix reveals specific error trends. On the other hand, the Notumor class achieved perfect classification, with all 405 samples correctly identified. This further validates the model's ability to detect the absence of tumor.",
+    "discussion": "With a test accuracy of 98. 78% and strong class-wise precision, recall, and F1-scores, the model exceeded initial expectations. Several design choices contributed to the model\u2019s success. Data augmentation techniques, including rotation, brightness variation, and minor shifts, helped improve generalization by exposing the model to a broader range of input conditions."
+  },
+  "section_keywords": {
+    "introduction": [
+      "cnns",
+      "cnn",
+      "glioma",
+      "keras",
+      "neural"
+    ],
+    "methodology": [
+      "augmentation",
+      "overfitting",
+      "convolutionals",
+      "imagedatagenerator",
+      "neurons"
+    ],
+    "results": [
+      "misclassification",
+      "classification",
+      "tumor",
+      "accuracy",
+      "class"
+    ],
+    "discussion": [
+      "augmentation",
+      "accuracy",
+      "model",
+      "recall",
+      "precision"
+    ]
+  },
+  "overall_keywords": [
+    "cnn",
+    "cnns",
+    "glioma",
+    "keras",
+    "overfitting",
+    "convolutionals",
+    "neural",
+    "imagedatagenerator",
+    "convolutional",
+    "mri"
+  ],
+  "entities": {
+    "models": [
+      "ResNet",
+      "Inception",
+      "ResNet50",
+      "DenseNet201",
+      "VGG"
+    ],
+    "metrics": [
+      "accuracy",
+      "Recall",
+      "recall",
+      "Precision",
+      "precision",
+      "cross-entropy",
+      "Accuracy"
+    ],
+    "frameworks": [
+      "Keras"
+    ],
+    "datasets": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"The model was trained on 80% of the training data set and validated on the remaining 20% of the training data set.\"]\n    S2[\"Each training iteration used a batch size of 32 and was conducted over 50 epochs with real-time data augmentation applie...\"]\n    S3[\"To further optimize model performance, we employed Keras Tuner for hyperparameter search, integrating it with k-fold cro...\"]\n    S4[\"The proposed custom CNN architecture begins with an input layer that accepts RGB images of size 150 \u00d7 150\u00d73 pixels.\"]\n    S5[\"This design enables the network to capture hierarchical and increasingly abstract spatial features.\"]\n    S6[\"After the convolutional blocks, the feature maps are flattened and passed through a fully connected dense layer comprisi...\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> S5\n    S5 --> S6\n    S6 --> End\n",
+  "sections_found": [
+    "introduction",
+    "methodology",
+    "results",
+    "discussion"
+  ],
+  "num_words_original": 2938,
+  "num_words_summary": 444,
+  "title": "Light Weight CNN for classification of Brain Tumors from MRI Images",
+  "authors": [
+    "Natnael Alemayehu"
+  ],
+  "arxiv_id": "2504.21188v2",
+  "published": "2025-04-29 21:45:11+00:00",
+  "primary_category": "eess.IV",
+  "abstract_original": "",
+  "pdf_path": "arxiv_papers\\2504.21188v2.pdf"
+}

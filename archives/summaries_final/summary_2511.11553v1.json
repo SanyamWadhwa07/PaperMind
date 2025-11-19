@@ -1,0 +1,72 @@
+{
+  "overall_summary": "Multistability of Self-Attention Dynamics in Transformers arXiv:2511.11553v1 [cs.LG] 14 Nov 2025 Multiple asymptotically stable equilibria from the \ufb01rst three classes often coexist in the self-attention dynamics. This is the core of a transformer layer, which receives as \u2217C. Alta\ufb01ni is with the Division of Automatic Control, Dept. The resulting dynamics is nonlinear due to the attention mechanism, and evolves on a unit sphere because of the normalization operation. Indeed in consensus is one of the main behaviors shown to occur for this continuous-time model. The Oja \ufb02ow is a much simpler dynamical system whose main feature is that it converges to the principal eigenvector of a matrix which in our setting corresponds to the value matrix V. ant point. From Lemma 5 all trajectories converge to one of the equilibria computed in Lemma 2. For F(vk) there are 3 classes of eigenvectors 1. This means that ( \u22122\u03bbk\u03b4k 1p\u2113, \u2113= 1,. , n i. e. , p\u2116is an eigenvector of F(x)T. fn(x, n) is a linearization of the eigenvalues of F (x)t. , n, n, and n, respectively. For the bipartite consensus: xi = \u00b1vk \u2200i and k = 1 ,. , d; 3. In formulating the model we made a series of simplifying assumptions, which are now commented upon. \u2022 V symmetric and with a simple, positive principal eigenvalue. One can study the behavior of in the various possible regimes of \u03b2, see. The analysis of the other equilibria and of their stability is instead more complex and will be discussed in another venue. \u2022 Continuous-time instead of discrete-time. A similar analysis can be carried out in discrete- time. In fact, the continuous-time model can be considered an Euler dis- cretization. \u2022 Time-invariant Q, K and V , instead of time-varying. \u2022 No feedforward neural network. This is impossible to.",
+  "section_summaries": {
+    "introduction": "Multistability of Self-Attention Dynamics in Transformers arXiv:2511.11553v1 [cs.LG] 14 Nov 2025",
+    "abstract": "Multiple asymptotically stable equilibria from the \ufb01rst three classes often coexist in the self-attention dynamics. This is the core of a transformer layer, which receives as \u2217C. Alta\ufb01ni is with the Division of Automatic Control, Dept. The resulting dynamics is nonlinear due to the attention mechanism, and evolves on a unit sphere because of the normalization operation. Indeed in consensus is one of the main behaviors shown to occur for this continuous-time model. The Oja \ufb02ow is a much simpler dynamical system whose main feature is that it converges to the principal eigenvector of a matrix which in our setting corresponds to the value matrix V.",
+    "discussion": "ant point. From Lemma 5 all trajectories converge to one of the equilibria computed in Lemma 2. For F(vk) there are 3 classes of eigenvectors 1. This means that ( \u22122\u03bbk\u03b4k 1p\u2113, \u2113= 1,. , n i. e. , p\u2116is an eigenvector of F(x)T. fn(x, n) is a linearization of the eigenvalues of F (x)t. , n, n, and n, respectively. For the bipartite consensus: xi = \u00b1vk \u2200i and k = 1 ,. , d; 3.",
+    "methodology": "In formulating the model we made a series of simplifying assumptions, which are now commented upon. \u2022 V symmetric and with a simple, positive principal eigenvalue. One can study the behavior of in the various possible regimes of \u03b2, see. The analysis of the other equilibria and of their stability is instead more complex and will be discussed in another venue. \u2022 Continuous-time instead of discrete-time. A similar analysis can be carried out in discrete- time. In fact, the continuous-time model can be considered an Euler dis- cretization. \u2022 Time-invariant Q, K and V , instead of time-varying. \u2022 No feedforward neural network. This is impossible to."
+  },
+  "section_keywords": {
+    "introduction": [],
+    "abstract": [
+      "dynamics",
+      "equilibria",
+      "dynamical",
+      "nonlinear",
+      "normalization"
+    ],
+    "discussion": [
+      "eigenvalues",
+      "equilibria",
+      "trajectories",
+      "eigenvector",
+      "eigenvectors"
+    ],
+    "methodology": [
+      "equilibria",
+      "stability",
+      "model",
+      "invariant",
+      "neural"
+    ]
+  },
+  "overall_keywords": [
+    "dynamics",
+    "dynamical",
+    "equilibria",
+    "stability",
+    "multistability",
+    "nonlinear",
+    "eigenvectors",
+    "eigenvector",
+    "attention",
+    "transformer"
+  ],
+  "entities": {
+    "metrics": [
+      "Recall"
+    ],
+    "models": [],
+    "datasets": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"When a complex conjugate pair becomes the principal eigenvalue of V , then the self-attention dynamics may converge to a...\"]\n    S2[\"As stated in next proposition, when \u03b2 \u21920 we recover the multiagent Oja \ufb02ow (5).\"]\n    S3[\"Just observe that when \u03b2 \u21920, e\u03b2\u27e8Qxi,Kxj\u27e9\u21921, hence Aij(x) \u2192 1 \u2022 The model (1) uses a \u201csingle-head\u201d attention mechanism, i...\"]\n    S4[\"In the time-varying case, the analysis becomes more challenging, because asymptotic stability must be shown in a uniform...\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> End\n",
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "discussion",
+    "methodology"
+  ],
+  "num_words_original": 9897,
+  "num_words_summary": 301,
+  "title": "Multistability of Self-Attention Dynamics in Transformers",
+  "arxiv_id": "2511.11553v1",
+  "authors": [
+    "Unknown"
+  ],
+  "published": "2025-11-14",
+  "primary_category": "cs.LG",
+  "abstract_original": "",
+  "pdf_url": ""
+}

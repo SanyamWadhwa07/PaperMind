@@ -1,0 +1,26 @@
+# Core dependencies
+streamlit>=1.28.0
+pandas>=2.0.0
+plotly>=5.17.0
+
+# Machine Learning & NLP
+
+transformers>=4.30.0
+scikit-learn>=1.3.0
+nltk>=3.8.1
+numpy>=1.24.0
+sentencepiece>=0.1.99
+
+# PDF Processing
+PyMuPDF>=1.23.0
+
+# ArXiv & Web
+arxiv>=2.0.0
+requests>=2.31.0
+
+# Optional - Enhanced Features
+keybert>=0.8.0
+spacy>=3.6.0
+
+# Evaluation (optional)
+bert-score>=0.3.13

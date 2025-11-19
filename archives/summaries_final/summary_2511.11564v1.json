@@ -1,0 +1,77 @@
+{
+  "overall_summary": "Estimating Total Effects in Bipartite Experiments with Spillovers and Partial Eligibility Albert Tan* Mohsen Bayati*,\u2020 James Nordlund* Roman Istomin* arXiv:2511.11564v1 [stat.ME] 14 Nov 2025 \u2014 From the results, presented in , two observations follow. Second, for the decision metric, M3, accounting for spillover effects yields an alternate launch conclusion for Experiment A from what is concluded using our method. Overall, it is reassuring that for M1 our method consistently identifies the correct direction of spillover bias across both experiments. In simulations and two case studies, Accounting for interference yields effect estimates that differ materially from analyses that ignore spillovers, including a sign difference for one primary decision metric. When the network is unavailable, only coarsely measured, or measured with substantial error, the proposed methods would not be applicable or may be biased. If assignment changes matching, congestion, or availability in ways that alter edges, the estimands here. Focusing on PTTE, we validate the method on two real experiments, denoted by A and B, with three pre- specified metrics, M1, M2, and M3. For both experiments, business logic and economic theory imply that ignoring spillovers should bias M1 upward (direction known ex ante), whereas no directional prior is available for M2 or M3; among the three, M3 is the primary decision metric. 3. 1. 2 Primary Treatment Effects (PTTE) presents PTTE estimates across five specifications. Non-parametric methods (KRR) achieve estimates within 0. 5% of ground truth across all specifications, while linear polynomial (LP) approaches degrade substantially as exposure complexity increases. illustrates the distribution of estimates for Specification 1, top row of , demonstrating that treatment-level estimates projected to outcome level (Proj. KRR) match direct estimation while offering computational advantages, critical when outcome units outnumber treatment units by orders of magnitude. These effects, while smaller than PTTE, remain substantial, approximately 17% of primary effects in our simulations. Outcome-Level PTTE Simulation Results: Median values across 50 replications.",
+  "section_summaries": {
+    "introduction": "Estimating Total Effects in Bipartite Experiments with Spillovers and Partial Eligibility Albert Tan* Mohsen Bayati*,\u2020 James Nordlund* Roman Istomin* arXiv:2511.11564v1 [stat.ME] 14 Nov 2025",
+    "methodology": "\u2014 From the results, presented in , two observations follow. Second, for the decision metric, M3, accounting for spillover effects yields an alternate launch conclusion for Experiment A from what is concluded using our method. Overall, it is reassuring that for M1 our method consistently identifies the correct direction of spillover bias across both experiments. In simulations and two case studies, Accounting for interference yields effect estimates that differ materially from analyses that ignore spillovers, including a sign difference for one primary decision metric. When the network is unavailable, only coarsely measured, or measured with substantial error, the proposed methods would not be applicable or may be biased. If assignment changes matching, congestion, or availability in ways that alter edges, the estimands here.",
+    "experiments": "Focusing on PTTE, we validate the method on two real experiments, denoted by A and B, with three pre- specified metrics, M1, M2, and M3. For both experiments, business logic and economic theory imply that ignoring spillovers should bias M1 upward (direction known ex ante), whereas no directional prior is available for M2 or M3; among the three, M3 is the primary decision metric.",
+    "results": "3. 1. 2 Primary Treatment Effects (PTTE) presents PTTE estimates across five specifications. Non-parametric methods (KRR) achieve estimates within 0. 5% of ground truth across all specifications, while linear polynomial (LP) approaches degrade substantially as exposure complexity increases. illustrates the distribution of estimates for Specification 1, top row of , demonstrating that treatment-level estimates projected to outcome level (Proj. KRR) match direct estimation while offering computational advantages, critical when outcome units outnumber treatment units by orders of magnitude. These effects, while smaller than PTTE, remain substantial, approximately 17% of primary effects in our simulations. Outcome-Level PTTE Simulation Results: Median values across 50 replications."
+  },
+  "section_keywords": {
+    "introduction": [],
+    "methodology": [
+      "spillovers",
+      "spillover",
+      "congestion",
+      "interference",
+      "network"
+    ],
+    "experiments": [
+      "spillovers",
+      "economic",
+      "bias",
+      "experiments",
+      "prior"
+    ],
+    "results": [
+      "ptte",
+      "estimates",
+      "treatment",
+      "effects",
+      "simulations"
+    ]
+  },
+  "overall_keywords": [
+    "spillovers",
+    "spillover",
+    "congestion",
+    "bias",
+    "economic",
+    "interference",
+    "bipartite",
+    "estimates",
+    "estimating",
+    "availability"
+  ],
+  "entities": {
+    "metrics": [
+      "accuracy",
+      "Recall"
+    ],
+    "models": [],
+    "datasets": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": null,
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "related_work",
+    "results",
+    "experiments",
+    "methodology"
+  ],
+  "num_words_original": 6266,
+  "num_words_summary": 314,
+  "title": "Estimating Total Effects in Bipartite Experiments with Spillovers and Partial Eligibility",
+  "authors": [
+    "Albert Tan",
+    "Mohsen Bayati",
+    "James Nordlund",
+    "Roman Istomin"
+  ],
+  "arxiv_id": "2511.11564v1",
+  "published": "2025-11-14 18:55:51+00:00",
+  "primary_category": "stat.ME",
+  "abstract_original": "We study randomized experiments in bipartite systems where only a subset of treatment-side units are eligible for assignment while all units continue to interact, generating interference. We formalize eligibility-constrained bipartite experiments and define estimands aligned with full deployment: the Primary Total Treatment Effect (PTTE) on eligible units and the Secondary Total Treatment Effect (STTE) on ineligible units. Under randomization within the eligible set, we give identification conditions and develop interference-aware ensemble estimators that combine exposure mappings, generalized propensity scores, and flexible machine learning. We further introduce a projection that links treatment- and outcome-level estimands; this mapping is exact under a Linear Additive Edges condition and enables estimation on the (typically much smaller) treatment side with deterministic aggregation to outcomes. In simulations with known ground truth across realistic exposure regimes, the proposed estimators recover PTTE and STTE with low bias and variance and reduce the bias that could arise when interference is ignored. Two field experiments illustrate practical relevance: our method corrects the direction of expected interference bias for a pre-specified metric in both studies and reverses the sign and significance of the primary decision metric in one case."
+}

@@ -1,0 +1,88 @@
+{
+  "overall_summary": "Optimizing Mixture of Block Attention OPTIMIZING MIXTURE OF BLOCK ATTENTION Guangxuan Xiao1\u2217 Junxian Guo1\u2217 Kasra Mazaheri 1 Song Han1,2 1MIT 2NVIDIA 3. 1 MODELING THE BLOCK SELECTION CHALLENGE We model the router\u2019s task by treating the dot products between a query q and the keys as random variables. Within-block clustering is a performance multiplier. These principles form the theoretical foundation for our architectural improvements, which we val- idate systematically in Section 5. The original MoBA implementation released by Lu et al. , when configured with small blocks, suffers from performance bottlenecks that negate the computational savings from sparsity, resulting in slower execution than dense attention. To account for semantic clustering, let m denote the number of keys in the signal block with elevated similarity \u00b5cluster where \u00b5noise < \u00b5clusters \u2264\u00b5. We validate our design principles of MoBA through controlled experiments on models pre-trained from scratch. All models use a hybrid 24-layer architecture: odd layers use sliding win- dow attention (window size 256) with RoPE, while even layers use either dense attention (baseline) or MoBA variants without positional encoding. This design, inspired by Command-A (Cohere et al. , 2025) and SWAN-GPT (Puvvada et al, 2025), isolates MoBA\u2019s contribution while maintaining lo- cal dependencies. We train two model families: 340M (hidden size 1024, 16 heads, intermediate size 2816) and 1B (hidden Size 2048, 32 heads, Intermediate size 8192. The original implementation materializes a large N \u00d7 n score matrix, incurring substantial memory overheads. Finally, low GPU occupancy results from the reduced work per block and the overhead of launching many independent kernels, leading to poor parallelism and low hardware utilization. Tiled Top-K Selection The top-k selection process is a primary bottleneck in the original MoBA implementation Lu et al. We distinguish between two types of blocks: \u2022 Logical Blocks: Large, contiguous blocks of queries (Qi) and keys (Kj) that the kernel iterates over in its outer loops. A logical key block matches a MoBA key block. This subset is batched into dense physical blocks: a physical block of queries is gathered from HBM.",
+  "section_summaries": {
+    "introduction": "Optimizing Mixture of Block Attention OPTIMIZING MIXTURE OF BLOCK ATTENTION Guangxuan Xiao1\u2217 Junxian Guo1\u2217 Kasra Mazaheri 1 Song Han1,2 1MIT 2NVIDIA",
+    "methodology": "3. 1 MODELING THE BLOCK SELECTION CHALLENGE We model the router\u2019s task by treating the dot products between a query q and the keys as random variables. Within-block clustering is a performance multiplier. These principles form the theoretical foundation for our architectural improvements, which we val- idate systematically in Section 5. The original MoBA implementation released by Lu et al. , when configured with small blocks, suffers from performance bottlenecks that negate the computational savings from sparsity, resulting in slower execution than dense attention. To account for semantic clustering, let m denote the number of keys in the signal block with elevated similarity \u00b5cluster where \u00b5noise < \u00b5clusters \u2264\u00b5.",
+    "experiments": "We validate our design principles of MoBA through controlled experiments on models pre-trained from scratch. All models use a hybrid 24-layer architecture: odd layers use sliding win- dow attention (window size 256) with RoPE, while even layers use either dense attention (baseline) or MoBA variants without positional encoding. This design, inspired by Command-A (Cohere et al. , 2025) and SWAN-GPT (Puvvada et al, 2025), isolates MoBA\u2019s contribution while maintaining lo- cal dependencies. We train two model families: 340M (hidden size 1024, 16 heads, intermediate size 2816) and 1B (hidden Size 2048, 32 heads, Intermediate size 8192.",
+    "results": "The original implementation materializes a large N \u00d7 n score matrix, incurring substantial memory overheads. Finally, low GPU occupancy results from the reduced work per block and the overhead of launching many independent kernels, leading to poor parallelism and low hardware utilization. Tiled Top-K Selection The top-k selection process is a primary bottleneck in the original MoBA implementation Lu et al. We distinguish between two types of blocks: \u2022 Logical Blocks: Large, contiguous blocks of queries (Qi) and keys (Kj) that the kernel iterates over in its outer loops. A logical key block matches a MoBA key block. This subset is batched into dense physical blocks: a physical block of queries is gathered from HBM."
+  },
+  "section_keywords": {
+    "introduction": [],
+    "methodology": [
+      "clustering",
+      "blocks",
+      "bottlenecks",
+      "moba",
+      "block"
+    ],
+    "experiments": [
+      "moba",
+      "attention",
+      "layers",
+      "architecture",
+      "layer"
+    ],
+    "results": [
+      "moba",
+      "gpu",
+      "bottleneck",
+      "blocks",
+      "hardware"
+    ]
+  },
+  "overall_keywords": [
+    "blocks",
+    "bottlenecks",
+    "attention",
+    "bottleneck",
+    "memory",
+    "optimizing",
+    "block",
+    "layers",
+    "moba",
+    "clustering"
+  ],
+  "entities": {
+    "models": [
+      "Transformer",
+      "Llama",
+      "GPT"
+    ],
+    "datasets": [
+      "WikiText",
+      "WikiText2"
+    ],
+    "metrics": [
+      "accuracy",
+      "precision",
+      "perplexity"
+    ],
+    "frameworks": [
+      "PyTorch"
+    ],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"This is challenging because the router scores a block using its centroid (the average of all its keys), a process that r...\"]\n    S2[\"To understand how MoBA succeeds, we developed a statistical model of its block selection mechanism.\"]\n    S3[\"The SNR formula provides two clear and actionable principles for designing effective MoBA archi- tectures: 1.\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> End\n",
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "methodology",
+    "discussion",
+    "results",
+    "experiments",
+    "related_work"
+  ],
+  "num_words_original": 6809,
+  "num_words_summary": 341,
+  "title": "Optimizing Mixture of Block Attention",
+  "authors": [
+    "Guangxuan Xiao",
+    "Junxian Guo",
+    "Kasra Mazaheri",
+    "Song Han"
+  ],
+  "arxiv_id": "2511.11571v1",
+  "published": "2025-11-14 18:59:59+00:00",
+  "primary_category": "cs.LG",
+  "abstract_original": "Mixture of Block Attention (MoBA) (Lu et al., 2025) is a promising building block for efficiently processing long contexts in LLMs by enabling queries to sparsely attend to a small subset of key-value blocks, drastically reducing computational cost. However, the design principles governing MoBA's performance are poorly understood, and it lacks an efficient GPU implementation, hindering its practical adoption. In this paper, we first develop a statistical model to analyze MoBA's underlying mechanics. Our model reveals that performance critically depends on the router's ability to accurately distinguish relevant from irrelevant blocks based on query-key affinities. We derive a signal-to-noise ratio that formally connects architectural parameters to this retrieval accuracy. Guided by our analysis, we identify two key pathways for improvement: using smaller block sizes and applying a short convolution on keys to cluster relevant signals, which enhances routing accuracy. While theoretically better, small block sizes are inefficient on GPUs. To bridge this gap, we introduce FlashMoBA, a hardware-aware CUDA kernel that enables efficient MoBA execution even with the small block sizes our theory recommends. We validate our insights by training LLMs from scratch, showing that our improved MoBA models match the performance of dense attention baselines. FlashMoBA achieves up to 14.7x speedup over FlashAttention-2 for small blocks, making our theoretically-grounded improvements practical. Code is available at: https://github.com/mit-han-lab/flash-moba."
+}

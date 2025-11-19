@@ -1,0 +1,100 @@
+{
+  "overall_summary": "Building upon UniGen, we comprehensively enhance the model architecture and training pipeline to strengthen the image understanding and generation capabilities while unlocking strong image editing ability. have achieved promising performance across both visual understanding and Generation domains. introduced an effective data-centric pipeline for building a competitive model from pre-training to post-training stages. While CoT-V effectively improves performance on text-to-image generation, it also introduces substantial inference overheads. (2025b) that is considered as the core for measuring fine-grained controllability of content generation. We design an effective model architecture for UniGen-1. 5 that supports image understanding, generation as well as editing within a single model. Moreover, we observe that model remains inadequate in handling diverse editing scenarios after supervised fine-tuning due to its insufficient comprehension of the editing instructions. Specifically, it takes the condition image and the instruction as inputs and is optimized for predicting the semantic content of the target image via textual descriptions. Experimental. \u2022 UniGen-1. 5 achieves competitive performance against state-of-the-art unified MLLMs. We also attain strong results on image understanding (comparable to Show-o2 Xie et al. The architecture of UniGen is optimized for (a) image understanding, (b) text-to-image gen- eration and (c) image editing. See more details in Section 3. 1. First, UniGen can achieve competitive performance in image understanding benchmarks. As shown in , UniGen has achieved competitive performance on ImgEdit. Without leveraging external validation, we report the overall score over all the benchmarks. We observe that UniGen, DPG-Bench, and DPG\u2013Bench (Figure A last. or continuous visual embeddings Sun et al. , allowing LLMs to treat vision and text as a unified sequence for joint autoregressive prediction. Second, the decoupled LLM-diffusion approach Pan et al. , allowing LLM and text to interact with each other. Third, the hybrid augmented AR-Diffusion approach Deng et al. Recent studies have explored both decoupling encoders Wu et al. , and the hybrid AR-refusion approach. Building upon the UniGen framework Tian et al. ; Zhang et al,. (2025a), and leverage separate encoders for understanding and generation. for visual generation and continuous visual encoder (SigLIP2 Tschannen et al. ) For image understanding, we utilize SigLIP1 as our visual decoder EncU. For text-to-image generation, we generally adopt the same setting as UniGen by using masked token prediction Chang et al. , and use the same set as WeiGen to generate target image tokens conditioned on a text prompt TC. During inference, the image generation starts with all masked tokens and perform mask token prediction in multiple turns. We set the image-generation resolution to 384 \u00d7 384. For image editing, we unlock this capability during the supervised fine-tun. In this stage, we set the learning rate to 1e\u22125 and adopt the cosine schedule. (2025b) 19B 3. 88 3. 14 1. 76 3. 40 2. 41 3. 16 4. 63 2. 64 2. 52 3. 06 UniWorld-V1 Lin et al. 7B + 12B 3,82 3. 64 3. 27 3. 47 3. 24 2. 99 4. 21 2. 96 2. 74 3. 26 BAGEL Deng et al. , 7B MoT 3. 56 3. 31 1. 70 3. 30 2. 62 3. 44 4. 49 2. 38 4. 17 3. 20 OmniGen Xiao et al.",
+  "section_summaries": {
+    "introduction": "Building upon UniGen, we comprehensively enhance the model architecture and training pipeline to strengthen the image understanding and generation capabilities while unlocking strong image editing ability. have achieved promising performance across both visual understanding and Generation domains. introduced an effective data-centric pipeline for building a competitive model from pre-training to post-training stages. While CoT-V effectively improves performance on text-to-image generation, it also introduces substantial inference overheads. (2025b) that is considered as the core for measuring fine-grained controllability of content generation. We design an effective model architecture for UniGen-1. 5 that supports image understanding, generation as well as editing within a single model. Moreover, we observe that model remains inadequate in handling diverse editing scenarios after supervised fine-tuning due to its insufficient comprehension of the editing instructions. Specifically, it takes the condition image and the instruction as inputs and is optimized for predicting the semantic content of the target image via textual descriptions. Experimental.",
+    "results": "\u2022 UniGen-1. 5 achieves competitive performance against state-of-the-art unified MLLMs. We also attain strong results on image understanding (comparable to Show-o2 Xie et al. The architecture of UniGen is optimized for (a) image understanding, (b) text-to-image gen- eration and (c) image editing. See more details in Section 3. 1. First, UniGen can achieve competitive performance in image understanding benchmarks. As shown in , UniGen has achieved competitive performance on ImgEdit. Without leveraging external validation, we report the overall score over all the benchmarks. We observe that UniGen, DPG-Bench, and DPG\u2013Bench (Figure A last.",
+    "related_work": "or continuous visual embeddings Sun et al. , allowing LLMs to treat vision and text as a unified sequence for joint autoregressive prediction. Second, the decoupled LLM-diffusion approach Pan et al. , allowing LLM and text to interact with each other. Third, the hybrid augmented AR-Diffusion approach Deng et al. Recent studies have explored both decoupling encoders Wu et al. , and the hybrid AR-refusion approach. Building upon the UniGen framework Tian et al. ; Zhang et al,.",
+    "methodology": "(2025a), and leverage separate encoders for understanding and generation. for visual generation and continuous visual encoder (SigLIP2 Tschannen et al. ) For image understanding, we utilize SigLIP1 as our visual decoder EncU. For text-to-image generation, we generally adopt the same setting as UniGen by using masked token prediction Chang et al. , and use the same set as WeiGen to generate target image tokens conditioned on a text prompt TC. During inference, the image generation starts with all masked tokens and perform mask token prediction in multiple turns. We set the image-generation resolution to 384 \u00d7 384. For image editing, we unlock this capability during the supervised fine-tun.",
+    "experiments": "In this stage, we set the learning rate to 1e\u22125 and adopt the cosine schedule. (2025b) 19B 3. 88 3. 14 1. 76 3. 40 2. 41 3. 16 4. 63 2. 64 2. 52 3. 06 UniWorld-V1 Lin et al. 7B + 12B 3,82 3. 64 3. 27 3. 47 3. 24 2. 99 4. 21 2. 96 2. 74 3. 26 BAGEL Deng et al. , 7B MoT 3. 56 3. 31 1. 70 3. 30 2. 62 3. 44 4. 49 2. 38 4. 17 3. 20 OmniGen Xiao et al."
+  },
+  "section_keywords": {
+    "introduction": [
+      "editing",
+      "visual",
+      "supervised",
+      "enhance",
+      "training"
+    ],
+    "results": [
+      "benchmarks",
+      "unigen",
+      "mllms",
+      "editing",
+      "image"
+    ],
+    "related_work": [
+      "embeddings",
+      "encoders",
+      "augmented",
+      "autoregressive",
+      "visual"
+    ],
+    "methodology": [
+      "encoder",
+      "encoders",
+      "decoder",
+      "visual",
+      "editing"
+    ],
+    "experiments": [
+      "cosine",
+      "learning",
+      "1e",
+      "et",
+      "mot"
+    ]
+  },
+  "overall_keywords": [
+    "editing",
+    "supervised",
+    "learning",
+    "visual",
+    "enhance",
+    "image",
+    "training",
+    "encoder",
+    "model",
+    "mllms"
+  ],
+  "entities": {
+    "models": [
+      "GPT",
+      "GPT-4o",
+      "clip",
+      "CLIP",
+      "DALLE"
+    ],
+    "datasets": [
+      "ImageNet"
+    ],
+    "metrics": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"We build UniGen-1.5 upon a pre-trained LLM, i.e., Qwen2.5-7B Yang et al.\"]\n    S2[\"As shown in Figure 2, we use the discrete visual tokenizer (MAGViTv2 Yu et al.\"]\n    S3[\"(2022) as our training objective.\"]\n    S4[\"The model is trained to generate target image tokens conditioned on a text prompt TC.\"]\n    S5[\"During training, we randomly sample a binary mask \u2208{0, 1} for each token, given a masking ratio \u03b7 according to a masking...\"]\n    S6[\"As shown in Figure 2 (b), the LLM takes the text prompt and the masked image sequence tokens as inputs and optimizes for...\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> S5\n    S5 --> S6\n    S6 --> End\n",
+  "sections_found": [
+    "introduction",
+    "results",
+    "related_work",
+    "methodology",
+    "experiments"
+  ],
+  "num_words_original": 6331,
+  "num_words_summary": 526,
+  "title": "UniGen-1.5: Enhancing Image Generation and Editing through Reward Unification in Reinforcement Learning",
+  "authors": [
+    "Rui Tian",
+    "Mingfei Gao",
+    "Haiming Gang",
+    "Jiasen Lu",
+    "Zhe Gan",
+    "Yinfei Yang",
+    "Zuxuan Wu",
+    "Afshin Dehghan"
+  ],
+  "arxiv_id": "2511.14760v1",
+  "published": "2025-11-18 18:59:30+00:00",
+  "primary_category": "cs.CV",
+  "abstract_original": "",
+  "pdf_path": "arxiv_papers\\2511.14760v1.pdf"
+}

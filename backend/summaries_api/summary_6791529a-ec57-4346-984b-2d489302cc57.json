@@ -1,0 +1,121 @@
+{
+  "overall_summary": "Fusion-Based Brain Tumor Classification Using Deep Learning and Explainable AI, and Rule-Based Reasoning Melika Filvantorkaman1,*, Mohsen Piri2, Maral Filvan Torkaman3, Ashkan Zabihi4, Hamidreza 1Department of Electrical and Computer Engineering, University of Rochester, Rochester, NY 14627, United States 2Department of Electronic, College of Engineering, Kermanshah Science and Research Branch, Islamic Azad University, Kersanshahan, Iran 3AI Engineering, Science and research Branch, Azad High University, Tehran, Iran 4Faculty of Natural Sciences and Industrial Engineering, Deggendorf Institute of Technology, Dieter- G\u00f6rlitz-Platz 1, 94469 Deggstadtf, Germany 5Department of Mechanical Engineering and Engineering Science, The University of North Carolina at Charlotte, Charlotte, North Carolina, USA *Corresponding Author:. Overall, the proposed approach offers a robust, interpretable, and generalizable solution for automated brain tumor classification, advancing the integration of deep learning into clinical neurodiagnostics. Keywords: Brain Tumor Classification; Ensemble Deep Learning; Explainable AI (XAI); MRI Image Analysis; Grad-CAM++ Visualization. These challenges have spurred growing interest in computational methods\u2014 particularly deep learning\u2014as decision-support tools to assist radiologists in brain tumor diagnosis. Furthermore, class imbalance in real-world datasets and subtle boundary definitions in diffuse tumors such as gliomas present additional obstacles to accurate automated classification. Convolutional Neural Networks (CNNs) have emerged as powerful tools for medical image analysis due to their ability to automatically. Ensemble learning combines predictions from multiple models to improve accuracy, stability, and generalization\u2014key goals in medical imaging, where diagnostic precision is critical. This leads to improved predictive performance across tumor types, enhancing model reliability. Ensemble classifiers also align with clinical needs by offering more consistent outputs and enabling the integration of interpretability tools like XAI. Overall, ensembles represent a robust solution for medical image analysis, enabling not only better classification but also greater transparency through visual explanations and clinical rule overlays. This often results in more stable and accurate predictions\u2014particularly in tasks like brain tumor classification, where subtle image variations matter. These ensemble outperform individual CNNs by balancing their respective strengths, reducing errors, and improving generalization. These models often perform well on curated datasets but falter in real-world settings with varied MRI quality, noise, and anatomical differences. While ensemble CNNs and XAI have been studied separately, their joint application\u2014particularly with symbolic clinical overlays\u2014remains underexplored. This study aimed to develop a robust deep learning framework for multi-class brain tumor classification and localization using contrast-enhanced MRI slices. The primary objective was to build a clinically reliable and interpretable system that assists radiologists in accurate diagnosis through both automated classification and visual explanation of tumor regions. These models were selected for their complementary strengths in lightweight computation and deep feature representation. This technique generated high-resolution class- discriminative heatmaps over the input MRIs, revealing the spatial regions most influential in the classification decision. These visual explanations facilitated clinical validation of the model\u2019s output by highlighting anatomically plausible tumor regions, we implemented a stratified 5-fold cross-validation exclusively on. This combination allows for the assessment of models with varying levels of parameter complexity and generalization capability. Each model was initialized with pre-trained ImageNet weights to accelerate convergence and leverage learned features. 3. 7 Clinical Decision Rule Overlay Beyond visual saliency, clinical trust is further enhanced through a symbolic rule-based overlay module. This component applies domain-informed heuristics to the Grad-CAM++ outputs and segmentation masks to interpret predictions using logic familiar to practicing radiologists. This hybrid methodology leverages the strengths of both networks to improve generalization and diagnostic reliability. The original classification head is removed and replaced with a custom dense layer with Softmax activation for multi-class tumor prediction. The training loss is defined using the categorical. Each model was optimized independently using transfer learning and evaluated with a set of performance metrics. Together, they provide a comprehensive assessment of each model's classification accuracy and robustness, particularly in handling imbalanced classes. The cross-validation results are summarized in. illustrates the evolution of training and validation accuracy and loss throughout the learning process for both CNN architectures. The consistent upward trend in accuracy and downward trend in loss across epochs confirms effective convergence and learning behavior for both models. 4. 3 Confusion matrix To further examine the classification performance across tumor categories, a confusion matrix was generated, as shown in. The confusions matrix reveals a high degree of classification precision across all three tumor types, including glioma and meningioma cases.",
+  "section_summaries": {
+    "introduction": "Fusion-Based Brain Tumor Classification Using Deep Learning and Explainable AI, and Rule-Based Reasoning Melika Filvantorkaman1,*, Mohsen Piri2, Maral Filvan Torkaman3, Ashkan Zabihi4, Hamidreza 1Department of Electrical and Computer Engineering, University of Rochester, Rochester, NY 14627, United States 2Department of Electronic, College of Engineering, Kermanshah Science and Research Branch, Islamic Azad University, Kersanshahan, Iran 3AI Engineering, Science and research Branch, Azad High University, Tehran, Iran 4Faculty of Natural Sciences and Industrial Engineering, Deggendorf Institute of Technology, Dieter- G\u00f6rlitz-Platz 1, 94469 Deggstadtf, Germany 5Department of Mechanical Engineering and Engineering Science, The University of North Carolina at Charlotte, Charlotte, North Carolina, USA *Corresponding Author:.",
+    "abstract": "Overall, the proposed approach offers a robust, interpretable, and generalizable solution for automated brain tumor classification, advancing the integration of deep learning into clinical neurodiagnostics. Keywords: Brain Tumor Classification; Ensemble Deep Learning; Explainable AI (XAI); MRI Image Analysis; Grad-CAM++ Visualization. These challenges have spurred growing interest in computational methods\u2014 particularly deep learning\u2014as decision-support tools to assist radiologists in brain tumor diagnosis. Furthermore, class imbalance in real-world datasets and subtle boundary definitions in diffuse tumors such as gliomas present additional obstacles to accurate automated classification. Convolutional Neural Networks (CNNs) have emerged as powerful tools for medical image analysis due to their ability to automatically.",
+    "discussion": "Ensemble learning combines predictions from multiple models to improve accuracy, stability, and generalization\u2014key goals in medical imaging, where diagnostic precision is critical. This leads to improved predictive performance across tumor types, enhancing model reliability. Ensemble classifiers also align with clinical needs by offering more consistent outputs and enabling the integration of interpretability tools like XAI. Overall, ensembles represent a robust solution for medical image analysis, enabling not only better classification but also greater transparency through visual explanations and clinical rule overlays. This often results in more stable and accurate predictions\u2014particularly in tasks like brain tumor classification, where subtle image variations matter. These ensemble outperform individual CNNs by balancing their respective strengths, reducing errors, and improving generalization.",
+    "conclusion": "These models often perform well on curated datasets but falter in real-world settings with varied MRI quality, noise, and anatomical differences. While ensemble CNNs and XAI have been studied separately, their joint application\u2014particularly with symbolic clinical overlays\u2014remains underexplored. This study aimed to develop a robust deep learning framework for multi-class brain tumor classification and localization using contrast-enhanced MRI slices. The primary objective was to build a clinically reliable and interpretable system that assists radiologists in accurate diagnosis through both automated classification and visual explanation of tumor regions. These models were selected for their complementary strengths in lightweight computation and deep feature representation. This technique generated high-resolution class- discriminative heatmaps over the input MRIs, revealing the spatial regions most influential in the classification decision. These visual explanations facilitated clinical validation of the model\u2019s output by highlighting anatomically plausible tumor regions, we implemented a stratified 5-fold cross-validation exclusively on.",
+    "methodology": "This combination allows for the assessment of models with varying levels of parameter complexity and generalization capability. Each model was initialized with pre-trained ImageNet weights to accelerate convergence and leverage learned features. 3. 7 Clinical Decision Rule Overlay Beyond visual saliency, clinical trust is further enhanced through a symbolic rule-based overlay module. This component applies domain-informed heuristics to the Grad-CAM++ outputs and segmentation masks to interpret predictions using logic familiar to practicing radiologists. This hybrid methodology leverages the strengths of both networks to improve generalization and diagnostic reliability. The original classification head is removed and replaced with a custom dense layer with Softmax activation for multi-class tumor prediction. The training loss is defined using the categorical.",
+    "results": "Each model was optimized independently using transfer learning and evaluated with a set of performance metrics. Together, they provide a comprehensive assessment of each model's classification accuracy and robustness, particularly in handling imbalanced classes. The cross-validation results are summarized in. illustrates the evolution of training and validation accuracy and loss throughout the learning process for both CNN architectures. The consistent upward trend in accuracy and downward trend in loss across epochs confirms effective convergence and learning behavior for both models. 4. 3 Confusion matrix To further examine the classification performance across tumor categories, a confusion matrix was generated, as shown in. The confusions matrix reveals a high degree of classification precision across all three tumor types, including glioma and meningioma cases."
+  },
+  "section_keywords": {
+    "introduction": [
+      "brain",
+      "tumor",
+      "classification",
+      "fusion",
+      "ai"
+    ],
+    "abstract": [
+      "gliomas",
+      "cnns",
+      "mri",
+      "neural",
+      "neurodiagnostics"
+    ],
+    "discussion": [
+      "ensemble",
+      "ensembles",
+      "classifiers",
+      "classification",
+      "cnns"
+    ],
+    "conclusion": [
+      "mri",
+      "classification",
+      "mris",
+      "cnns",
+      "deep"
+    ],
+    "methodology": [
+      "softmax",
+      "imagenet",
+      "classification",
+      "radiologists",
+      "tumor"
+    ],
+    "results": [
+      "classification",
+      "glioma",
+      "cnn",
+      "accuracy",
+      "imbalanced"
+    ]
+  },
+  "overall_keywords": [
+    "neural",
+    "glioma",
+    "softmax",
+    "neurodiagnostics",
+    "classifiers",
+    "mri",
+    "classification",
+    "gliomas",
+    "ai",
+    "ensembles"
+  ],
+  "entities": {
+    "models": [
+      "DenseNet",
+      "DenseNet121",
+      "ResNet",
+      "Inception",
+      "VGG-",
+      "ResNet50"
+    ],
+    "datasets": [
+      "ImageNet"
+    ],
+    "metrics": [
+      "accuracy",
+      "precision",
+      "IoU",
+      "Recall",
+      "F1-score",
+      "Precision",
+      "recall",
+      "Accuracy",
+      "F1-Score",
+      "cross-entropy"
+    ],
+    "frameworks": [
+      "sklearn",
+      "TensorFlow"
+    ],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"Each model was initialized with pre-trained ImageNet weights to accelerate convergence and leverage learned features.\"]\n    S2[\"The final classification heads were removed and replaced with custom fully connected layers designed for three-way class...\"]\n    S3[\"3.5.1 MobileNetV2 Transfer Learning MobileNetV2 is a lightweight and computationally efficient CNN architecture optimize...\"]\n    S4[\"In the proposed framework, MobileNetV2 is used as a pretrained feature extractor, initialized with ImageNet weights.\"]\n    S5[\"Formally, given an input image \ud835\udc3c(\ud835\udc65, \ud835\udc66) \u2208\u211d'()\u00d7'()\u00d7+, the predicted class probability vector is computed as: \ud835\udc66.\"]\n    S6[\"The training loss is defined using the categorical cross-entropy: \u2112708 = \u22128 \ud835\udc667.\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> S5\n    S5 --> S6\n    S6 --> End\n",
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "discussion",
+    "conclusion",
+    "methodology",
+    "results"
+  ],
+  "num_words_original": 9715,
+  "num_words_summary": 704,
+  "title": "Fusion-Based Brain Tumor Classification Using Deep Learning and Explainable AI, and Rule-Based Reasoning",
+  "authors": [
+    "Melika Filvantorkaman",
+    "Mohsen Piri",
+    "Maral Filvan Torkaman",
+    "Ashkan Zabihi",
+    "Hamidreza Moradi"
+  ],
+  "arxiv_id": "2508.06891v1",
+  "published": "2025-08-09 08:46:36+00:00",
+  "primary_category": "eess.IV",
+  "abstract_original": "",
+  "pdf_path": "arxiv_papers\\2508.06891v1.pdf"
+}

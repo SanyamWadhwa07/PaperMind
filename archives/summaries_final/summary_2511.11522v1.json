@@ -1,0 +1,77 @@
+{
+  "overall_summary": "This section will explore key research in computer vision and its application to identifying chess boards. Their approach skips traditional neural networks and rather trains the model to implicitly learn where the chess board is, understand the spatial layout of the 64 squares and classify what\u2019s in each square (12 unique pieces - 6 black & 6 white plus empty). They correctly classified 15. 26% of ChessReD\u2019S test images which is 7x better than any other current state-of-the-art. 2. 2 EFFICIENT CHESS VISION \u2013 A COMPUTER VISION APPLICATION (WU, 2022) Wu\u2019\u2019 and his method in Efficient Chess Vision \u2013 A Computer Vision Application avoids CNNs until after board identification. His method uses a gradient-based technique where the input image is converted to greyscale and x, y gradients are calculated to identify chess board boundaries. Each square within the board undergoes separate identification and pieces are classified into. The convolutional layer contains a 7x7 kernel that was chosen to capture larger spatial patterns typical in chess pieces. Batch normalization enables more stable training and acts as a regularizer to prevent overfitting. The activation function introduces non- linearity, enabling the model to learn complex patterns during piece recognition, and max pooling reduces computational complexity while preserving spatial information. Dropout regulariza- tion is applied to avoid overfitting during training. This is reshaped to (B, 64, 512) to treat each spatial location as one of the 64 chess squares with 512-dimensional feature representations. A final linear classifier maps these features to the 13 piece classes. The pipeline included a StandardScaler for normalization, PCA. Several quantitative evaluations were conducted to assess the model\u2019s accuracy in a comprehensive manner. This represents a significant milestone for the project, as previous methods did not yield such a strong bias toward correctly classified boards. These plots provided insight into the general learning trends of the model. The final training accuracy was 99. 37% for all squares and 98. 69% for non-empty squares. Finally, a confusion matrix was generated, as presented in. The primary misclassifications occurred between visually similar pieces, such as Pawn vs. Bishop (4%) and Queen vs. King (5%). For corner detection, predictions on the well-lit from-facing board closely match the ground truth, producing accurate, consistent crops (). Slight mis.",
+  "section_summaries": {
+    "introduction": "This section will explore key research in computer vision and its application to identifying chess boards. Their approach skips traditional neural networks and rather trains the model to implicitly learn where the chess board is, understand the spatial layout of the 64 squares and classify what\u2019s in each square (12 unique pieces - 6 black & 6 white plus empty). They correctly classified 15. 26% of ChessReD\u2019S test images which is 7x better than any other current state-of-the-art. 2. 2 EFFICIENT CHESS VISION \u2013 A COMPUTER VISION APPLICATION (WU, 2022) Wu\u2019\u2019 and his method in Efficient Chess Vision \u2013 A Computer Vision Application avoids CNNs until after board identification. His method uses a gradient-based technique where the input image is converted to greyscale and x, y gradients are calculated to identify chess board boundaries. Each square within the board undergoes separate identification and pieces are classified into.",
+    "methodology": "The convolutional layer contains a 7x7 kernel that was chosen to capture larger spatial patterns typical in chess pieces. Batch normalization enables more stable training and acts as a regularizer to prevent overfitting. The activation function introduces non- linearity, enabling the model to learn complex patterns during piece recognition, and max pooling reduces computational complexity while preserving spatial information. Dropout regulariza- tion is applied to avoid overfitting during training. This is reshaped to (B, 64, 512) to treat each spatial location as one of the 64 chess squares with 512-dimensional feature representations. A final linear classifier maps these features to the 13 piece classes. The pipeline included a StandardScaler for normalization, PCA.",
+    "results": "Several quantitative evaluations were conducted to assess the model\u2019s accuracy in a comprehensive manner. This represents a significant milestone for the project, as previous methods did not yield such a strong bias toward correctly classified boards. These plots provided insight into the general learning trends of the model. The final training accuracy was 99. 37% for all squares and 98. 69% for non-empty squares. Finally, a confusion matrix was generated, as presented in. The primary misclassifications occurred between visually similar pieces, such as Pawn vs. Bishop (4%) and Queen vs. King (5%). For corner detection, predictions on the well-lit from-facing board closely match the ground truth, producing accurate, consistent crops (). Slight mis."
+  },
+  "section_keywords": {
+    "introduction": [
+      "chess",
+      "boards",
+      "chessred",
+      "board",
+      "images"
+    ],
+    "methodology": [
+      "normalization",
+      "recognition",
+      "chess",
+      "overfitting",
+      "classifier"
+    ],
+    "results": [
+      "accuracy",
+      "misclassifications",
+      "boards",
+      "board",
+      "classified"
+    ]
+  },
+  "overall_keywords": [
+    "chess",
+    "recognition",
+    "chessred",
+    "boards",
+    "board",
+    "classifier",
+    "cnns",
+    "neural",
+    "vision",
+    "classify"
+  ],
+  "entities": {
+    "models": [
+      "ResNet"
+    ],
+    "metrics": [
+      "accuracy",
+      "Accuracy"
+    ],
+    "frameworks": [
+      "sklearn"
+    ],
+    "datasets": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"Firstly, each image is pre- processed as described above, yielding a 400x400 pixel top-down warped image of the chessboa...\"]\n    S2[\"This is then followed by piece recognition where the input is the entire chessboard and the output is the classification...\"]\n    S3[\"Batch normalization enables more stable training and acts as a regularizer to prevent overfitting.\"]\n    S4[\"Dropout regulariza- tion is applied to prevent overfitting during training.\"]\n    S5[\"After passing through this process three times, adaptive average pooling reduces spatial dimensions to 8\u00d78, making the t...\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> S5\n    S5 --> End\n",
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "methodology",
+    "results"
+  ],
+  "num_words_original": 3232,
+  "num_words_summary": 372,
+  "title": "CVChess: A Deep Learning Framework for Converting Chessboard Images to Forsyth-Edwards Notation",
+  "authors": [
+    "Luthira Abeykoon",
+    "Ved Patel",
+    "Gawthaman Senthilvelan",
+    "Darshan Kasundra"
+  ],
+  "arxiv_id": "2511.11522v1",
+  "published": "2025-11-14 17:50:35+00:00",
+  "primary_category": "cs.CV",
+  "abstract_original": "Chess has experienced a large increase in viewership since the pandemic, driven largely by the accessibility of online learning platforms. However, no equivalent assistance exists for physical chess games, creating a divide between analog and digital chess experiences. This paper presents CVChess, a deep learning framework for converting chessboard images to Forsyth-Edwards Notation (FEN), which is later input into online chess engines to provide you with the best next move. Our approach employs a convolutional neural network (CNN) with residual layers to perform piece recognition from smartphone camera images. The system processes RGB images of a physical chess board through a multistep process: image preprocessing using the Hough Line Transform for edge detection, projective transform to achieve a top-down board alignment, segmentation into 64 individual squares, and piece classification into 13 classes (6 unique white pieces, 6 unique black pieces and an empty square) using the residual CNN. Residual connections help retain low-level visual features while enabling deeper feature extraction, improving accuracy and stability during training. We train and evaluate our model using the Chess Recognition Dataset (ChessReD), containing 10,800 annotated smartphone images captured under diverse lighting conditions and angles. The resulting classifications are encoded as an FEN string, which can be fed into a chess engine to generate the most optimal move"
+}

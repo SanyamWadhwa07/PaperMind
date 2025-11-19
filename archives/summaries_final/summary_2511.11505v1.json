@@ -1,0 +1,86 @@
+{
+  "overall_summary": "Then computation of each TP rank can run independently until the end of the sub-block where an all-reduce communication collective is applied to construct the final output. Expert Parallelism The key parallelism component of MoE layers is Expert parallelism (EP). With EP of rank k, subsets of \u223cE/k experts will be distributed across the k parallel ranks. Unlike TP, during training different input token activations will be mapped to the different experts based on the router selection G(A). Mechanically, specific tokens A[l,:] \u2208Rd will be grouped and mapped to a subset of experts Pl \u2282{1,. E} requiring permutation of A followed by an all the to-all collective that sends and receives data between the ranks according to the router-defined data partition map. After each expert receives its dedicated tokens and computes MLPj(A) of the relevant experts on its rank, a dual all-to-all. : FarSkip-Collective modifies the connectivity between sub-blocks to avoid blocking com- munication in collectives. \u2022 For large-scale training, we integrate our method into Megatron-LM and achieve 88. 4% communication overlap for the previously blocking all-to-all communication collectives responsible for MoE expert parallelism in the forward and backward passes. For the backward pass, we provide an optimized implementation of FarSkip in vLLM that overlaps the communication for distributed inference. For example, for the modified Llama-4 Scout model, we achieve 18. 5% speed-up in Time To First Token. In Section 5, we present our experimental results and review related works in Section 6 followed by conclusion. In this section we describe our experiments evaluating the model capabilities of FarSkip-Collective models, followed by evaluation of the FarSkip-enabled overlapped implementation. DS-V2-Lite proxy DS-V1-Lites proxy DS V2- Lite proxy FarSkip-Collective 0 10 20 30 40 50 Training Tokens (B) : MoE pretraining loss with regular and FarSkip\u2013Collective architectures. We observe FarSkip\u2014Collective closely matches the loss of the regular model. : Pretraining evaluation results of Regular andFarSkip-collective architectures on pre-training tasks. We denote the model as \u201cproxy\u201d in that we use the DeepSeek-V 2-lite model architecture but not the training recipe and data. We observed the loss curves of both models match closely and that the FarSkip/Collective model achieves a final training.",
+  "section_summaries": {
+    "introduction": "Then computation of each TP rank can run independently until the end of the sub-block where an all-reduce communication collective is applied to construct the final output. Expert Parallelism The key parallelism component of MoE layers is Expert parallelism (EP). With EP of rank k, subsets of \u223cE/k experts will be distributed across the k parallel ranks. Unlike TP, during training different input token activations will be mapped to the different experts based on the router selection G(A). Mechanically, specific tokens A[l,:] \u2208Rd will be grouped and mapped to a subset of experts Pl \u2282{1,. E} requiring permutation of A followed by an all the to-all collective that sends and receives data between the ranks according to the router-defined data partition map. After each expert receives its dedicated tokens and computes MLPj(A) of the relevant experts on its rank, a dual all-to-all.",
+    "methodology": ": FarSkip-Collective modifies the connectivity between sub-blocks to avoid blocking com- munication in collectives. \u2022 For large-scale training, we integrate our method into Megatron-LM and achieve 88. 4% communication overlap for the previously blocking all-to-all communication collectives responsible for MoE expert parallelism in the forward and backward passes. For the backward pass, we provide an optimized implementation of FarSkip in vLLM that overlaps the communication for distributed inference. For example, for the modified Llama-4 Scout model, we achieve 18. 5% speed-up in Time To First Token. In Section 5, we present our experimental results and review related works in Section 6 followed by conclusion.",
+    "experiments": "In this section we describe our experiments evaluating the model capabilities of FarSkip-Collective models, followed by evaluation of the FarSkip-enabled overlapped implementation.",
+    "results": "DS-V2-Lite proxy DS-V1-Lites proxy DS V2- Lite proxy FarSkip-Collective 0 10 20 30 40 50 Training Tokens (B) : MoE pretraining loss with regular and FarSkip\u2013Collective architectures. We observe FarSkip\u2014Collective closely matches the loss of the regular model. : Pretraining evaluation results of Regular andFarSkip-collective architectures on pre-training tasks. We denote the model as \u201cproxy\u201d in that we use the DeepSeek-V 2-lite model architecture but not the training recipe and data. We observed the loss curves of both models match closely and that the FarSkip/Collective model achieves a final training."
+  },
+  "section_keywords": {
+    "introduction": [
+      "parallelism",
+      "mlpj",
+      "tp",
+      "ranks",
+      "parallel"
+    ],
+    "methodology": [
+      "parallelism",
+      "farskip",
+      "distributed",
+      "blocking",
+      "forward"
+    ],
+    "experiments": [],
+    "results": [
+      "deepseek",
+      "pretraining",
+      "training",
+      "farskip",
+      "moe"
+    ]
+  },
+  "overall_keywords": [
+    "parallelism",
+    "parallel",
+    "collective",
+    "mlpj",
+    "ranks",
+    "distributed",
+    "collectives",
+    "layers",
+    "rank",
+    "deepseek"
+  ],
+  "entities": {
+    "models": [
+      "Llama",
+      "GPT",
+      "Transformer"
+    ],
+    "metrics": [
+      "accuracy",
+      "Accuracy"
+    ],
+    "frameworks": [
+      "PyTorch",
+      "JAX",
+      "pytorch"
+    ],
+    "datasets": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"Figure 1: FarSkip-Collective modifies the connectivity between sub-blocks to avoid blocking com- munication in collectiv...\"]\n    S2[\"\u2022 For model inference, we provide an optimized implementation of FarSkip in vLLM that overlaps the communication for dis...\"]\n    S3[\"For example, for the modified Llama-4 Scout model, we achieve 18.5% speed-up in Time To First Token.\"]\n    S4[\"The rest of the paper is organized as follows, in Section 2 we present background followed by our approach in Section 3 ...\"]\n    S5[\"FarSkip-Collective modifies the model architecture followed by self-distillation to recover the original model\u2019s capabil...\"]\n    S6[\"layer n+1 Figure 2: FarSkip-Collective MoE layer main operator execution.\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> S5\n    S5 --> S6\n    S6 --> End\n",
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "methodology",
+    "experiments",
+    "related_work",
+    "results"
+  ],
+  "num_words_original": 7755,
+  "num_words_summary": 358,
+  "title": "FarSkip-Collective: Unhobbling Blocking Communication in Mixture of Experts Models",
+  "authors": [
+    "Yonatan Dukler",
+    "Guihong Li",
+    "Deval Shah",
+    "Vikram Appia",
+    "Emad Barsoum"
+  ],
+  "arxiv_id": "2511.11505v1",
+  "published": "2025-11-14 17:25:14+00:00",
+  "primary_category": "cs.LG",
+  "abstract_original": "Blocking communication presents a major hurdle in running MoEs efficiently in distributed settings. To address this, we present FarSkip-Collective which modifies the architecture of modern models to enable overlapping of their computation with communication. Our approach modifies the architecture to skip connections in the model and it is unclear a priori whether the modified model architecture can remain as capable, especially for large state-of-the-art models and while modifying all of the model layers. We answer this question in the affirmative and fully convert a series of state-of-the-art models varying from 16B to 109B parameters to enable overlapping of their communication while achieving accuracy on par with their original open-source releases. For example, we convert Llama 4 Scout (109B) via self-distillation and achieve average accuracy within 1% of its instruction tuned release averaged across a wide range of downstream evaluations. In addition to demonstrating retained accuracy of the large modified models, we realize the benefits of FarSkip-Collective through optimized implementations that explicitly overlap communication with computation, accelerating both training and inference in existing frameworks."
+}

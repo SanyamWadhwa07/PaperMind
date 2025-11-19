@@ -1,0 +1,107 @@
+{
+  "overall_summary": "Current approaches are not universal because they have limited generalization to heterogeneous tumors, are computationally inefficient, are not interpretable, and lack transparency, thus limiting trustworthiness. Our model uses feature-level fusion and is trained on an augmented dataset of 6,020 MRI scans representing glioma, meningioma and pituitary tumors, and normal samples. These findings position MobileDenseAttn as an efficient, high- performance, interpretable model with a high probability of becoming a clinically practical tool in identifying brain tumors in the real world. A large number of existing methods lack the ability to generalize to new tumor types or imaging conditions, result- ing in suboptimal performance in practical applications. The need to create. The survival chances in case of early recognition are outrageous, yet there is a major problem of detecting the tumors in their initial stages without any symptoms. Conventional methods of manual detection are slow, inaccurate, and ineffective, especially in cases where large amounts of MRI scan information are to be analyzed, A. The core of our methodology is to enhance generalization, increase computational efficiency and offer interpretability. This increases its usefulness in many clinical settings. This is transparent and helps the clinicians know how the model detects zones of tumor in the MRI scans so as to instill value in its forecasts. tested a variety of models on 2870 MRI images, with VGG16 performing the best with an accuracy of 98%, and transfer learning variants also performing well. It uses depthwise separable convolution and inverted residual, which lowers computational demands without lowering accuracy. The architecture has a substantial positive impact on gradient flow, and DenseNet201 proves remarkably effective at capturing complex features, in particular where the dataset is limited in size. The capability of taking advantage of all features that are available facilitates its better performance on more complicated classification tasks. The proposed workflow for Brain Tumor Detection. This was followed by implementation of contrast limited adaptive histogram equalization to provide contrast and increase the details of the images. Lastly, an image normalization process was applied to provide consistent input values in the entire dataset, which reduces difficulty of convergence in the training process. DENSENet201 and MobileNetV2 are two of the most optimal models currently available in image classification, and by combining them, we target to pick the strong features of both architectures. DenseNET201 with its own adequacy of connections propagates the better utilization of features and the improved gradient. It demonstrated exceptional learn- ing and generalization abilities since it reached an accuracy of 0. 9975 during training, where precision, recall, and F1- score are also equal to 0. 075. MobileDenseAttn was also able to retain the same accuracyof 0. 9835 in the testing set, with a precision and recall of 0;9840 and 0. 9735 respectively, demonstrating its good balance between false positives and false negatives. Compared to VGG19, which has a lower accu- racy score of 0, it was able to maintain its accuracy and recall with a higher accuracy and a higher F1 score, demonstrating that it is a good model of the highest potential in regards to accuracy and. On the whole, the study under review advances the medical imaging and artificial intelligence field, and it may have a beneficial impact on the current diagnostic results and patient care. Further work will be to train the model even more or use it on different imaging modalities and clinical situations, to make more of the technology in medical diagnosing. of brain tumor detection from mr images using deep learning networks,\u201d Algorithms, vol. Available: M. Z. Khaliki and M. S. Bas\u00b8arslan, \u201cBrain tumor Detection from images and comparison with transfer learning methods and 3-layer cnn,\u2019s\u201d Scientific Reports, Vol.",
+  "section_summaries": {
+    "methodology": "Current approaches are not universal because they have limited generalization to heterogeneous tumors, are computationally inefficient, are not interpretable, and lack transparency, thus limiting trustworthiness. Our model uses feature-level fusion and is trained on an augmented dataset of 6,020 MRI scans representing glioma, meningioma and pituitary tumors, and normal samples. These findings position MobileDenseAttn as an efficient, high- performance, interpretable model with a high probability of becoming a clinically practical tool in identifying brain tumors in the real world. A large number of existing methods lack the ability to generalize to new tumor types or imaging conditions, result- ing in suboptimal performance in practical applications. The need to create.",
+    "introduction": "The survival chances in case of early recognition are outrageous, yet there is a major problem of detecting the tumors in their initial stages without any symptoms. Conventional methods of manual detection are slow, inaccurate, and ineffective, especially in cases where large amounts of MRI scan information are to be analyzed, A. The core of our methodology is to enhance generalization, increase computational efficiency and offer interpretability. This increases its usefulness in many clinical settings. This is transparent and helps the clinicians know how the model detects zones of tumor in the MRI scans so as to instill value in its forecasts. tested a variety of models on 2870 MRI images, with VGG16 performing the best with an accuracy of 98%, and transfer learning variants also performing well.",
+    "conclusion": "It uses depthwise separable convolution and inverted residual, which lowers computational demands without lowering accuracy. The architecture has a substantial positive impact on gradient flow, and DenseNet201 proves remarkably effective at capturing complex features, in particular where the dataset is limited in size. The capability of taking advantage of all features that are available facilitates its better performance on more complicated classification tasks. The proposed workflow for Brain Tumor Detection. This was followed by implementation of contrast limited adaptive histogram equalization to provide contrast and increase the details of the images. Lastly, an image normalization process was applied to provide consistent input values in the entire dataset, which reduces difficulty of convergence in the training process. DENSENet201 and MobileNetV2 are two of the most optimal models currently available in image classification, and by combining them, we target to pick the strong features of both architectures. DenseNET201 with its own adequacy of connections propagates the better utilization of features and the improved gradient.",
+    "results": "It demonstrated exceptional learn- ing and generalization abilities since it reached an accuracy of 0. 9975 during training, where precision, recall, and F1- score are also equal to 0. 075. MobileDenseAttn was also able to retain the same accuracyof 0. 9835 in the testing set, with a precision and recall of 0;9840 and 0. 9735 respectively, demonstrating its good balance between false positives and false negatives. Compared to VGG19, which has a lower accu- racy score of 0, it was able to maintain its accuracy and recall with a higher accuracy and a higher F1 score, demonstrating that it is a good model of the highest potential in regards to accuracy and.",
+    "discussion": "On the whole, the study under review advances the medical imaging and artificial intelligence field, and it may have a beneficial impact on the current diagnostic results and patient care. Further work will be to train the model even more or use it on different imaging modalities and clinical situations, to make more of the technology in medical diagnosing. of brain tumor detection from mr images using deep learning networks,\u201d Algorithms, vol. Available: M. Z. Khaliki and M. S. Bas\u00b8arslan, \u201cBrain tumor Detection from images and comparison with transfer learning methods and 3-layer cnn,\u2019s\u201d Scientific Reports, Vol."
+  },
+  "section_keywords": {
+    "methodology": [
+      "glioma",
+      "mri",
+      "imaging",
+      "tumor",
+      "tumors"
+    ],
+    "introduction": [
+      "mri",
+      "recognition",
+      "tumors",
+      "tumor",
+      "scan"
+    ],
+    "conclusion": [
+      "densenet201",
+      "mobilenetv2",
+      "depthwise",
+      "normalization",
+      "convolution"
+    ],
+    "results": [
+      "mobiledenseattn",
+      "accuracy",
+      "vgg19",
+      "accuracyof",
+      "precision"
+    ],
+    "discussion": [
+      "cnn",
+      "imaging",
+      "tumor",
+      "networks",
+      "deep"
+    ]
+  },
+  "overall_keywords": [
+    "glioma",
+    "mri",
+    "imaging",
+    "detecting",
+    "classification",
+    "recognition",
+    "tumors",
+    "tumor",
+    "generalization",
+    "detection"
+  ],
+  "entities": {
+    "models": [
+      "DenseNet201",
+      "VGG",
+      "VGG19",
+      "Inception",
+      "VGG16",
+      "ResNet-50"
+    ],
+    "metrics": [
+      "accuracy",
+      "precision",
+      "recall",
+      "F1-score",
+      "AUC",
+      "Accuracy",
+      "ROC",
+      "F1-Score",
+      "Precision",
+      "Recall",
+      "ACCURACY"
+    ],
+    "datasets": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"Our model uses feature-level fusion and is trained on an augmented dataset of 6,020 MRI scans representing glioma, menin...\"]\n    S2[\"Measured under strict 5-fold cross-validation protocols, MobileDenseAttn provides a training accuracy of 99.75%, a testi...\"]\n    S3[\"In addition, multi-stage pipelines and collection algorithms are also multi-sided and it can be hard to generalize in re...\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> End\n",
+  "sections_found": [
+    "methodology",
+    "introduction",
+    "conclusion",
+    "results",
+    "discussion"
+  ],
+  "num_words_original": 4531,
+  "num_words_summary": 608,
+  "title": "MobileDenseAttn:A Dual-Stream Architecture for Accurate and Interpretable Brain Tumor Detection",
+  "authors": [
+    "Shudipta Banik",
+    "Muna Das",
+    "Trapa Banik",
+    "Md. Ehsanul Haque"
+  ],
+  "arxiv_id": "2508.18294v1",
+  "published": "2025-08-22 13:24:38+00:00",
+  "primary_category": "cs.CV",
+  "abstract_original": "",
+  "pdf_path": "arxiv_papers\\2508.18294v1.pdf"
+}

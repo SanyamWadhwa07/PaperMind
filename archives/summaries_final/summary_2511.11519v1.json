@@ -1,0 +1,84 @@
+{
+  "overall_summary": "Experience-Guided Adaptation of Inference-Time Reasoning Strategies Adam Stein1*, Matthew Trager2, Benjamin Bowman2, Michael Kleinman2, Aditya Chattopadhyay2, Wei Xia2, Stefano Soatto2 1University of Pennsylvania, 2AWS AI arXiv:2511.11519v1 [cs.AI] 14 Nov 2025 FINAL_ANSWER]</final_answer> 10 <verifier_output>[[Answer is correct! ,\u2192 16 The memory consists of (task, best strategy) pairs where there is exactly one entry per task seen as well as entries about general useful findings to improve strategies in the future. If all strategies resulted in the wrong answer, then continue to step 2 and DO NOT SAVE THE STRATEGY to memory. DO NOT use the FINAL quantity 21 mentioned. Count the total number of animals/insects that \"I\" have. Count, count, count the number of items that are in the same category. ,\u2192 39 - Inventing or coming up with anything new, for instance if the reasoning trace. We evaluate EGUR across diverse reasoning tasks to answer four key research questions: (RQ1) Does it outperform baselines in accuracy and cost? (R Q3) Is comparative strategy evaluation important for continual improvements? (Q4) Does EGUR learn novel and useful strategies from experience? With EGUR, the strategy can include LLM calls without thinking mode or with non-zero temperature. We report prequential accuracy (accuracy before updating on each sample) and cumulative cost for strategy execution (excluding system feedback and update costs). Continual updates use one seed; held-out evaluation uses three seeds. 4. 2 RQ1: Does EGur outperform Baselines In accuracy and Cost? shows EGUR\ufffd. The prequential evaluation results for all models is included in. 3 Detect sarcasm in three Reddit replies. : Prequential Accuracy (%) and Cost ($) on each dataset is included as well as in. 4. 5. 1.",
+  "section_summaries": {
+    "introduction": "Experience-Guided Adaptation of Inference-Time Reasoning Strategies Adam Stein1*, Matthew Trager2, Benjamin Bowman2, Michael Kleinman2, Aditya Chattopadhyay2, Wei Xia2, Stefano Soatto2 1University of Pennsylvania, 2AWS AI arXiv:2511.11519v1 [cs.AI] 14 Nov 2025",
+    "methodology": "FINAL_ANSWER]</final_answer> 10 <verifier_output>[[Answer is correct! ,\u2192 16 The memory consists of (task, best strategy) pairs where there is exactly one entry per task seen as well as entries about general useful findings to improve strategies in the future. If all strategies resulted in the wrong answer, then continue to step 2 and DO NOT SAVE THE STRATEGY to memory. DO NOT use the FINAL quantity 21 mentioned. Count the total number of animals/insects that \"I\" have. Count, count, count the number of items that are in the same category. ,\u2192 39 - Inventing or coming up with anything new, for instance if the reasoning trace.",
+    "experiments": "We evaluate EGUR across diverse reasoning tasks to answer four key research questions: (RQ1) Does it outperform baselines in accuracy and cost? (R Q3) Is comparative strategy evaluation important for continual improvements? (Q4) Does EGUR learn novel and useful strategies from experience? With EGUR, the strategy can include LLM calls without thinking mode or with non-zero temperature. We report prequential accuracy (accuracy before updating on each sample) and cumulative cost for strategy execution (excluding system feedback and update costs). Continual updates use one seed; held-out evaluation uses three seeds. 4. 2 RQ1: Does EGur outperform Baselines In accuracy and Cost? shows EGUR\ufffd.",
+    "results": "The prequential evaluation results for all models is included in. 3 Detect sarcasm in three Reddit replies. : Prequential Accuracy (%) and Cost ($) on each dataset is included as well as in. 4. 5. 1."
+  },
+  "section_keywords": {
+    "introduction": [],
+    "methodology": [
+      "memory",
+      "strategies",
+      "strategy",
+      "task",
+      "reasoning"
+    ],
+    "experiments": [
+      "egur",
+      "strategies",
+      "strategy",
+      "reasoning",
+      "accuracy"
+    ],
+    "results": [
+      "prequential",
+      "accuracy",
+      "evaluation",
+      "results",
+      "models"
+    ]
+  },
+  "overall_keywords": [
+    "strategies",
+    "reasoning",
+    "strategy",
+    "adaptation",
+    "memory",
+    "tasks",
+    "inference",
+    "ai",
+    "thinking",
+    "task"
+  ],
+  "entities": {
+    "models": [
+      "Claude",
+      "GPT",
+      "GPT-5"
+    ],
+    "metrics": [
+      "accuracy",
+      "Accuracy"
+    ],
+    "datasets": [],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": "graph TD\n    Start([Start])\n    S1[\"Claude uses EGuR-5, GPT and Qwen use EGuR-3.\"]\n    S2[\"Bold indicates best performance within each model, underlined indicates second best within each model.\"]\n    S3[\"8 from collections import Counter 10 # Prompt that enforces step-by-step reasoning and a strict final answer format 12 '...\"]\n    S4[\"Think carefully about each pair, then output ' 14 'the three labels in order as a comma-separated list.\"]\n    S5[\"Bold indicates lowest cost within each model, underlined indicates second lowest within each model.\"]\n    End([End])\n    Start --> S1\n    S1 --> S2\n    S2 --> S3\n    S3 --> S4\n    S4 --> S5\n    S5 --> End\n",
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "experiments",
+    "related_work",
+    "results",
+    "methodology"
+  ],
+  "num_words_original": 11753,
+  "num_words_summary": 273,
+  "title": "Experience-Guided Adaptation of Inference-Time Reasoning Strategies",
+  "authors": [
+    "Adam Stein",
+    "Matthew Trager",
+    "Benjamin Bowman",
+    "Michael Kleinman",
+    "Aditya Chattopadhyay",
+    "Wei Xia",
+    "Stefano Soatto"
+  ],
+  "arxiv_id": "2511.11519v1",
+  "published": "2025-11-14 17:45:28+00:00",
+  "primary_category": "cs.AI",
+  "abstract_original": "Enabling agentic AI systems to adapt their problem-solving approaches based on post-training interactions remains a fundamental challenge. While systems that update and maintain a memory at inference time have been proposed, existing designs only steer the system by modifying textual input to a language model or agent, which means that they cannot change sampling parameters, remove tools, modify system prompts, or switch between agentic and workflow paradigms. On the other hand, systems that adapt more flexibly require offline optimization and remain static once deployed. We present Experience-Guided Reasoner (EGuR), which generates tailored strategies -- complete computational procedures involving LLM calls, tools, sampling parameters, and control logic -- dynamically at inference time based on accumulated experience. We achieve this using an LLM-based meta-strategy -- a strategy that outputs strategies -- enabling adaptation of all strategy components (prompts, sampling parameters, tool configurations, and control logic). EGuR operates through two components: a Guide generates multiple candidate strategies conditioned on the current problem and structured memory of past experiences, while a Consolidator integrates execution feedback to improve future strategy generation. This produces complete, ready-to-run strategies optimized for each problem, which can be cached, retrieved, and executed as needed without wasting resources. Across five challenging benchmarks (AIME 2025, 3-SAT, and three Big Bench Extra Hard tasks), EGuR achieves up to 14% accuracy improvements over the strongest baselines while reducing computational costs by up to 111x, with both metrics improving as the system gains experience."
+}

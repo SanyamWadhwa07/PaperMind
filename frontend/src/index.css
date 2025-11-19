@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#F9FBFA] dark:bg-[#111312] text-[#1B1B1B] dark:text-[#F5F5F5] transition-colors duration-300;
+  }
+  
+  html {
+    @apply scroll-smooth;
+  }
+  
+  /* Improve text readability in dark mode */
+  .dark {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-[#00988F] dark:bg-[#00A7A0] hover:bg-[#007770] dark:hover:bg-[#008F89] text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg;
+  }
+  
+  .btn-secondary {
+    @apply bg-[#EEF4F3] dark:bg-[#1E2020] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] text-[#1B1B1B] dark:text-[#F5F5F5] font-medium py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 border border-[#C4935F]/30 dark:border-[#D9A86C]/30 shadow-sm hover:shadow-md;
+  }
+  
+  .card {
+    @apply bg-[#EEF4F3] dark:bg-[#1E2020] rounded-lg shadow-md dark:shadow-2xl border border-[#C4935F]/20 dark:border-[#D9A86C]/20 p-6 transition-all duration-300 text-[#1B1B1B] dark:text-[#F5F5F5];
+  }
+  
+  .badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium backdrop-blur-sm;
+  }
+  
+  .badge-blue {
+    @apply bg-[#00988F]/10 dark:bg-[#00A7A0]/20 text-[#00988F] dark:text-[#00A7A0] border border-[#00988F]/30 dark:border-[#00A7A0]/40;
+  }
+  
+  .badge-green {
+    @apply bg-[#00988F]/10 dark:bg-[#00A7A0]/20 text-[#00988F] dark:text-[#00A7A0] border border-[#00988F]/30 dark:border-[#00A7A0]/40;
+  }
+  
+  .badge-yellow {
+    @apply bg-[#C4935F]/10 dark:bg-[#D9A86C]/20 text-[#C4935F] dark:text-[#D9A86C] border border-[#C4935F]/30 dark:border-[#D9A86C]/40;
+  }
+  
+  .badge-purple {
+    @apply bg-[#C4935F]/10 dark:bg-[#D9A86C]/20 text-[#C4935F] dark:text-[#D9A86C] border border-[#C4935F]/30 dark:border-[#D9A86C]/40;
+  }
+  
+  /* Glassmorphism animations */
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.5s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom scrollbar hide for mobile tabs */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

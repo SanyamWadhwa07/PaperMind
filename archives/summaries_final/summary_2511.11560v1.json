@@ -1,0 +1,75 @@
+{
+  "overall_summary": "A Unified Convergence Analysis for Semi-Decentralized Learning: Sampled-to-Sampled vs. Sampled-to-All Communication Angelo Rodio1, Giovanni Neglia2, Zheng Chen1, Erik G. Larsson1 1Department of Electrical Engineering, Link\u00a8oping University, Sweden Centre Inria d\u2019Universit\u00b4e C\u02c6ote d\u2019Azur, France {angelo.rodio, zheng.chen, 2\u20133(e,g)): S2S outperforms S2A in over 90% of settings, with the largest gain at K/n= 0. 2 (+2. 4 p. p. from H = 5 to H = 20), highlighting the importance of frequent D2S communication. For CIFAR-10, we adopt a standard convolutional neural network consisting of two 5\u00d75 convolutionsal layers. For S2-100, we consider a higher-level, higher-pitched, and higher-resolution, multi-decentralized neural network. The higher-precision, higher decentralised neural network (Figs. 2\u20133) has been widely used in. Mixing Parameter for Multi-Component Communication Graphs Lemma 14 (Mixing parameter for a block-diagonal communication matrix). For fixed Wc, one can take pc = 1 \u2212\u03bb2(W \u22a4 c Wc) (Boyd et al. Then, the matrix W satisfies: \u2225W \u2212\u03a0C\u22252 F \u2264(1 \u2212p) \u2225In \u2212\u03a1C\u22242 F , PC c=1 pc(nc\u22121) PC c\u2264C <pmin := min 1\u2264c\u2264 C pc =1 \u2212\u03bbC+1(W\u22a4W), where \u03bbC+2 F is the largest eigenvalue of.",
+  "section_summaries": {
+    "introduction": "A Unified Convergence Analysis for Semi-Decentralized Learning: Sampled-to-Sampled vs. Sampled-to-All Communication Angelo Rodio1, Giovanni Neglia2, Zheng Chen1, Erik G. Larsson1 1Department of Electrical Engineering, Link\u00a8oping University, Sweden Centre Inria d\u2019Universit\u00b4e C\u02c6ote d\u2019Azur, France {angelo.rodio, zheng.chen,",
+    "experiments": "2\u20133(e,g)): S2S outperforms S2A in over 90% of settings, with the largest gain at K/n= 0. 2 (+2. 4 p. p. from H = 5 to H = 20), highlighting the importance of frequent D2S communication. For CIFAR-10, we adopt a standard convolutional neural network consisting of two 5\u00d75 convolutionsal layers. For S2-100, we consider a higher-level, higher-pitched, and higher-resolution, multi-decentralized neural network. The higher-precision, higher decentralised neural network (Figs. 2\u20133) has been widely used in.",
+    "results": "Mixing Parameter for Multi-Component Communication Graphs Lemma 14 (Mixing parameter for a block-diagonal communication matrix). For fixed Wc, one can take pc = 1 \u2212\u03bb2(W \u22a4 c Wc) (Boyd et al. Then, the matrix W satisfies: \u2225W \u2212\u03a0C\u22252 F \u2264(1 \u2212p) \u2225In \u2212\u03a1C\u22242 F , PC c=1 pc(nc\u22121) PC c\u2264C <pmin := min 1\u2264c\u2264 C pc =1 \u2212\u03bbC+1(W\u22a4W), where \u03bbC+2 F is the largest eigenvalue of."
+  },
+  "section_keywords": {
+    "introduction": [],
+    "experiments": [
+      "s2s",
+      "s2a",
+      "s2",
+      "d2s",
+      "network"
+    ],
+    "results": [
+      "mixing",
+      "eigenvalue",
+      "communication",
+      "graphs",
+      "matrix"
+    ]
+  },
+  "overall_keywords": [
+    "network",
+    "learning",
+    "neural",
+    "s2a",
+    "s2",
+    "d2s",
+    "convolutionsal",
+    "convolutional",
+    "s2s",
+    "decentralized"
+  ],
+  "entities": {
+    "models": [
+      "T5"
+    ],
+    "datasets": [
+      "CIFAR-10",
+      "MNIST",
+      "CIFAR-100"
+    ],
+    "metrics": [
+      "accuracy",
+      "Accuracy",
+      "Recall"
+    ],
+    "frameworks": [],
+    "techniques": []
+  },
+  "methodology_flowchart": null,
+  "sections_found": [
+    "introduction",
+    "abstract",
+    "experiments",
+    "discussion",
+    "results"
+  ],
+  "num_words_original": 13381,
+  "num_words_summary": 177,
+  "title": "A Unified Convergence Analysis for Semi-Decentralized Learning: Sampled-to-Sampled vs. Sampled-to-All Communication",
+  "authors": [
+    "Angelo Rodio",
+    "Giovanni Neglia",
+    "Zheng Chen",
+    "Erik G. Larsson"
+  ],
+  "arxiv_id": "2511.11560v1",
+  "published": "2025-11-14 18:53:37+00:00",
+  "primary_category": "cs.LG",
+  "abstract_original": "In semi-decentralized federated learning, devices primarily rely on device-to-device communication but occasionally interact with a central server. Periodically, a sampled subset of devices uploads their local models to the server, which computes an aggregate model. The server can then either (i) share this aggregate model only with the sampled clients (sampled-to-sampled, S2S) or (ii) broadcast it to all clients (sampled-to-all, S2A). Despite their practical significance, a rigorous theoretical and empirical comparison of these two strategies remains absent. We address this gap by analyzing S2S and S2A within a unified convergence framework that accounts for key system parameters: sampling rate, server aggregation frequency, and network connectivity. Our results, both analytical and experimental, reveal distinct regimes where one strategy outperforms the other, depending primarily on the degree of data heterogeneity across devices. These insights lead to concrete design guidelines for practical semi-decentralized FL deployments."
+}
