@@ -1,49 +1,102 @@
-# 📚 Research Paper Summarizer - Complete Guide
+# 🧠 PaperMind - AI Research Paper Summarizer
 
-## 🎯 Quick Navigation
+<div align="center">
+  
+  ![PaperMind Logo](https://img.shields.io/badge/PaperMind-AI%20Research%20Assistant-00988F?style=for-the-badge&logo=brain&logoColor=white)
+  
+  **Transform complex research papers into clear, actionable insights with AI**
+  
+  [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react&logoColor=white)](https://reactjs.org/)
+  [![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
+  [![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?style=flat&logo=supabase&logoColor=white)](https://supabase.com/)
+  [![License](https://img.shields.io/badge/License-Educational-blue.svg)](LICENSE)
+  
+</div>
 
-### Getting Started
-- **[QUICKSTART.md](QUICKSTART.md)** - Start here! Fast setup in 5 minutes
-- **[SETUP_COMPLETE.md](SETUP_COMPLETE.md)** - Overview of what's been built
-- **[setup.ps1](setup.ps1)** - Automated setup script
+---
 
-### Documentation
-- **[FULLSTACK_README.md](FULLSTACK_README.md)** - Complete documentation
-- **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)** - API reference
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture
-- **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)** - Original ML details
+## ✨ What is PaperMind?
 
-### Code
-- **[backend/app.py](backend/app.py)** - Flask API server
-- **[frontend/src/](frontend/src/)** - React application
-- **[main.py](main.py)** - Core ML engine
-- **[streamlit.py](streamlit.py)** - Original Streamlit app
+**PaperMind** is an advanced AI-powered research paper summarization platform that helps researchers, students, and professionals quickly understand complex academic papers. Using cutting-edge NLP with the LED (Longformer Encoder-Decoder) transformer model, PaperMind performs hierarchical summarization that captures both high-level insights and detailed section-by-section breakdowns.
 
-## 🚀 Two Ways to Run
+### 🎯 Key Features
 
-### Option 1: Streamlit (Simple)
+- 🧠 **AI-Powered Summarization** - LED transformer with 16K context for deep understanding
+- ⚡ **Lightning Fast** - Process papers in seconds with GPU acceleration
+- 🔒 **Secure & Private** - Full authentication system with email verification
+- 📊 **Smart Analytics** - Entity extraction, keyword analysis, flowcharts, and visualizations
+- 📈 **Activity Dashboard** - Track your research progress with interactive charts
+- 🎨 **Beautiful UI** - Modern, responsive design with dark mode support
+- 💾 **Database Storage** - All summaries saved to Supabase PostgreSQL
+- 🔔 **Toast Notifications** - Real-time feedback for all actions
+- 👤 **User Profiles** - Avatar upload, password reset, activity tracking
+
+---
+
+## 🚀 Quick Start
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.8+
+- Node.js 16+
+- GPU with CUDA (optional, for faster processing)
+- Supabase account (free tier available)
+
+### Installation
+
+1. **Clone or download the repository**
+
+2. **Backend Setup**
 ```powershell
-streamlit run streamlit.py
+# Create virtual environment
+python -m venv research
+.\research\Scripts\Activate.ps1
+
+# Install dependencies
+cd backend
+pip install -r requirements.txt
+
+# Configure environment variables
+# Create backend/.env with:
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
+JWT_SECRET_KEY=your_secret_key
 ```
-✅ Quick and easy  
-✅ Good for demos  
-✅ No setup needed  
 
-### Option 2: React + Flask (Professional)
+3. **Frontend Setup**
 ```powershell
-# Terminal 1 - Backend
+cd frontend
+npm install
+```
+
+4. **Database Setup**
+- Create a Supabase project
+- Run the SQL schema from `backend/database/schema.sql`
+- Update `.env` with your credentials
+
+### Running the Application
+
+**Terminal 1 - Backend (Flask API):**
+```powershell
 cd backend
 python app.py
+# Runs on http://localhost:5000
+```
 
-# Terminal 2 - Frontend
+**Terminal 2 - Frontend (React + Vite):**
+```powershell
 cd frontend
 npm run dev
+# Runs on http://localhost:5173
 ```
-✅ Modern UI  
-✅ RESTful API  
-✅ Production-ready  
 
-## 📁 Project Structure
+Visit `http://localhost:5173` and start summarizing papers!
+
+---
+
+## 📖 Documentation
 
 ```
 research-paper-summarizer/
