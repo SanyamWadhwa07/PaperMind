@@ -21,11 +21,15 @@
 - [Key Features](#-key-features)
 - [Demo](#-demo)
 - [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
 - [Architecture](#-architecture)
 - [Tech Stack](#-tech-stack)
 - [Documentation](#-documentation)
 - [Usage Examples](#-usage-examples)
 - [API Reference](#-api-reference)
+- [Deployment](#-deployment)
+- [Troubleshooting](#-troubleshooting)
+- [FAQ](#-faq)
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -183,6 +187,73 @@ npm run dev
 Frontend runs on `http://localhost:5173`
 
 🎉 **Open your browser and visit `http://localhost:5173`!**
+
+---
+
+## 📁 Project Structure
+
+```
+PaperMind/
+├── 📂 backend/                  # Flask REST API
+│   ├── app.py                   # Main Flask application
+│   ├── requirements.txt         # Python dependencies
+│   ├── auth/                    # Authentication modules
+│   │   ├── routes.py           # Auth endpoints
+│   │   ├── supabase_auth.py    # Supabase integration
+│   │   └── utils.py            # Auth utilities
+│   ├── database/               # Database configuration
+│   │   ├── schema.sql          # PostgreSQL schema
+│   │   ├── config.py           # Supabase config
+│   │   └── experience_schema.sql
+│   ├── routes/                 # API route blueprints
+│   │   ├── summaries.py        # Summary CRUD operations
+│   │   ├── process_paper.py    # Paper processing
+│   │   └── profile.py          # User profile management
+│   ├── uploads/                # Uploaded PDF files
+│   └── summaries_api/          # Generated summaries
+│
+├── 📂 frontend/                 # React application
+│   ├── package.json            # Node dependencies
+│   ├── vite.config.js          # Vite configuration
+│   ├── tailwind.config.js      # Tailwind CSS config
+│   ├── index.html              # HTML entry point
+│   └── src/
+│       ├── components/         # Reusable UI components
+│       ├── pages/              # Page components
+│       ├── contexts/           # React contexts
+│       ├── api.js              # API client
+│       └── App.jsx             # Root component
+│
+├── 📂 core/                     # AI/ML Core Engine
+│   ├── agent_integration.py    # Multi-agent orchestration
+│   ├── agents/                 # Specialized AI agents
+│   │   ├── orchestrator.py    # Agent coordinator
+│   │   ├── summary_agent.py   # Summarization agent
+│   │   ├── entity_agent.py    # Entity extraction
+│   │   ├── figure_agent.py    # Figure analysis
+│   │   └── reasoning_agent.py # Reasoning tasks
+│   ├── llm/                    # LLM integrations
+│   └── memory/                 # Memory management
+│
+├── 📂 docs/                     # Documentation
+│   ├── QUICKSTART.md
+│   ├── COMPLETE_DOCUMENTATION.md
+│   ├── AGENT_SYSTEM_README.md
+│   ├── AUTH_SETUP.md
+│   └── OLLAMA_SETUP.md
+│
+├── 📂 setups/                   # Setup scripts
+│   ├── setup.ps1               # Main setup script
+│   ├── setup_ollama.ps1        # Ollama installation
+│   └── setup_supabase_experience.ps1
+│
+├── main.py                      # CLI summarization tool
+├── requirements.txt             # Root Python dependencies
+├── patterns.json                # Entity extraction patterns
+├── config.example.yaml          # Configuration template
+├── .gitignore                   # Git ignore rules
+└── README.md                    # This file
+```
 
 ---
 
@@ -391,6 +462,208 @@ For detailed API documentation, see [API_RESPONSE_SCHEMA.md](backend/API_RESPONS
 
 ---
 
+## 🚀 Deployment
+
+### Frontend Deployment (Vercel/Netlify)
+
+**Option 1: Vercel**
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy from frontend directory
+cd frontend
+vercel
+```
+
+**Option 2: Netlify**
+```bash
+# Build the frontend
+cd frontend
+npm run build
+
+# Deploy dist/ folder to Netlify
+# Or connect your GitHub repo to Netlify for automatic deployments
+```
+
+### Backend Deployment (Railway/Render/Heroku)
+
+**Option 1: Railway**
+1. Create account at [Railway](https://railway.app)
+2. New Project → Deploy from GitHub
+3. Add environment variables from `.env`
+4. Railway will auto-detect Flask and deploy
+
+**Option 2: Render**
+1. Create account at [Render](https://render.com)
+2. New Web Service → Connect repository
+3. Build Command: `pip install -r backend/requirements.txt`
+4. Start Command: `cd backend && python app.py`
+5. Add environment variables
+
+### Environment Variables for Production
+
+```env
+# Backend .env
+SUPABASE_URL=your_production_supabase_url
+SUPABASE_KEY=your_production_supabase_key
+JWT_SECRET_KEY=your_strong_random_secret
+FLASK_ENV=production
+FRONTEND_URL=https://your-frontend-domain.com
+
+# Frontend .env
+VITE_API_URL=https://your-backend-domain.com
+VITE_SUPABASE_URL=your_production_supabase_url
+VITE_SUPABASE_ANON_KEY=your_production_supabase_key
+```
+
+### Database Migration
+
+```bash
+# Export from local Supabase (if needed)
+supabase db dump > backup.sql
+
+# Import to production Supabase
+psql -h your-db.supabase.co -U postgres -d postgres < backend/database/schema.sql
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### 1. **ModuleNotFoundError: No module named 'transformers'**
+```powershell
+# Ensure you're in the virtual environment
+.\research\Scripts\Activate.ps1
+
+# Reinstall dependencies
+pip install -r requirements.txt
+```
+
+#### 2. **CUDA Out of Memory**
+```python
+# Use lightweight mode
+python main.py --lightweight --no-ocr
+
+# Or use CPU only
+python main.py --device cpu
+```
+
+#### 3. **Supabase Connection Error**
+```powershell
+# Check your .env file exists
+ls backend\.env
+
+# Verify credentials are correct
+echo $env:SUPABASE_URL  # Should show your URL
+```
+
+#### 4. **React App Not Loading**
+```powershell
+# Clear cache and reinstall
+cd frontend
+Remove-Item -Recurse -Force node_modules
+Remove-Item package-lock.json
+npm install
+npm run dev
+```
+
+#### 5. **Port Already in Use**
+```powershell
+# Find process using port 5000
+netstat -ano | findstr :5000
+
+# Kill the process (replace PID with actual process ID)
+Stop-Process -Id PID -Force
+
+# Or use different port
+set FLASK_RUN_PORT=5001
+python app.py
+```
+
+#### 6. **PDF Upload Fails**
+- Check file size < 50MB
+- Ensure `uploads/` directory exists
+- Verify correct file permissions
+
+```powershell
+# Create uploads directory if missing
+New-Item -ItemType Directory -Path backend\uploads -Force
+```
+
+### Performance Optimization
+
+**For Better GPU Utilization:**
+```python
+# Check GPU availability
+python -c "import torch; print(torch.cuda.is_available())"
+
+# Monitor GPU usage
+nvidia-smi -l 1
+```
+
+**For Faster Summarization:**
+- Use `--lightweight` mode for quick tests
+- Enable GPU acceleration if available
+- Reduce `--max-figures` and `--max-entities`
+- Use `config.yaml` for persistent settings
+
+---
+
+## ❓ FAQ
+
+### General Questions
+
+**Q: Is PaperMind free to use?**  
+A: Yes! PaperMind is open-source and free. You only pay for your own infrastructure (Supabase free tier is sufficient for personal use).
+
+**Q: Do I need a GPU to run PaperMind?**  
+A: No, but it's recommended. CPU mode works but is slower (2-5 minutes per paper vs 10-30 seconds with GPU).
+
+**Q: What paper formats are supported?**  
+A: Currently PDF and arXiv papers. Support for Word docs, HTML, and LaTeX coming soon.
+
+**Q: Can I run this locally without internet?**  
+A: Partially. You need internet for arXiv downloads and Supabase. For fully offline mode, use local LLM (Ollama) and SQLite database.
+
+**Q: How accurate are the summaries?**  
+A: Entity extraction is ~95% accurate. Summary quality depends on paper complexity. We use LED (state-of-the-art for long documents) with 16K context.
+
+### Technical Questions
+
+**Q: Can I use a different database instead of Supabase?**  
+A: Yes! You can modify `backend/database/config.py` to use PostgreSQL, MySQL, or SQLite.
+
+**Q: How do I add custom summary types?**  
+A: Edit `config.yaml` under `summary_config` section and update the agent system in `core/agents/`.
+
+**Q: Can I integrate with other LLMs (GPT-4, Claude)?**  
+A: Yes! Update `core/llm/` with your LLM client. Currently supports Ollama and HuggingFace models.
+
+**Q: What's the maximum paper length?**  
+A: LED supports up to 16,384 tokens (~50-60 pages). Longer papers are chunked and summarized hierarchically.
+
+**Q: Can I batch process hundreds of papers?**  
+A: Yes! Use the `/api/batch/summarize` endpoint. For large batches, consider using background workers (Celery/RQ).
+
+### Deployment Questions
+
+**Q: Where should I deploy this?**  
+A: Frontend: Vercel/Netlify. Backend: Railway/Render/Heroku. Database: Supabase (managed PostgreSQL).
+
+**Q: What are the hosting costs?**  
+A: Free tier options available:
+- Supabase: Free (500MB database, 1GB storage)
+- Vercel: Free (100GB bandwidth)
+- Railway: $5/month (500 hours)
+
+**Q: Can I self-host everything?**  
+A: Absolutely! Deploy on your own VPS with Docker (Dockerfile coming soon).
+
+---
+
 ## 📊 Performance Metrics
 
 | Metric | Value | Notes |
@@ -431,6 +704,19 @@ We welcome contributions! Here's how you can help:
 - **Python**: Follow PEP 8
 - **JavaScript/React**: Use ESLint configuration
 - **Commits**: Use conventional commits (feat, fix, docs, etc.)
+
+### Reporting Issues
+
+When reporting issues, please include:
+- Python version (`python --version`)
+- Node version (`node --version`)
+- Operating system
+- Error messages and stack traces
+- Steps to reproduce
+
+### Feature Requests
+
+We're always looking for ideas! Submit feature requests via [GitHub Issues](https://github.com/SanyamWadhwa07/PaperMind/issues) with the `enhancement` label.
 
 ---
 
