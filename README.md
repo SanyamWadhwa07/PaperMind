@@ -96,18 +96,6 @@
 - Export summaries to JSON/Markdown
 - Full-text search capabilities
 
----
-
-## 🎬 Demo
-
-### Landing Page
-![Landing Page](https://via.placeholder.com/800x400/00988F/FFFFFF?text=PaperMind+Landing+Page)
-
-### Dashboard
-![Dashboard](https://via.placeholder.com/800x400/61DAFB/000000?text=Interactive+Dashboard)
-
-### Paper Summary
-![Summary View](https://via.placeholder.com/800x400/3ECF8E/000000?text=Detailed+Summary+View)
 
 ---
 
