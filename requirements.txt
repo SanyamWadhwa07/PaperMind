@@ -13,10 +13,19 @@ sentencepiece>=0.1.99
 
 # PDF Processing
 PyMuPDF>=1.23.0
+pdfplumber>=0.10.0
 
 # ArXiv & Web
 arxiv>=2.0.0
 requests>=2.31.0
+
+# OCR & Image Processing
+pytesseract>=0.3.10
+Pillow>=10.0.0
+
+# Model Optimization
+onnxruntime>=1.16.0
+optimum>=1.14.0
 
 # Optional - Enhanced Features
 keybert>=0.8.0
@@ -24,3 +33,11 @@ spacy>=3.6.0
 
 # Evaluation (optional)
 bert-score>=0.3.13
+
+# Configuration
+pyyaml>=6.0.0
+
+# Agent System & LLM (NEW)
+ollama>=0.1.0  # Optional - for local LLM inference
+aiofiles>=23.0.0  # Async file operations
+

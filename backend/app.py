@@ -26,17 +26,11 @@ from routes.summaries import summaries_bp
 from routes.process_paper import process_bp
 from routes.profile import profile_bp
 
-# Import from main.py
+# Import from main.py and core
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from main import (
-    ArxivDatasetFetcher,
-    EnhancedResearchPaperSummarizer,
-    AdvancedSectionExtractor,
-    EnhancedEntityExtractor,
-    FlowchartGenerator,
-    HierarchicalSummarizer
-)
+from backend.main import ArxivDatasetFetcher, load_config, load_patterns
+from core.agent_integration import run_agent_mode
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
@@ -60,17 +54,15 @@ ARXIV_FOLDER.mkdir(exist_ok=True)
 app.config['UPLOAD_FOLDER'] = str(UPLOAD_FOLDER)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 
-# Global state for summarizer (singleton pattern)
-summarizer = None
+# Global state for processing
 processing_status = {}
 
 
-def get_summarizer():
-    """Get or create summarizer instance."""
-    global summarizer
-    if summarizer is None:
-        summarizer = EnhancedResearchPaperSummarizer()
-    return summarizer
+def get_agent_config():
+    """Load configuration for agent-mode processing."""
+    config = load_config(None)
+    patterns = load_patterns('patterns.json')
+    return config, patterns
 
 
 def allowed_file(filename):
@@ -193,11 +185,11 @@ def summarize_paper():
         if not pdf_path or not os.path.exists(pdf_path):
             return jsonify({'error': 'Invalid PDF path'}), 400
         
-        # Get or create summarizer
-        summ = get_summarizer()
+        # Load agent config
+        config, patterns = get_agent_config()
         
-        # Process paper
-        summary_data = summ.summarize_paper(pdf_path)
+        # Process paper using agent mode
+        summary_data = run_agent_mode(pdf_path, config, patterns)
         
         # Add metadata
         summary_data.update({
@@ -206,7 +198,6 @@ def summarize_paper():
             'arxiv_id': data.get('arxiv_id', 'uploaded'),
             'published': data.get('published', datetime.now().strftime('%Y-%m-%d')),
             'primary_category': data.get('primary_category', 'Unknown'),
-            'abstract_original': data.get('abstract', ''),
             'pdf_path': pdf_path
         })
         
@@ -257,14 +248,14 @@ def summarize_paper_async():
         # Start background thread
         def process_in_background():
             try:
-                summ = get_summarizer()
+                config, patterns = get_agent_config()
                 
                 processing_status[task_id].update({
                     'progress': 20,
-                    'message': 'Extracting sections...'
+                    'message': 'Running parallel agents...'
                 })
                 
-                summary_data = summ.summarize_paper(pdf_path)
+                summary_data = run_agent_mode(pdf_path, config, patterns)
                 
                 processing_status[task_id].update({
                     'progress': 80,
@@ -278,7 +269,6 @@ def summarize_paper_async():
                     'arxiv_id': data.get('arxiv_id', 'uploaded'),
                     'published': data.get('published', datetime.now().strftime('%Y-%m-%d')),
                     'primary_category': data.get('primary_category', 'Unknown'),
-                    'abstract_original': data.get('abstract', ''),
                     'pdf_path': pdf_path
                 })
                 
@@ -463,7 +453,7 @@ def batch_summarize():
         if not papers:
             return jsonify({'error': 'No papers provided'}), 400
         
-        summ = get_summarizer()
+        config, patterns = get_agent_config()
         results = []
         
         for paper in papers:
@@ -473,7 +463,7 @@ def batch_summarize():
                     results.append({'error': 'Invalid PDF path', 'paper': paper})
                     continue
                 
-                summary_data = summ.summarize_paper(pdf_path)
+                summary_data = run_agent_mode(pdf_path, config, patterns)
                 summary_data.update({
                     'title': paper.get('title', Path(pdf_path).stem),
                     'authors': paper.get('authors', []),

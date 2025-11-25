@@ -1,0 +1,241 @@
+{
+  "results_extraction": {
+    "metric_patterns": [
+      {
+        "pattern": "(\\w+(?:\\s+\\w+)?)\\s*(?:of|:)?\\s*(\\d+\\.?\\d*)\\s*%",
+        "type": "percentage",
+        "description": "Percentage metrics (e.g., 'accuracy of 95.3%')"
+      },
+      {
+        "pattern": "achieves?\\s+(?:an?\\s+)?(\\w+)\\s+of\\s+(\\d+\\.?\\d*)(?:\\s*%)?(?:\\s+on\\s+([\\w\\-\\s]+))?",
+        "type": "achievement",
+        "description": "Achievement pattern (e.g., 'achieves accuracy of 95.3% on MNIST')"
+      },
+      {
+        "pattern": "(\\w+(?:\\s+\\w+)?)\\s*:\\s*(\\d+\\.?\\d*)(?:\\s*%)?",
+        "type": "colon",
+        "description": "Colon-separated metrics (e.g., 'F1: 0.92')"
+      },
+      {
+        "pattern": "(?:outperforms?|beats?|exceeds?)\\s+([\\w\\-\\s]+)\\s+by\\s+(\\d+\\.?\\d*)(?:\\s*%)?",
+        "type": "comparison",
+        "description": "Comparison pattern (e.g., 'outperforms BERT by 3%')"
+      },
+      {
+        "pattern": "improves?\\s+(?:over\\s+)?([\\w\\-\\s]+)\\s+by\\s+(\\d+\\.?\\d*)(?:\\s*%)?",
+        "type": "improvement",
+        "description": "Improvement pattern (e.g., 'improves over baseline by 5%')"
+      }
+    ],
+    "result_keywords": [
+      "accuracy", "precision", "recall", "f1", "score", "bleu", "rouge",
+      "perplexity", "map", "iou", "auc", "loss", "error", "rate",
+      "performance", "result", "metric"
+    ]
+  },
+  "template_generation": {
+    "contribution_patterns": [
+      "(?:we|this paper|this work)\\s+(?:propose|present|introduce|develop)s?\\s+(.+?)(?:\\.|,|\\n)",
+      "(?:our|the)\\s+(?:main\\s+)?contribution(?:s)?\\s+(?:is|are|include)s?\\s+(.+?)(?:\\.|;|\\n)",
+      "(?:novel|new)\\s+(.+?)\\s+(?:for|to|that)",
+      "(?:we|this paper)\\s+(?:demonstrate|show)s?\\s+that\\s+(.+?)(?:\\.|,|\\n)"
+    ],
+    "task_patterns": [
+      "for\\s+(?:the\\s+)?(?:task\\s+of\\s+)?(\\w+(?:\\s+\\w+){0,4})",
+      "(?:problem|task)\\s+of\\s+(\\w+(?:\\s+\\w+){0,3})",
+      "to\\s+(?:solve|address|tackle)\\s+(\\w+(?:\\s+\\w+){0,3})"
+    ]
+  },
+  "entity_extraction": {
+    "models": [
+      "\\b(GPT-?[0-9.]+[a-z]*|GPT|ChatGPT)\\b",
+      "\\b(BERT|RoBERTa|ALBERT|DistilBERT|DeBERTa|SciBERT)\\b",
+      "\\b(T5|FLAN-T5|mT5)\\b",
+      "\\b(LLaMA|Llama-?[0-9]*)\\b",
+      "\\b(Claude|Gemini|Mistral|Mixtral)\\b",
+      "\\b(ResNet|VGG|Inception|DenseNet|EfficientNet)[-\\s]?[0-9]*",
+      "\\b(YOLO|YOLOv[0-9]+)\\b",
+      "\\b(ViT|Vision Transformer|Swin Transformer)\\b",
+      "\\b(CLIP|DALL-?E|Stable Diffusion)\\b",
+      "\\b(Transformer|LSTM|GRU|BiLSTM)\\b"
+    ],
+    "datasets": [
+      "\\b(ImageNet[-\\s]?[0-9]*k?)\\b",
+      "\\b(COCO|MS-?COCO)\\b",
+      "\\b(CIFAR-?(?:10|100))\\b",
+      "\\b(MNIST|Fashion-?MNIST)\\b",
+      "\\b(SQuAD[0-9.]*)\\b",
+      "\\b(GLUE|SuperGLUE)\\b",
+      "\\b(WikiText[-\\s]?[0-9]*)\\b",
+      "\\b(Common Crawl|C4)\\b",
+      "\\b(ADE20K|Cityscapes|Pascal VOC)\\b"
+    ],
+    "metrics": [
+      "\\b(accuracy|precision|recall|F1[-\\s]?score)\\b",
+      "\\b(BLEU[-\\s]?[0-9]*|ROUGE[-\\s]?[LN0-9]*)\\b",
+      "\\b(mAP|IoU|mIoU)\\b",
+      "\\b(perplexity|cross-entropy)\\b",
+      "\\b(AUC|ROC|AUC-ROC)\\b",
+      "\\b(METEOR|CIDEr|SPICE)\\b"
+    ],
+    "frameworks": [
+      "\\b(PyTorch|TensorFlow|JAX|Keras)\\b",
+      "\\b(Hugging ?Face|HuggingFace)\\b",
+      "\\b(scikit-learn|sklearn)\\b"
+    ]
+  },
+  "flowchart_generation": {
+    "process_indicators": [
+      "first", "second", "third", "then", "next", "finally", "after",
+      "step", "stage", "phase", "process", "procedure"
+    ],
+    "process_verbs": [
+      "train", "test", "evaluate", "collect", "preprocess", "extract",
+      "compute", "calculate", "apply", "use", "implement", "generate",
+      "propose", "develop", "design", "construct", "build", "optimize"
+    ]
+  },
+  "section_keywords": {
+    "abstract": ["abstract"],
+    "introduction": ["introduction", "background"],
+    "related_work": ["related work", "literature review", "prior work", "previous work"],
+    "methodology": [
+      "method", "methodology", "approach", "model", "architecture",
+      "proposed method", "proposed approach", "our approach", "our method"
+    ],
+    "experiments": [
+      "experiment", "experimental setup", "experimental results",
+      "experimental design", "evaluation setup"
+    ],
+    "results": ["results", "findings", "performance", "experimental results"],
+    "discussion": ["discussion", "analysis", "ablation study", "ablation studies"],
+    "conclusion": [
+      "conclusion", "conclusions", "concluding remarks", "future work",
+      "summary", "limitations"
+    ],
+    "references": ["references", "bibliography", "works cited"]
+  },
+  "agent_system": {
+    "strategy_profiles": {
+      "cv": {
+        "domain": "Computer Vision",
+        "priority_sections": ["experiments", "results", "methodology"],
+        "key_entities": ["datasets", "models", "metrics"],
+        "expected_datasets": ["ImageNet", "COCO", "CIFAR", "MNIST", "Pascal VOC"],
+        "expected_metrics": ["accuracy", "mAP", "IoU", "precision", "recall"],
+        "result_baselines": {
+          "ImageNet": {"accuracy": {"min": 60.0, "max": 90.0}},
+          "COCO": {"mAP": {"min": 30.0, "max": 60.0}},
+          "CIFAR-10": {"accuracy": {"min": 85.0, "max": 99.0}}
+        }
+      },
+      "nlp": {
+        "domain": "Natural Language Processing",
+        "priority_sections": ["experiments", "results", "methodology"],
+        "key_entities": ["datasets", "models", "tasks"],
+        "expected_datasets": ["GLUE", "SQuAD", "IMDB", "SST-2", "CoNLL", "WMT"],
+        "expected_metrics": ["BLEU", "ROUGE", "F1", "accuracy", "perplexity"],
+        "result_baselines": {
+          "GLUE": {"accuracy": {"min": 70.0, "max": 95.0}},
+          "SQuAD": {"F1": {"min": 70.0, "max": 95.0}},
+          "SST-2": {"accuracy": {"min": 80.0, "max": 97.0}}
+        }
+      },
+      "ml": {
+        "domain": "Machine Learning (General)",
+        "priority_sections": ["methodology", "experiments", "results"],
+        "key_entities": ["models", "metrics", "datasets"],
+        "expected_metrics": ["accuracy", "precision", "recall", "F1", "AUC", "loss"],
+        "result_baselines": {}
+      }
+    },
+    "llm_prompts": {
+      "summary_generation": {
+        "system_prompt": "You are an expert research paper summarizer. Generate clear, concise summaries focusing on contributions, methodology, and key findings.",
+        "user_template": "Summarize this research paper:\n\nTitle: {title}\nAbstract: {abstract}\nKey Entities:\n- Models: {models}\n- Datasets: {datasets}\n\nMain Results:\n{results}\n\nKey Claims:\n{claims}\n\nGenerate a summary (300-400 words) covering: problem, approach, findings, significance.",
+        "few_shot_examples": [
+          {
+            "input": "Title: BERT: Pre-training of Deep Bidirectional Transformers\nModels: BERT\nDatasets: GLUE, SQuAD\nResults: 93.5% on GLUE",
+            "output": "This paper introduces BERT, a bidirectional transformer model pre-trained on masked language modeling. BERT achieves state-of-the-art results on GLUE (93.5%) and SQuAD benchmarks, demonstrating the effectiveness of bidirectional pre-training for language understanding tasks."
+          }
+        ]
+      },
+      "entity_validation": {
+        "system_prompt": "You are validating extracted entities from research papers. Determine if entities are legitimate or likely extraction errors.",
+        "user_template": "Is '{entity}' a valid {entity_type}?\n\nContext: {context}\n\nRespond with: YES or NO, and confidence (0-1)."
+      },
+      "claim_evidence_matching": {
+        "system_prompt": "You are analyzing research paper claims. Match claims to supporting evidence and flag unsupported claims.",
+        "user_template": "Claim: {claim}\n\nAvailable Evidence:\n{results}\n\nIs this claim supported? Explain briefly."
+      }
+    },
+    "experience_rules": {
+      "update_thresholds": {
+        "entity_confidence_min": 0.7,
+        "result_confidence_min": 0.6,
+        "pattern_success_min": 0.5
+      },
+      "validation_rules": {
+        "require_consensus": true,
+        "consensus_threshold": 0.67,
+        "min_validators": 2,
+        "outlier_std_threshold": 3.0
+      },
+      "learning_modes": {
+        "aggressive": {
+          "description": "Learn from all papers, even uncertain extractions",
+          "entity_confidence_min": 0.5,
+          "result_confidence_min": 0.4
+        },
+        "conservative": {
+          "description": "Only learn from high-confidence extractions",
+          "entity_confidence_min": 0.8,
+          "result_confidence_min": 0.7
+        },
+        "balanced": {
+          "description": "Default: moderate confidence thresholds",
+          "entity_confidence_min": 0.7,
+          "result_confidence_min": 0.6
+        }
+      }
+    },
+    "agent_priorities": {
+      "StructureAgent": {
+        "priority": 1,
+        "dependencies": [],
+        "timeout_ms": 5000,
+        "retry_on_failure": true
+      },
+      "EntityAgent": {
+        "priority": 2,
+        "dependencies": ["StructureAgent"],
+        "timeout_ms": 10000,
+        "retry_on_failure": true
+      },
+      "ResultsAgent": {
+        "priority": 2,
+        "dependencies": ["StructureAgent"],
+        "timeout_ms": 10000,
+        "retry_on_failure": true
+      },
+      "FigureAgent": {
+        "priority": 2,
+        "dependencies": ["StructureAgent"],
+        "timeout_ms": 8000,
+        "retry_on_failure": false
+      },
+      "ReasoningAgent": {
+        "priority": 3,
+        "dependencies": ["StructureAgent", "ResultsAgent"],
+        "timeout_ms": 12000,
+        "retry_on_failure": true
+      },
+      "SummaryAgent": {
+        "priority": 4,
+        "dependencies": ["EntityAgent", "ResultsAgent", "ReasoningAgent", "FigureAgent"],
+        "timeout_ms": 20000,
+        "retry_on_failure": true
+      }
+    }
+  }
+}

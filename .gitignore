@@ -1,4 +1,6 @@
+# ===================================================================
 # Python
+# ===================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -16,60 +18,215 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# Virtual Environment
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ===================================================================
+# Virtual Environments
+# ===================================================================
 research/
 venv/
 ENV/
 env/
+.venv/
+env.bak/
+venv.bak/
 
-# IDEs
+# ===================================================================
+# IDEs and Editors
+# ===================================================================
 .vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
 *~
+.vim/
+*.sublime-project
+*.sublime-workspace
 
-# OS
+# ===================================================================
+# Operating System Files
+# ===================================================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 desktop.ini
+$RECYCLE.BIN/
 
-# Project specific
-arxiv_papers/*.pdf
-uploads/*.pdf
-summaries_final/*.json
-summaries_api/*.json
-*.log
-
-# Node
+# ===================================================================
+# Node.js / Frontend
+# ===================================================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
 dist/
 dist-ssr/
 *.local
 
-# Frontend build
+# Frontend specific
 frontend/dist/
 frontend/.vite/
+frontend/node_modules/
+frontend/build/
+.cache/
+.parcel-cache/
 
-# Environment
+# ===================================================================
+# Environment Variables & Configuration
+# ===================================================================
 .env
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
+.envrc
 
-# Temporary
-*.tmp
-*.temp
+# Sensitive config files
+config.yaml
+!config.example.yaml
+
+# ===================================================================
+# PaperMind Project Specific
+# ===================================================================
+
+# Downloaded papers and archives
+arxiv_papers/*.pdf
+backend/arxiv_papers/*.pdf
+archives/arxiv_papers/
+
+# Uploaded files
+uploads/
+backend/uploads/*.pdf
+backend/uploads/*.json
+
+# Generated summaries
+summaries_final/*.json
+!summaries_final/arxiv_summaries_dataset.json
+summaries_api/*.json
+backend/summaries_api/*.json
+archives/summaries_final/*.json
+
+# Core agent cache
+core/__pycache__/
+core/agents/__pycache__/
+core/llm/__pycache__/
+core/memory/__pycache__/
+
+# Backend cache
+backend/__pycache__/
+backend/auth/__pycache__/
+backend/database/__pycache__/
+backend/routes/__pycache__/
+
+# Logs
+*.log
+logs/
+*.log.*
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Database files (if using SQLite locally)
+*.db
+*.sqlite
+*.sqlite3
+
+# Model cache (HuggingFace transformers)
+.cache/
+models/
+checkpoints/
+*.bin
+*.safetensors
+*.onnx
+pytorch_model.bin
+
+# Temporary processing files
 temp/
 tmp/
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# ===================================================================
+# Development & Testing
+# ===================================================================
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# ===================================================================
+# Documentation Build
+# ===================================================================
+docs/_build/
+site/
+
+# ===================================================================
+# Miscellaneous
+# ===================================================================
+*.orig
+*.rej
+*.diff
+*.patch
+
+# Large files
+*.tar
+*.tar.gz
+*.zip
+*.7z
+*.rar
+
+# Secrets and keys
+*.pem
+*.key
+*.cert
+secret.txt
+secrets/

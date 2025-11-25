@@ -1,0 +1,87 @@
+# Example configuration for Research Paper Summarizer
+# Copy this to config.yaml and customize as needed
+# All settings are optional - CLI args override these values
+
+# Model settings
+model: led  # 'led' or 'bigbird'
+
+# Resource limits
+max_figures: 10      # Maximum figures to extract (lightweight: 5)
+max_entities: 15     # Maximum entities per type (lightweight: 10)
+max_results: 50      # Maximum quantitative results (lightweight: 30)
+enable_ocr: true     # Enable OCR for figure captions (disable for speed)
+
+# Patterns file
+patterns_file: patterns.json
+
+# ArXiv settings
+query: "cat:cs.LG"   # Default arXiv query
+max_papers: 5        # Maximum papers to fetch
+save_dir: arxiv_papers
+
+# Evaluation
+evaluate: false      # Run BERT F1 evaluation against abstracts
+
+# Advanced settings
+device: cuda         # 'cuda' or 'cpu' (auto-detected if not specified)
+
+# Agent System (NEW - experimental)
+agent_mode: false    # Enable parallel multi-agent processing
+llm_backend: ollama  # 'ollama', 'transformers', or 'auto'
+llm_model: qwen2.5:3b  # Ollama: 'qwen2.5:3b', 'phi3:mini' | Transformers: 'microsoft/phi-3-mini-4k-instruct'
+llm_max_tokens: 512  # Maximum tokens per LLM generation
+llm_temperature: 0.7  # Sampling temperature (0.0-1.0)
+experience_enabled: true  # Enable cross-paper learning from Supabase
+
+# Summary Configuration (per summary type)
+summary_config:
+  # Token limits for each summary type
+  simple:
+    min_tokens: 50
+    max_tokens: 150
+    description: "Brief 2-3 sentence summary for general audience"
+  
+  detailed:
+    min_tokens: 200
+    max_tokens: 400
+    description: "Comprehensive summary with problem, approach, results"
+  
+  eli5:
+    min_tokens: 100
+    max_tokens: 200
+    description: "Explain-like-I'm-5: simple language, no jargon"
+  
+  technical:
+    min_tokens: 150
+    max_tokens: 350
+    description: "Technical summary for domain experts with methodology"
+  
+  # Domain-specific overrides (optional)
+  domain_overrides:
+    math:
+      technical_max: 500  # Math papers need more space for formulas
+    cv:
+      detailed_max: 450   # CV papers often have complex architectures
+    nlp:
+      technical_max: 400  # NLP papers need room for model details
+
+# Section Extraction Configuration
+section_extraction:
+  # Font threshold percentiles (higher = stricter header detection)
+  font_percentile: 75        # Headers must be >= 75th percentile font size
+  strong_font_percentile: 90  # Strong headers at 90th percentile
+  
+  # Fuzzy matching for section keywords
+  fuzzy_threshold: 0.85      # Minimum similarity (0.0-1.0)
+  
+  # Column detection
+  enable_column_detection: true  # Auto-detect multi-column layouts
+  
+  # Domain-specific learning
+  learn_font_configs: true   # Learn optimal font thresholds per domain
+
+# Example usage:
+# python main.py --config config.yaml
+# python main.py --config config.yaml --lightweight
+# python main.py --config config.yaml --max-results 3
+# python main.py --config config.yaml --agent-mode  # NEW: Use agent system

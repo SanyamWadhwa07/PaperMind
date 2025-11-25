@@ -12,9 +12,10 @@ import sys
 import time
 import tempfile
 
-# Add parent directory to path to import main.py
+# Add parent directory to path to import core modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from main import EnhancedResearchPaperSummarizer
+from core.agent_integration import run_agent_mode
+from backend.main import load_config, load_patterns
 
 process_bp = Blueprint('process', __name__)
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -48,32 +49,47 @@ def upload_and_process():
         file.save(str(temp_path))
         
         try:
-            # Process the paper
+            # Load config and patterns
+            config = load_config(None)
+            patterns = load_patterns('patterns.json')
+            
+            # Process the paper using agent mode
             start_time = time.time()
-            summarizer = EnhancedResearchPaperSummarizer()
-            summary_result = summarizer.summarize_paper(str(temp_path))
+            summary_result = run_agent_mode(str(temp_path), config, patterns)
             processing_time = time.time() - start_time
             
-            # Prepare summary data for database
+            # Prepare summary data for database with 4 summary types
             summary_data = {
                 'user_id': request.user_id,
                 'paper_title': summary_result.get('title', filename),
                 'paper_authors': summary_result.get('authors', []),
-                'paper_url': summary_result.get('pdf_url'),
+                'paper_url': summary_result.get('paper_url'),
                 'arxiv_id': summary_result.get('arxiv_id'),
                 'summary_data': {
-                    'overall_summary': summary_result.get('overall_summary', ''),
-                    'section_summaries': summary_result.get('section_summaries', {}),
-                    'section_keywords': summary_result.get('section_keywords', {}),
-                    'overall_keywords': summary_result.get('overall_keywords', []),
-                    'entities': summary_result.get('entities', {}),
-                    'methodology_flowchart': summary_result.get('methodology_flowchart'),
+                    'summaries': summary_result.get('summaries', {}),  # 4 distinct summaries
+                    'key_findings': summary_result.get('key_findings', []),
+                    'methodology': summary_result.get('methodology', {}),
+                    'results': summary_result.get('results', {}),
+                    'datasets': summary_result.get('datasets', []),
+                    'models': summary_result.get('models', []),
+                    'metrics': summary_result.get('metrics', []),
+                    'tasks': summary_result.get('tasks', []),
+                    'entities': {  # Nested for EntityDisplay component
+                        'datasets': summary_result.get('datasets', []),
+                        'models': summary_result.get('models', []),
+                        'metrics': summary_result.get('metrics', []),
+                        'tasks': summary_result.get('tasks', [])
+                    },
+                    'figures': summary_result.get('figures', []),
                     'sections_found': summary_result.get('sections_found', []),
-                    'abstract_original': summary_result.get('abstract_original', '')
+                    'section_count': summary_result.get('section_count', 0),
+                    'limitations': summary_result.get('limitations', []),
+                    'future_work': summary_result.get('future_work', []),
+                    'agent_metadata': summary_result.get('agent_metadata', {})
                 },
-                'model_used': 'LED-base-16384',
+                'model_used': summary_result.get('agent_metadata', {}).get('llm_backend', 'ollama-qwen2.5:3b'),
                 'processing_time_seconds': round(processing_time, 2),
-                'word_count': summary_result.get('num_words_summary', 0),
+                'word_count': sum(len(s.split()) for s in summary_result.get('summaries', {}).values()),
                 'created_at': datetime.utcnow().isoformat()
             }
             
@@ -149,13 +165,16 @@ def process_from_arxiv():
         temp_path.write_bytes(response.content)
         
         try:
-            # Process the paper
+            # Load config and patterns
+            config = load_config(None)
+            patterns = load_patterns('patterns.json')
+            
+            # Process the paper using agent mode
             start_time = time.time()
-            summarizer = EnhancedResearchPaperSummarizer()
-            summary_result = summarizer.summarize_paper(str(temp_path))
+            summary_result = run_agent_mode(str(temp_path), config, patterns)
             processing_time = time.time() - start_time
             
-            # Prepare summary data
+            # Prepare summary data with 4 summary types
             summary_data = {
                 'user_id': request.user_id,
                 'paper_title': paper.title,
@@ -163,18 +182,31 @@ def process_from_arxiv():
                 'paper_url': paper.pdf_url,
                 'arxiv_id': arxiv_id,
                 'summary_data': {
-                    'overall_summary': summary_result.get('overall_summary', ''),
-                    'section_summaries': summary_result.get('section_summaries', {}),
-                    'section_keywords': summary_result.get('section_keywords', {}),
-                    'overall_keywords': summary_result.get('overall_keywords', []),
-                    'entities': summary_result.get('entities', {}),
-                    'methodology_flowchart': summary_result.get('methodology_flowchart'),
+                    'summaries': summary_result.get('summaries', {}),  # 4 distinct summaries
+                    'key_findings': summary_result.get('key_findings', []),
+                    'methodology': summary_result.get('methodology', {}),
+                    'results': summary_result.get('results', {}),
+                    'datasets': summary_result.get('datasets', []),
+                    'models': summary_result.get('models', []),
+                    'metrics': summary_result.get('metrics', []),
+                    'tasks': summary_result.get('tasks', []),
+                    'entities': {  # Nested for EntityDisplay component
+                        'datasets': summary_result.get('datasets', []),
+                        'models': summary_result.get('models', []),
+                        'metrics': summary_result.get('metrics', []),
+                        'tasks': summary_result.get('tasks', [])
+                    },
+                    'figures': summary_result.get('figures', []),
                     'sections_found': summary_result.get('sections_found', []),
-                    'abstract_original': paper.summary
+                    'section_count': summary_result.get('section_count', 0),
+                    'limitations': summary_result.get('limitations', []),
+                    'future_work': summary_result.get('future_work', []),
+                    'abstract_original': paper.summary,
+                    'agent_metadata': summary_result.get('agent_metadata', {})
                 },
-                'model_used': 'LED-base-16384',
+                'model_used': summary_result.get('agent_metadata', {}).get('llm_backend', 'ollama-qwen2.5:3b'),
                 'processing_time_seconds': round(processing_time, 2),
-                'word_count': summary_result.get('num_words_summary', 0),
+                'word_count': sum(len(s.split()) for s in summary_result.get('summaries', {}).values()),
                 'created_at': datetime.utcnow().isoformat()
             }
             
