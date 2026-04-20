@@ -4,9 +4,12 @@ Quick script to create database tables in Supabase
 from supabase import create_client
 from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 import pathlib
+import structlog
 
-print("🔧 Setting up database tables...")
-print(f"📡 Connecting to: {SUPABASE_URL}")
+logger = structlog.get_logger(__name__)
+
+logger.info("database_setup_started")
+logger.info("supabase_connection", url=SUPABASE_URL)
 
 client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -14,7 +17,7 @@ client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 schema_path = pathlib.Path(__file__).parent / 'database' / 'schema.sql'
 sql = schema_path.read_text()
 
-print("📝 Running SQL schema...")
+logger.info("schema_loaded", path=str(schema_path))
 
 # Split into individual statements and execute
 statements = [s.strip() for s in sql.split(';') if s.strip()]
@@ -24,34 +27,34 @@ for i, statement in enumerate(statements, 1):
         try:
             # Use the REST API to execute SQL
             result = client.rpc('exec_sql', {'query': statement + ';'}).execute()
-            print(f"✅ Statement {i}/{len(statements)} executed")
+            logger.info("sql_statement_executed", statement_num=i, total=len(statements))
         except Exception as e:
             # Try alternate method - direct table creation
             if 'CREATE TABLE users' in statement:
-                print(f"⚠️  Statement {i} - Using alternate method")
+                logger.warning("sql_statement_fallback", statement_num=i, reason="using_alternate_method")
             else:
-                print(f"⚠️  Statement {i} - {str(e)[:100]}")
+                logger.warning("sql_statement_error", statement_num=i, error=str(e)[:100])
 
-print("\n✅ Database setup complete!")
-print("🔍 Verifying tables...")
+logger.info("database_setup_completed")
+logger.info("verifying_tables")
 
 # Verify tables exist
 try:
     result = client.table('users').select('*').limit(1).execute()
-    print("✅ 'users' table exists")
+    logger.info("table_verified", table="users")
 except Exception as e:
-    print(f"❌ 'users' table error: {e}")
+    logger.error("table_verification_failed", table="users", error=str(e))
 
 try:
     result = client.table('summaries').select('*').limit(1).execute()
-    print("✅ 'summaries' table exists")
+    logger.info("table_verified", table="summaries")
 except Exception as e:
-    print(f"❌ 'summaries' table error: {e}")
+    logger.error("table_verification_failed", table="summaries", error=str(e))
 
 try:
     result = client.table('user_activity').select('*').limit(1).execute()
-    print("✅ 'user_activity' table exists")
+    logger.info("table_verified", table="user_activity")
 except Exception as e:
-    print(f"❌ 'user_activity' table error: {e}")
+    logger.error("table_verification_failed", table="user_activity", error=str(e))
 
-print("\n🎉 Setup complete! Restart your backend and try signing up again.")
+logger.info("setup_complete", next_step="restart_backend_and_signup")

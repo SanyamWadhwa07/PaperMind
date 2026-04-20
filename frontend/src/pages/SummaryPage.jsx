@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { 
-  ArrowLeft, Download, FileText, Database, 
-  BarChart3, BookOpen, Image 
+import {
+  ArrowLeft, Download, FileText, Database,
+  BarChart3, BookOpen, Image, Share2, Star
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import EntityDisplay from '../components/EntityDisplay'
 import FiguresDisplay from '../components/FiguresDisplay'
+import KnowledgeGraph from '../components/KnowledgeGraph'
+import StarRating from '../components/StarRating'
+import axios from 'axios'
 
 export default function SummaryPage() {
   const { id } = useParams()
@@ -16,10 +19,31 @@ export default function SummaryPage() {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('summaries')
+  const [graphData, setGraphData] = useState(null)
+  const [recommendations, setRecommendations] = useState([])
+  const [graphLoading, setGraphLoading] = useState(false)
 
   useEffect(() => {
     loadSummary()
   }, [id])
+
+  // Lazy-load graph data when graph tab is first opened
+  const loadGraphData = async () => {
+    if (graphData || graphLoading) return
+    setGraphLoading(true)
+    try {
+      const [graphRes, recsRes] = await Promise.all([
+        axios.get(`/api/graph/paper/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`/api/graph/recommendations/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+      ])
+      setGraphData(graphRes.data)
+      setRecommendations(recsRes.data?.recommendations || [])
+    } catch {
+      // ignore
+    } finally {
+      setGraphLoading(false)
+    }
+  }
 
   const loadSummary = async () => {
     try {
@@ -44,6 +68,26 @@ export default function SummaryPage() {
     if (!summary) return
 
     try {
+      if (format === 'bibtex') {
+        const arxivId = summary.arxiv_id && summary.arxiv_id !== 'uploaded' ? summary.arxiv_id : id
+        const year = summary.published_date
+          ? summary.published_date.slice(0, 4)
+          : new Date(summary.created_at).getFullYear()
+        const firstAuthor = summary.paper_authors?.[0]?.split(' ').pop() || 'Author'
+        const key = `${firstAuthor}${year}${arxivId.replace(/[^a-z0-9]/gi, '').slice(0, 6)}`
+        const authors = (summary.paper_authors || []).join(' and ')
+        const bibtex = `@article{${key},\n  title={${summary.paper_title}},\n  author={${authors}},\n  year={${year}},\n  journal={arXiv preprint arXiv:${arxivId}},\n  url={https://arxiv.org/abs/${arxivId}}\n}\n`
+        const blob = new Blob([bibtex], { type: 'text/plain' })
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', `${key}.bib`)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        toast.success('Exported as BibTeX')
+        return
+      }
       if (format === 'json') {
         const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' })
         const url = window.URL.createObjectURL(blob)
@@ -146,6 +190,13 @@ export default function SummaryPage() {
             <Download className="w-4 h-4" />
             Markdown
           </button>
+          <button
+            onClick={() => handleExport('bibtex')}
+            className="btn-secondary"
+          >
+            <Download className="w-4 h-4" />
+            BibTeX
+          </button>
         </div>
       </div>
 
@@ -199,6 +250,14 @@ export default function SummaryPage() {
             {summaryData.sections_found?.length || 0}
           </p>
         </div>
+        {summary.quality_score != null && (
+          <div className="card">
+            <p className="text-sm text-[#8F8F8F] dark:text-[#8F8F8F] mb-1">Quality</p>
+            <p className="text-2xl font-bold text-emerald-500">
+              {Math.round(summary.quality_score * 100)}%
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -209,10 +268,11 @@ export default function SummaryPage() {
               { id: 'summaries', label: 'Summaries', icon: BookOpen },
               { id: 'entities', label: 'Entities', icon: Database },
               { id: 'figures', label: 'Figures', icon: Image },
+              { id: 'graph', label: 'Knowledge Graph', icon: Share2 },
             ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => { setActiveTab(tab.id); if (tab.id === 'graph') loadGraphData() }}
                 className={`flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 sm:py-3 border-b-2 font-medium transition-colors whitespace-nowrap text-sm sm:text-base ${
                   activeTab === tab.id
                     ? 'border-[#00988F] dark:border-[#00A7A0] text-[#00988F] dark:text-[#00A7A0]'
@@ -308,6 +368,50 @@ export default function SummaryPage() {
           {activeTab === 'figures' && (
             <FiguresDisplay figures={summaryData.figures || []} />
           )}
+
+          {activeTab === 'graph' && (
+            <div className="space-y-6">
+              {graphLoading ? (
+                <div className="flex items-center justify-center h-48">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500" />
+                </div>
+              ) : (
+                <KnowledgeGraph
+                  nodes={graphData?.nodes || []}
+                  edges={graphData?.edges || []}
+                  height={440}
+                />
+              )}
+
+              {recommendations.length > 0 && (
+                <div>
+                  <h3 className="text-base font-semibold text-slate-300 mb-3">Similar Papers</h3>
+                  <div className="space-y-2">
+                    {recommendations.map((rec) => {
+                      const paper = rec.summaries || rec
+                      return (
+                        <Link
+                          key={rec.paper_b_id || rec.id}
+                          to={`/summary/${rec.paper_b_id || rec.id}`}
+                          className="flex items-center justify-between p-3 bg-slate-800 rounded-lg hover:bg-slate-700 transition-colors"
+                        >
+                          <span className="text-sm text-slate-200 truncate">{paper.paper_title || 'Untitled'}</span>
+                          <span className="text-xs text-slate-500 ml-2 shrink-0">
+                            {(rec.similarity_score * 100).toFixed(0)}% similar
+                          </span>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Star rating */}
+        <div className="mt-6 pt-4 border-t border-slate-700">
+          <StarRating summaryId={id} />
         </div>
       </div>
     </div>

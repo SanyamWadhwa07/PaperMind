@@ -15,12 +15,15 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 def get_user_summaries():
     """Get all summaries for the authenticated user"""
     try:
-        # Query parameters for filtering and pagination
-        page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 10))
+        # Query parameters for filtering and pagination (sanitized)
+        page = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 10))))
         sort_by = request.args.get('sort_by', 'created_at')
+        # Whitelist sortable columns to prevent injection via order-by
+        if sort_by not in ('created_at', 'paper_title', 'processing_time_seconds', 'word_count'):
+            sort_by = 'created_at'
         order = request.args.get('order', 'desc')
-        search = request.args.get('search', '')
+        search = request.args.get('search', '')[:200]  # cap length
         
         # Calculate offset
         offset = (page - 1) * per_page

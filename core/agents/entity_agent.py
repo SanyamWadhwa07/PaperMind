@@ -6,9 +6,10 @@ Wraps existing EnhancedEntityExtractor with agent capabilities:
 - Cross-agent entity verification
 """
 
+import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Optional, Set, Tuple
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -125,19 +126,112 @@ class EntityAgent(BaseAgent):
                         entity_type=entity_type,
                         occurrence_count=1
                     )
-        
+
+        # Infer semantic relationships from section context
+        inferred_relationships = self._infer_relationships(sections, validated_entities)
+
+        # Persist inferred relationships to experience DB
+        for rel in inferred_relationships:
+            await self.update_experience(
+                'relationship',
+                entity_1=rel['entity_1'],
+                type_1=rel['type_1'],
+                entity_2=rel['entity_2'],
+                type_2=rel['type_2'],
+                relationship=rel['relationship_type'],
+                confidence=rel['confidence'],
+            )
+
         return {
             'extractions': all_extractions,
             'confidence_scores': confidence_scores,
             'entities': validated_entities,
+            'relationships': inferred_relationships,
             'metadata': {
                 'total_entities': len(all_extractions),
                 'validated_count': validated_count,
                 'uncertain_entities': list(self.uncertain_entities),
-                'by_type': {k: len(v) for k, v in validated_entities.items()}
+                'by_type': {k: len(v) for k, v in validated_entities.items()},
+                'relationships_inferred': len(inferred_relationships),
             }
         }
     
+    def _infer_relationships(
+        self,
+        sections: Dict[str, str],
+        entities: Dict[str, List[str]],
+    ) -> List[Dict[str, Any]]:
+        """Infer semantic relationship types from section context.
+
+        Rules:
+        - model + dataset in same sentence → 'uses'
+        - metric + dataset in same sentence → 'evaluated-on'
+        - model vs model in results/comparison section → 'compared-to'
+        - model + task in same sentence → 'applied-to'
+        """
+        relationships: List[Dict[str, Any]] = []
+        seen: Set[Tuple[str, str, str]] = set()
+
+        models = entities.get('models', [])
+        datasets = entities.get('datasets', [])
+        metrics = entities.get('metrics', [])
+        tasks = entities.get('tasks', [])
+
+        def _sentences(text: str) -> List[str]:
+            return re.split(r'(?<=[.!?])\s+', text)
+
+        def _add(e1: str, t1: str, e2: str, t2: str, rel: str, conf: float) -> None:
+            key = (e1.lower(), e2.lower(), rel)
+            if key not in seen:
+                seen.add(key)
+                relationships.append({
+                    'entity_1': e1, 'type_1': t1,
+                    'entity_2': e2, 'type_2': t2,
+                    'relationship_type': rel, 'confidence': conf,
+                })
+
+        results_sections = {
+            k: v for k, v in sections.items()
+            if any(w in k.lower() for w in ('result', 'experiment', 'comparison', 'evaluat', 'ablat'))
+        }
+        all_text = ' '.join(sections.values())
+
+        for sentence in _sentences(all_text):
+            s_lower = sentence.lower()
+            present_models = [m for m in models if m.lower() in s_lower]
+            present_datasets = [d for d in datasets if d.lower() in s_lower]
+            present_metrics = [m for m in metrics if m.lower() in s_lower]
+            present_tasks = [t for t in tasks if t.lower() in s_lower]
+
+            # model uses dataset
+            for model in present_models:
+                for dataset in present_datasets:
+                    _add(model, 'models', dataset, 'datasets', 'uses', 0.75)
+
+            # metric evaluated-on dataset
+            for metric in present_metrics:
+                for dataset in present_datasets:
+                    _add(metric, 'metrics', dataset, 'datasets', 'evaluated-on', 0.70)
+
+            # model applied-to task
+            for model in present_models:
+                for task in present_tasks:
+                    _add(model, 'models', task, 'tasks', 'applied-to', 0.70)
+
+        # model compared-to model: only in results/comparison sections
+        for text in results_sections.values():
+            for sentence in _sentences(text):
+                s_lower = sentence.lower()
+                # require comparison signal words
+                if not re.search(r'\b(vs\.?|versus|compared|outperform|baseline|beats?|surpass)\b', s_lower):
+                    continue
+                present_models = [m for m in models if m.lower() in s_lower]
+                for i, m1 in enumerate(present_models):
+                    for m2 in present_models[i + 1:]:
+                        _add(m1, 'models', m2, 'models', 'compared-to', 0.80)
+
+        return relationships
+
     def _is_likely_valid_entity(self, entity: str, entity_type: str) -> bool:
         """
         Pattern-based validation for entities.

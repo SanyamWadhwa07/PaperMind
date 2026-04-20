@@ -5,6 +5,7 @@ enabling agents to query historical knowledge and update their learnings.
 """
 
 import asyncio
+import structlog
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -13,13 +14,15 @@ import sys
 # Add backend to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent / 'backend'))
 
+logger = structlog.get_logger(__name__)
+
 try:
     from supabase import create_client, Client
     from backend.database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
-    print("Warning: Supabase not available. Experience learning disabled.")
+    logger.warning("supabase_unavailable", reason="import_error")
 
 
 class ExperienceStore:
@@ -46,7 +49,7 @@ class ExperienceStore:
         self.key = supabase_key or SUPABASE_SERVICE_KEY
         
         if not self.url or not self.key:
-            print("Warning: Supabase credentials not configured. Experience learning disabled.")
+            logger.warning("supabase_credentials_not_configured", reason="missing_credentials")
             self.client = None
             self.enabled = False
         else:
@@ -78,7 +81,7 @@ class ExperienceStore:
                 return response.data[0]
             return None
         except Exception as e:
-            print(f"Error querying entity: {e}")
+            logger.exception("entity_query_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
             return None
     
     async def get_high_confidence_entities(self, entity_type: str, min_confidence: float = 0.8) -> List[str]:
@@ -97,7 +100,7 @@ class ExperienceStore:
             
             return [row['entity_name'] for row in response.data]
         except Exception as e:
-            print(f"Error getting high confidence entities: {e}")
+            logger.exception("high_confidence_entities_query_failed", entity_type=entity_type, error=str(e))
             return []
     
     async def update_entity_knowledge(self, entity_name: str, entity_type: str, 
@@ -118,7 +121,7 @@ class ExperienceStore:
             }).execute()
             return True
         except Exception as e:
-            print(f"Error updating entity knowledge: {e}")
+            logger.exception("entity_knowledge_update_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
             return False
     
     # ==================== Pattern Performance ====================
@@ -139,7 +142,7 @@ class ExperienceStore:
                 return response.data[0]
             return None
         except Exception as e:
-            print(f"Error querying pattern performance: {e}")
+            logger.exception("pattern_performance_query_failed", pattern_id=pattern_id, pattern_type=pattern_type, error=str(e))
             return None
     
     async def get_best_patterns(self, pattern_type: str, limit: int = 10) -> List[Dict]:
@@ -158,7 +161,7 @@ class ExperienceStore:
             
             return response.data
         except Exception as e:
-            print(f"Error getting best patterns: {e}")
+            logger.exception("best_patterns_query_failed", pattern_type=pattern_type, error=str(e))
             return []
     
     async def update_pattern_performance(self, pattern_id: str, pattern_type: str,
@@ -176,7 +179,7 @@ class ExperienceStore:
             }).execute()
             return True
         except Exception as e:
-            print(f"Error updating pattern performance: {e}")
+            logger.exception("pattern_performance_update_failed", pattern_id=pattern_id, pattern_type=pattern_type, error=str(e))
             return False
     
     # ==================== Section Templates ====================
@@ -198,7 +201,7 @@ class ExperienceStore:
                 return response.data[0]
             return None
         except Exception as e:
-            print(f"Error getting section template: {e}")
+            logger.exception("section_template_query_failed", domain=domain, error=str(e))
             return None
     
     # ==================== Result Baselines ====================
@@ -227,7 +230,7 @@ class ExperienceStore:
                 return response.data[0]
             return None
         except Exception as e:
-            print(f"Error getting result baseline: {e}")
+            logger.exception("result_baseline_query_failed", dataset=dataset, metric=metric, error=str(e))
             return None
     
     async def is_outlier(self, dataset: str, metric: str, value: float, 
@@ -263,7 +266,7 @@ class ExperienceStore:
             }).execute()
             return True
         except Exception as e:
-            print(f"Error updating result baseline: {e}")
+            logger.exception("result_baseline_update_failed", dataset=dataset, metric=metric, error=str(e))
             return False
     
     # ==================== Entity Relationships ====================
@@ -288,7 +291,7 @@ class ExperienceStore:
             response = query.order('frequency_count', desc=True).execute()
             return response.data
         except Exception as e:
-            print(f"Error getting related entities: {e}")
+            logger.exception("related_entities_query_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
             return []
     
     async def update_entity_relationship(self, entity_1: str, type_1: str,
@@ -339,7 +342,7 @@ class ExperienceStore:
             
             return True
         except Exception as e:
-            print(f"Error updating entity relationship: {e}")
+            logger.exception("entity_relationship_update_failed", entity_1=entity_1, entity_2=entity_2, error=str(e))
             return False
     
     # ==================== Agent Logging ====================
@@ -366,7 +369,7 @@ class ExperienceStore:
                 .execute()
             return True
         except Exception as e:
-            print(f"Error logging agent execution: {e}")
+            logger.exception("agent_execution_logging_failed", agent_name=agent_name, error=str(e))
             return False
     
     async def log_consensus(self, extraction_type: str, extracted_value: str,
@@ -389,7 +392,7 @@ class ExperienceStore:
                 .execute()
             return True
         except Exception as e:
-            print(f"Error logging consensus: {e}")
+            logger.exception("consensus_logging_failed", extraction_type=extraction_type, error=str(e))
             return False
     
     async def get_agent_performance(self, agent_name: Optional[str] = None) -> List[Dict]:
@@ -410,7 +413,7 @@ class ExperienceStore:
             
             return response.data
         except Exception as e:
-            print(f"Error getting agent performance: {e}")
+            logger.exception("agent_performance_query_failed", agent_name=agent_name, error=str(e))
             return []
 
 

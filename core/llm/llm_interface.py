@@ -7,9 +7,12 @@ Supports:
 """
 
 import asyncio
+import structlog
 from typing import Optional, Dict, Any, List, AsyncIterator
 from enum import Enum
 import json
+
+logger = structlog.get_logger(__name__)
 
 # Ollama support (optional)
 try:
@@ -47,9 +50,9 @@ class LocalLLM:
     def __init__(
         self,
         backend: str = "ollama",
-        model_name: str = "qwen2.5:3b",
+        model_name: Optional[str] = None,
         device: Optional[str] = None,
-        max_tokens: int = 512,
+        max_tokens: int = 1024,
         temperature: float = 0.7
     ):
         """
@@ -64,8 +67,14 @@ class LocalLLM:
             max_tokens: Maximum generation length
             temperature: Sampling temperature
         """
+        import os
         self.backend_name = backend
-        self.model_name = model_name
+        # env var override → explicit arg → default
+        self.model_name = (
+            os.environ.get('PAPERMIND_LLM_MODEL')
+            or model_name
+            or 'qwen2.5:3b'
+        )
         self.max_tokens = max_tokens
         self.temperature = temperature
         
@@ -95,42 +104,54 @@ class LocalLLM:
                 return
         
         # Fallback to template
-        print("Warning: No LLM backend available. Using template-based generation.")
+        logger.warning("no_llm_backend_available", using="template_based_generation")
         self.backend = LLMBackend.TEMPLATE
     
     def _init_ollama(self) -> bool:
         """Initialize Ollama backend."""
         if not OLLAMA_AVAILABLE:
-            print("Ollama not installed. Install with: pip install ollama")
+            logger.warning("ollama_not_installed", instruction="pip install ollama")
             return False
         
         try:
             # Check if Ollama server is running and model exists
             result = ollama.list()
             model_names = [m.model for m in result.models] if hasattr(result, 'models') else []
-            
-            if not any(self.model_name in name for name in model_names):
-                print(f"Ollama model '{self.model_name}' not found.")
-                print(f"Install with: ollama pull {self.model_name}")
+
+            # If the env-var / default model isn't pulled, try the smaller fallback
+            preferred = self.model_name
+            fallback = 'qwen2.5:3b'
+            chosen = None
+            for candidate in [preferred, fallback]:
+                if any(candidate in name for name in model_names):
+                    chosen = candidate
+                    break
+
+            if chosen is None:
+                logger.error(
+                    "ollama_model_not_found",
+                    model=preferred,
+                    instruction=f"ollama pull {preferred}"
+                )
                 return False
-            
+
+            self.model_name = chosen
             self.backend = LLMBackend.OLLAMA
-            print(f"✓ Initialized Ollama with {self.model_name}")
+            logger.info("ollama_initialized", model=self.model_name)
             return True
             
         except Exception as e:
-            print(f"Ollama initialization failed: {e}")
-            print("Make sure Ollama is running: ollama serve")
+            logger.exception("ollama_init_failed", error=str(e), instruction="ollama serve")
             return False
     
     def _init_transformers(self) -> bool:
         """Initialize Transformers backend."""
         if not TRANSFORMERS_AVAILABLE:
-            print("Transformers not available.")
+            logger.warning("transformers_not_available")
             return False
         
         try:
-            print(f"Loading {self.model_name} with transformers...")
+            logger.info("loading_transformer_model", model=self.model_name)
             
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
@@ -149,11 +170,11 @@ class LocalLLM:
                 self.model = self.model.to(self.device)
             
             self.backend = LLMBackend.TRANSFORMERS
-            print(f"✓ Initialized Transformers with {self.model_name}")
+            logger.info("transformers_initialized", model=self.model_name, device=self.device)
             return True
             
         except Exception as e:
-            print(f"Transformers initialization failed: {e}")
+            logger.exception("transformers_init_failed", error=str(e))
             return False
     
     async def generate(
@@ -210,6 +231,7 @@ class LocalLLM:
                     messages=messages,
                     options={
                         'num_predict': max_tokens,
+                        'num_ctx': 4096,
                         'temperature': temperature
                     }
                 )
@@ -218,7 +240,7 @@ class LocalLLM:
             return response['message']['content']
             
         except Exception as e:
-            print(f"Ollama generation error: {e}")
+            logger.exception("ollama_generation_error", error=str(e), fallback="template")
             return self._generate_template(prompt)
     
     async def _generate_transformers(
@@ -268,7 +290,7 @@ class LocalLLM:
             return generated
             
         except Exception as e:
-            print(f"Transformers generation error: {e}")
+            logger.exception("transformers_generation_error", error=str(e), fallback="template")
             return self._generate_template(prompt)
     
     def _generate_template(self, prompt: str) -> str:
@@ -316,7 +338,7 @@ class LocalLLM:
                     yield chunk['message']['content']
                     
         except Exception as e:
-            print(f"Streaming error: {e}")
+            logger.exception("streaming_error", error=str(e), fallback="template")
             yield self._generate_template(prompt)
     
     def get_info(self) -> Dict[str, Any]:

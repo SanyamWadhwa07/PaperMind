@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { BookOpen, Github, Moon, Sun, Menu, X, User, LogOut, LayoutDashboard } from 'lucide-react'
+import { BookOpen, Github, Moon, Sun, Menu, X, User, LogOut, LayoutDashboard, Calendar } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import Logo from './Logo'
@@ -74,9 +74,18 @@ export default function Layout({ children }) {
                 to="/batch"
                 className="text-[#1B1B1B] dark:text-[#F5F5F5] hover:text-[#00988F] dark:hover:text-[#00A7A0] font-medium transition-colors"
               >
-                Batch Process
+                Batch
               </Link>
-              
+              {isAuthenticated && (
+                <Link
+                  to="/timeline"
+                  className="text-[#1B1B1B] dark:text-[#F5F5F5] hover:text-[#00988F] dark:hover:text-[#00A7A0] font-medium transition-colors flex items-center gap-1"
+                >
+                  <Calendar className="w-4 h-4" />
+                  Timeline
+                </Link>
+              )}
+
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="p-2 rounded-lg bg-[#EEF4F3] dark:bg-[#1E2020] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] transition-all border border-[#C4935F]/20 dark:border-[#D9A86C]/20"
@@ -200,6 +209,15 @@ export default function Layout({ children }) {
               >
                 Batch Process
               </Link>
+              {isAuthenticated && (
+                <Link
+                  to="/timeline"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block px-4 py-2 text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
+                >
+                  Timeline
+                </Link>
+              )}
               {isAuthenticated ? (
                 <>
                   <Link

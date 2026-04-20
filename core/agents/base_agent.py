@@ -9,6 +9,7 @@ All specialized agents inherit from BaseAgent to get:
 """
 
 import asyncio
+import structlog
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
@@ -16,6 +17,8 @@ import time
 
 from core.agents.message_bus import Message, MessageType, MessagePriority
 # Note: message_bus and experience_store are set by orchestrator via setters
+
+logger = structlog.get_logger(__name__)
 
 
 class AgentState:
@@ -226,7 +229,7 @@ class BaseAgent(ABC):
             else:
                 return None
         except Exception as e:
-            print(f"{self.name}: Error querying experience: {e}")
+            logger.exception("experience_query_failed", agent=self.name, query_type=query_type, error=str(e))
             return None
     
     async def update_experience(self, update_type: str, **kwargs) -> bool:
@@ -278,7 +281,7 @@ class BaseAgent(ABC):
             else:
                 return False
         except Exception as e:
-            print(f"{self.name}: Error updating experience: {e}")
+            logger.exception("experience_update_failed", agent=self.name, update_type=update_type, error=str(e))
             return False
     
     async def ask_agent(self, recipient: str, question: str, 

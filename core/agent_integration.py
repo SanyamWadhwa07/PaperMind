@@ -10,11 +10,14 @@ Usage:
 import asyncio
 import json
 import re
+import structlog
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 from core.agents.orchestrator import ParallelAgentOrchestrator
 from core.memory.experience_db import ExperienceStore
+
+logger = structlog.get_logger(__name__)
 
 
 class AgentPaperProcessor:
@@ -45,7 +48,7 @@ class AgentPaperProcessor:
     def _init_experience_store(self) -> Optional[ExperienceStore]:
         """Initialize Supabase experience store."""
         if not self.config.get('experience_enabled', True):
-            print("Experience learning disabled in config")
+            logger.info("experience_disabled", reason="config")
             return None
         
         try:
@@ -58,14 +61,14 @@ class AgentPaperProcessor:
             )
             
             if store.enabled:
-                print("✓ Experience store initialized (Supabase)")
+                logger.info("experience_store_initialized", backend="supabase")
             return store
         
         except ImportError:
-            print("Warning: Could not import Supabase config. Experience learning disabled.")
+            logger.warning("supabase_import_failed", reason="config_not_found")
             return None
         except Exception as e:
-            print(f"Warning: Error initializing experience store: {e}")
+            logger.exception("experience_store_init_error", error=str(e))
             return None
     
     async def process_paper(self, pdf_path: str) -> Dict[str, Any]:
@@ -106,14 +109,14 @@ class AgentPaperProcessor:
         reasoning = agent_result.get('reasoning', {})
         summary = agent_result.get('summary', {})
         
-        # Debug: Log raw agent results
-        print(f"\n=== AGENT RESULTS DEBUG ===")
-        print(f"Structure sections: {list(structure.get('sections', {}).keys())}")
-        print(f"Entity result keys: {list(entities.keys())}")
-        print(f"Entity.entities: {entities.get('entities', 'KEY NOT FOUND')}")
-        print(f"Figures result keys: {list(figures.keys())}")
-        print(f"Figures.figures count: {len(figures.get('figures', []))}")
-        print(f"==========================\n")
+        # Log agent results with structured data
+        logger.debug(
+            "agent_results_aggregated",
+            structure_sections=list(structure.get('sections', {}).keys()),
+            entity_keys=list(entities.keys()),
+            figure_count=len(figures.get('figures', [])),
+            has_summary=bool(summary)
+        )
         
         # Get sections
         sections = structure.get('sections', {})

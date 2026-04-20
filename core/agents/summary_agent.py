@@ -69,16 +69,37 @@ class SummaryAgent(BaseAgent):
         detailed_summary, detailed_conf = await self._generate_detailed_summary(input_data, domain)
         eli5_summary, eli5_conf = await self._generate_eli5_summary(input_data, domain)
         technical_summary, technical_conf = await self._generate_technical_summary(input_data, domain)
-        
+
+        # Generate per-section summaries
+        sections = input_data.get('sections', {})
+        section_summaries = await self._generate_section_summaries(sections, domain)
+
         total_time = (time.time() - total_start) * 1000
-        
+
         validation_passed = self._validate_summaries(simple_summary, detailed_summary, eli5_summary, technical_summary)
-        
+        overall_quality = round(
+            (simple_conf + detailed_conf + eli5_conf + technical_conf) / 4, 4
+        )
+
         return {
             'extractions': [simple_summary, detailed_summary, eli5_summary, technical_summary],
-            'confidence_scores': {'simple': simple_conf, 'detailed': detailed_conf, 'eli5': eli5_conf, 'technical': technical_conf},
-            'summaries': {'simple': simple_summary, 'detailed': detailed_summary, 'eli5': eli5_summary, 'technical': technical_summary},
-            'metadata': {'llm_backend': self.llm.backend.value, 'llm_model': self.llm.model, 'total_generation_time_ms': total_time, 'validation_passed': validation_passed}
+            'confidence_scores': {
+                'simple': simple_conf, 'detailed': detailed_conf,
+                'eli5': eli5_conf, 'technical': technical_conf
+            },
+            'summaries': {
+                'simple': simple_summary, 'detailed': detailed_summary,
+                'eli5': eli5_summary, 'technical': technical_summary
+            },
+            'section_summaries': section_summaries,
+            'metadata': {
+                'llm_backend': self.llm.backend.value,
+                'llm_model': self.llm.model_name,
+                'total_generation_time_ms': total_time,
+                'validation_passed': validation_passed,
+                'summary_quality': overall_quality,
+                'domain': domain,
+            }
         }
     
     def _load_default_config(self) -> Dict[str, Any]:
@@ -91,7 +112,13 @@ class SummaryAgent(BaseAgent):
         return self._get_hardcoded_defaults()
     
     def _get_hardcoded_defaults(self) -> Dict[str, Any]:
-        return {'simple': {'min_tokens': 50, 'max_tokens': 150}, 'detailed': {'min_tokens': 200, 'max_tokens': 400}, 'eli5': {'min_tokens': 100, 'max_tokens': 200}, 'technical': {'min_tokens': 150, 'max_tokens': 350}, 'domain_overrides': {}}
+        return {
+            'simple': {'min_tokens': 50, 'max_tokens': 150},
+            'detailed': {'min_tokens': 200, 'max_tokens': 600},
+            'eli5': {'min_tokens': 100, 'max_tokens': 200},
+            'technical': {'min_tokens': 150, 'max_tokens': 500},
+            'domain_overrides': {}
+        }
     
     def _get_token_limits(self, summary_type: str, domain: str) -> Dict[str, int]:
         base_limits = self.summary_config.get(summary_type, {'min_tokens': 100, 'max_tokens': 300})
@@ -100,18 +127,126 @@ class SummaryAgent(BaseAgent):
         if f'{summary_type}_min' in overrides: base_limits['min_tokens'] = overrides[f'{summary_type}_min']
         return base_limits
     
+    def _get_domain_system_prompt(self, domain: str) -> str:
+        """Return a domain-tailored system prompt for the LLM."""
+        prompts = {
+            'cv': (
+                "You are an expert in computer vision. When summarizing, emphasize: "
+                "architecture choices (CNNs, ViT, CLIP), benchmark datasets (ImageNet, COCO, CIFAR), "
+                "evaluation metrics (mAP, IoU, top-1 accuracy), and visual understanding tasks."
+            ),
+            'nlp': (
+                "You are an expert in natural language processing. When summarizing, emphasize: "
+                "model architectures (transformers, BERT variants, LLMs), benchmark datasets (GLUE, SQuAD, WMT), "
+                "evaluation metrics (BLEU, ROUGE, perplexity, F1), and language understanding tasks."
+            ),
+            'ml': (
+                "You are an expert in machine learning. When summarizing, emphasize: "
+                "training methodology, optimization techniques, convergence behavior, "
+                "generalization analysis, and theoretical contributions alongside empirical results."
+            ),
+            'general': (
+                "You are an expert academic researcher. Summarize papers clearly, emphasizing "
+                "the core contribution, methodology, key results, and broader significance."
+            ),
+        }
+        return prompts.get(domain, prompts['general'])
+
+    def _score_summary_quality(self, text: str, source_sections: Dict[str, str]) -> float:
+        """Score summary quality 0.0–1.0 across three dimensions."""
+        if not text or not text.strip():
+            return 0.0
+
+        words = text.split()
+        score = 0.0
+
+        # 1. Length score (40%): penalise very short or truncated summaries
+        word_count = len(words)
+        if word_count >= 80:
+            score += 0.4
+        elif word_count >= 40:
+            score += 0.2
+        else:
+            score += 0.05
+
+        # 2. Coverage score (40%): key terms from abstract appear in summary
+        abstract = source_sections.get('abstract', '')
+        if abstract:
+            # Extract meaningful words (≥5 chars) from abstract
+            abstract_words = {w.lower().strip('.,;:()[]') for w in abstract.split() if len(w) >= 5}
+            summary_words = {w.lower().strip('.,;:()[]') for w in words}
+            overlap = abstract_words & summary_words
+            coverage = min(len(overlap) / max(len(abstract_words), 1), 1.0)
+            score += coverage * 0.4
+        else:
+            score += 0.2  # partial credit when no abstract
+
+        # 3. Coherence score (20%): adjacent sentence pairs shouldn't be near-identical
+        sentences = [s.strip() for s in text.split('.') if len(s.split()) > 3]
+        if len(sentences) < 2:
+            score += 0.1
+        else:
+            similarities = [
+                SequenceMatcher(None, sentences[i], sentences[i + 1]).ratio()
+                for i in range(len(sentences) - 1)
+            ]
+            avg_sim = sum(similarities) / len(similarities)
+            # Low similarity between neighbours = more coherent diversity
+            coherence = 1.0 - min(avg_sim, 0.8)
+            score += coherence * 0.2
+
+        return round(min(score, 1.0), 4)
+
+    async def _generate_section_summaries(
+        self, sections: Dict[str, str], domain: str
+    ) -> Dict[str, str]:
+        """Generate a 1–2 sentence summary for each paper section."""
+        result: Dict[str, str] = {}
+        system_prompt = self._get_domain_system_prompt(domain)
+        skip = {'__references__', 'references'}
+        for section_name, text in sections.items():
+            if section_name in skip or not text or len(text.split()) < 30:
+                continue
+            prompt = (
+                f"In 1-2 sentences, summarise the '{section_name}' section of this paper:\n\n"
+                f"{text[:1200]}"
+            )
+            try:
+                summary = await self.llm.generate(
+                    prompt, system_prompt=system_prompt, max_tokens=120
+                )
+                result[section_name] = summary.strip()
+            except Exception:
+                result[section_name] = text[:200].strip() + '...'
+        return result
+
     async def _generate_simple_summary(self, input_data: Dict[str, Any], domain: str):
         limits = self._get_token_limits('simple', domain)
         sections = input_data.get('sections', {})
         metadata = input_data.get('metadata', {})
+        reasoning = input_data.get('reasoning', {})
         title = metadata.get('title', 'Research Paper')
-        abstract = sections.get('abstract', '')[:300]
-        prompt = f"Summarize this research paper in 2-3 simple sentences.\\n\\nTitle: {title}\\nAbstract: {abstract}\\n\\nWrite {limits['min_tokens']}-{limits['max_tokens']} words explaining the problem, contribution, and why it matters. Use clear language."
+        abstract = sections.get('abstract', '')[:800]
+        # Include top-3 key findings when available
+        findings = reasoning.get('reasoning', {}).get('claims', [])[:3]
+        findings_str = '\n'.join(f"- {c.get('text', '')}" for c in findings if c.get('text'))
+        system_prompt = self._get_domain_system_prompt(domain)
+        prompt = (
+            f"Summarize this research paper in 2-3 clear sentences for a general audience.\n\n"
+            f"Title: {title}\n"
+            f"Abstract: {abstract}\n"
+            + (f"\nKey findings:\n{findings_str}\n" if findings_str else '')
+            + f"\nWrite {limits['min_tokens']}-{limits['max_tokens']} words explaining the problem, "
+              f"main contribution, and why it matters."
+        )
         try:
-            summary = await self.llm.generate(prompt, max_tokens=limits['max_tokens'])
+            summary = await self.llm.generate(prompt, system_prompt=system_prompt, max_tokens=limits['max_tokens'])
+            summary = summary.strip()
             self.generated_summaries['simple'] = summary
-            return summary.strip(), 0.9
-        except: return f"This paper addresses {abstract[:100]}...", 0.5
+            quality = self._score_summary_quality(summary, sections)
+            return summary, quality
+        except Exception:
+            return f"This paper addresses {abstract[:100]}...", 0.5
     
     async def _generate_detailed_summary(self, input_data: Dict[str, Any], domain: str):
         limits = self._get_token_limits('detailed', domain)
@@ -120,25 +255,36 @@ class SummaryAgent(BaseAgent):
         results = input_data.get('results', [])
         reasoning = input_data.get('reasoning', {})
         metadata = input_data.get('metadata', {})
+        system_prompt = self._get_domain_system_prompt(domain)
         prompt = self._build_detailed_prompt(sections, entities, results, reasoning, metadata, limits)
         try:
-            summary = await self.llm.generate(prompt, max_tokens=limits['max_tokens'])
+            summary = await self.llm.generate(prompt, system_prompt=system_prompt, max_tokens=limits['max_tokens'])
+            summary = summary.strip()
             self.generated_summaries['detailed'] = summary
-            return summary.strip(), 0.9
-        except: return self._fallback_summary(sections, entities, results, reasoning), 0.6
+            return summary, self._score_summary_quality(summary, sections)
+        except Exception:
+            return self._fallback_summary(sections, entities, results, reasoning), 0.6
     
     async def _generate_eli5_summary(self, input_data: Dict[str, Any], domain: str):
         limits = self._get_token_limits('eli5', domain)
         sections = input_data.get('sections', {})
         metadata = input_data.get('metadata', {})
         title = metadata.get('title', 'Research Paper')
-        abstract = sections.get('abstract', '')[:250]
-        prompt = f"Explain this research for a 10-year-old.\\n\\nTitle: {title}\\nContext: {abstract}\\n\\nExplain in {limits['min_tokens']}-{limits['max_tokens']} words: the problem, how they solve it, and what they found. Use simple language and analogies."
+        abstract = sections.get('abstract', '')[:600]
+        prompt = (
+            f"Explain this research paper as if talking to a curious 10-year-old.\n\n"
+            f"Title: {title}\n"
+            f"Context: {abstract}\n\n"
+            f"In {limits['min_tokens']}-{limits['max_tokens']} words: explain the problem they solved, "
+            f"how they solved it, and what cool thing they discovered. Use simple words and analogies."
+        )
         try:
             summary = await self.llm.generate(prompt, max_tokens=limits['max_tokens'])
+            summary = summary.strip()
             self.generated_summaries['eli5'] = summary
-            return summary.strip(), 0.85
-        except: return f"Scientists studied {abstract[:80]}. They found interesting results.", 0.4
+            return summary, self._score_summary_quality(summary, sections)
+        except Exception:
+            return f"Scientists studied {abstract[:80]}. They found interesting results.", 0.4
     
     async def _generate_technical_summary(self, input_data: Dict[str, Any], domain: str):
         limits = self._get_token_limits('technical', domain)
@@ -147,12 +293,14 @@ class SummaryAgent(BaseAgent):
         results = input_data.get('results', [])
         reasoning = input_data.get('reasoning', {})
         metadata = input_data.get('metadata', {})
+        system_prompt = self._get_domain_system_prompt(domain)
         prompt = self._build_technical_prompt(sections, entities, results, reasoning, metadata, limits)
         try:
-            summary = await self.llm.generate(prompt, max_tokens=limits['max_tokens'])
+            summary = await self.llm.generate(prompt, system_prompt=system_prompt, max_tokens=limits['max_tokens'])
+            summary = summary.strip()
             self.generated_summaries['technical'] = summary
-            return summary.strip(), 0.9
-        except:
+            return summary, self._score_summary_quality(summary, sections)
+        except Exception:
             methodology = sections.get('methodology', sections.get('method', ''))[:limits['max_tokens'] * 5]
             return methodology.strip() or "Technical details not available.", 0.5
     

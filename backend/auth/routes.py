@@ -3,6 +3,7 @@ Authentication routes for user signup, login, and profile management
 """
 from flask import Blueprint, request, jsonify
 from supabase import create_client
+import structlog
 from database.config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_SERVICE_KEY
 from auth.utils import (
     hash_password, 
@@ -13,6 +14,8 @@ from auth.utils import (
     validate_password_strength
 )
 from datetime import datetime
+
+logger = structlog.get_logger(__name__)
 
 auth_bp = Blueprint('auth', __name__)
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -42,9 +45,9 @@ def signup():
         try:
             existing_user = supabase.table('users').select('id').eq('email', email).execute()
         except Exception as check_error:
-            print(f"⚠️ Error checking existing user: {check_error}")
+            logger.warning("user_check_failed", email=email, error=str(check_error))
             # User might not exist, continue anyway
-            existing_user = type('obj', (object,), {'data': []})()
+            existing_user = type('obj', (object,), {'data': []})()  
         
         if existing_user.data:
             return jsonify({'error': 'Email already registered'}), 409
@@ -82,9 +85,7 @@ def signup():
         }), 201
         
     except Exception as e:
-        print(f"❌ Signup error: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("signup_error", error=str(e), error_type=type(e).__name__)
         return jsonify({'error': f'Signup failed: {str(e)}'}), 500
 
 @auth_bp.route('/login', methods=['POST'])

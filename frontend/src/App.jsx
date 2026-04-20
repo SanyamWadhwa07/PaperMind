@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import DashboardPage from './pages/DashboardPage'
 import ProfilePage from './pages/ProfilePage'
+import TimelinePage from './pages/TimelinePage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -26,21 +27,29 @@ function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/summary/:id" element={<SummaryPage />} />
           <Route path="/batch" element={<BatchPage />} />
-          <Route 
-            path="/dashboard" 
+          <Route
+            path="/timeline"
+            element={
+              <ProtectedRoute>
+                <TimelinePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
             element={
               <ProtectedRoute>
                 <DashboardPage />
               </ProtectedRoute>
-            } 
+            }
           />
-          <Route 
-            path="/profile" 
+          <Route
+            path="/profile"
             element={
               <ProtectedRoute>
                 <ProfilePage />
               </ProtectedRoute>
-            } 
+            }
           />
         </Routes>
       </Layout>

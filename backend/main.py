@@ -264,10 +264,21 @@ class AdvancedSectionExtractor:
             # Group into sections
             sections = self._group_into_sections(structured_content)
             
-            # Filter out references
-            if 'references' in sections:
-                del sections['references']
-            
+            # Keep references for citation extraction before discarding
+            reference_text = sections.pop('references', '')
+            if reference_text:
+                sections['__references__'] = reference_text
+
+            # Post-process all sections to fix PDF extraction artifacts
+            try:
+                import sys as _sys
+                import os as _os
+                _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+                from core.pipeline.text_cleaner import clean_all_sections
+                sections = clean_all_sections(sections)
+            except Exception:
+                pass  # degrade gracefully if cleaner unavailable
+
             return sections
             
         except Exception as e:

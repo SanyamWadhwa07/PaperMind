@@ -10,11 +10,14 @@ Enables asynchronous message passing between agents with support for:
 """
 
 import asyncio
+import structlog
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Set
 from enum import Enum
 from datetime import datetime
 import uuid
+
+logger = structlog.get_logger(__name__)
 
 
 class MessageType(Enum):
@@ -256,7 +259,7 @@ class AgentMessageBus:
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
-                print(f"Error processing message: {e}")
+                logger.exception("message_processing_error", error=str(e))
     
     def _would_create_cycle(self, sender: str, recipient: str) -> bool:
         """

@@ -8,23 +8,29 @@ Professional REST API with endpoints for:
 - Export functionality
 """
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, g
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
 import json
 import traceback
+import structlog
+import structlog.contextvars
 from pathlib import Path
 import tempfile
 from datetime import datetime
 import threading
-import uuid
+import uuid as _uuid
 
 # Import authentication routes
 from auth.routes import auth_bp
 from routes.summaries import summaries_bp
 from routes.process_paper import process_bp
 from routes.profile import profile_bp
+from routes.knowledge_graph import knowledge_graph_bp
+from routes.feedback import feedback_bp
+from routes.collections import collections_bp
+from routes.batch_compare import batch_compare_bp
 
 # Import from main.py and core
 import sys
@@ -32,14 +38,48 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from backend.main import ArxivDatasetFetcher, load_config, load_patterns
 from core.agent_integration import run_agent_mode
 
+# Sentry error monitoring (optional — set SENTRY_DSN env var to enable)
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+    _dsn = os.environ.get('SENTRY_DSN')
+    if _dsn:
+        sentry_sdk.init(dsn=_dsn, integrations=[FlaskIntegration()], traces_sample_rate=0.1)
+except ImportError:
+    pass
+
+logger = structlog.get_logger(__name__)
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
+
+# Rate limiting
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    limiter = Limiter(get_remote_address, app=app, default_limits=["500 per day", "100 per hour"],
+                      storage_uri=os.environ.get('REDIS_URL', 'memory://'))
+    _rate_limiting_enabled = True
+except ImportError:
+    limiter = None
+    _rate_limiting_enabled = False
 
 # Register blueprints for authentication and user routes
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(summaries_bp, url_prefix='/api')
 app.register_blueprint(process_bp, url_prefix='/api')
 app.register_blueprint(profile_bp, url_prefix='/api')
+app.register_blueprint(knowledge_graph_bp, url_prefix='/api')
+app.register_blueprint(feedback_bp, url_prefix='/api')
+app.register_blueprint(collections_bp, url_prefix='/api')
+app.register_blueprint(batch_compare_bp, url_prefix='/api')
+
+
+@app.before_request
+def assign_request_id():
+    """Attach a unique request ID to every request for log correlation."""
+    g.request_id = str(_uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=g.request_id)
 
 # Configuration
 UPLOAD_FOLDER = Path('uploads')
@@ -72,12 +112,44 @@ def allowed_file(filename):
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint — reports Supabase, Ollama, and Redis status."""
+    checks = {}
+
+    # Supabase check
+    try:
+        from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+        from supabase import create_client
+        _sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        _sb.table('users').select('id').limit(1).execute()
+        checks['database'] = 'ok'
+    except Exception as e:
+        checks['database'] = f'error: {e}'
+
+    # Ollama check
+    try:
+        import ollama
+        ollama.list()
+        checks['ollama'] = 'ok'
+    except Exception as e:
+        checks['ollama'] = f'unavailable: {e}'
+
+    # Redis check
+    try:
+        import redis as _redis
+        _r = _redis.from_url(os.environ.get('REDIS_URL', 'redis://localhost:6379'))
+        _r.ping()
+        checks['redis'] = 'ok'
+    except Exception as e:
+        checks['redis'] = f'unavailable: {e}'
+
+    all_ok = all(v == 'ok' for v in checks.values())
+    status_code = 200 if all_ok else 503
     return jsonify({
-        'status': 'healthy',
-        'service': 'research-paper-summarizer-api',
-        'version': '1.0.0'
-    })
+        'status': 'healthy' if all_ok else 'degraded',
+        'service': 'papermind-api',
+        'version': '2.0.0',
+        'checks': checks
+    }), status_code
 
 
 @app.route('/api/search', methods=['POST'])
@@ -521,16 +593,23 @@ def internal_error(error):
     }), 500
 
 
+# Apply rate limits post-definition so limiter can be None safely
+if _rate_limiting_enabled and limiter:
+    limiter.limit("20 per minute")(upload_pdf)
+    limiter.limit("10 per minute")(search_papers)
+    limiter.limit("5 per minute")(batch_summarize)
+
+
 if __name__ == '__main__':
-    print("="*60)
-    print("Research Paper Summarizer API")
-    print("="*60)
-    print(f"Upload folder: {UPLOAD_FOLDER.absolute()}")
-    print(f"Summaries folder: {SUMMARIES_FOLDER.absolute()}")
-    print(f"ArXiv papers folder: {ARXIV_FOLDER.absolute()}")
-    print("="*60)
-    print("Starting server on http://localhost:5000")
-    print("API Documentation: http://localhost:5000/api/health")
-    print("="*60)
+    logger.info(
+        "app_startup",
+        upload_folder=str(UPLOAD_FOLDER.absolute()),
+        summaries_folder=str(SUMMARIES_FOLDER.absolute()),
+        arxiv_folder=str(ARXIV_FOLDER.absolute()),
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
+    logger.info("api_documentation_endpoint", url="http://localhost:5000/api/health")
     
     app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)

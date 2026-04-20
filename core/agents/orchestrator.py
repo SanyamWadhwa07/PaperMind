@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Set
 import asyncio
 import time
+import logging
+import structlog
 from collections import defaultdict
 
 # Add parent directory to path for imports
@@ -26,7 +28,12 @@ from core.agents.results_agent import ResultsAgent
 from core.agents.figure_agent import FigureAgent
 from core.agents.reasoning_agent import ReasoningAgent
 from core.agents.summary_agent import SummaryAgent
+from core.agents.comparison_agent import ComparisonAgent
+
+logger = structlog.get_logger(__name__)
 from core.memory.experience_db import ExperienceStore
+
+logger = logging.getLogger(__name__)
 
 
 class ParallelAgentOrchestrator:
@@ -72,6 +79,13 @@ class ParallelAgentOrchestrator:
         }
         self.summary_agent = SummaryAgent(patterns=patterns, llm_config=llm_config)
         
+        # Initialize ComparisonAgent with optional RAG and SOTA services
+        self.comparison_agent = ComparisonAgent(
+            rag_service=config.get('rag_service'),
+            sota_service=config.get('sota_service'),
+            patterns=patterns
+        )
+        
         # Register all agents with message bus and experience store
         self.all_agents = [
             self.structure_agent,
@@ -79,7 +93,8 @@ class ParallelAgentOrchestrator:
             self.results_agent,
             self.figure_agent,
             self.reasoning_agent,
-            self.summary_agent
+            self.summary_agent,
+            self.comparison_agent
         ]
         
         for agent in self.all_agents:
@@ -115,7 +130,7 @@ class ParallelAgentOrchestrator:
         
         try:
             # Phase 1: Structure extraction (sequential - needed by others)
-            print("Phase 1: Extracting structure...")
+            logger.info("phase_1_started", phase="structure_extraction")
             structure_result = await self.structure_agent.execute({
                 'pdf_path': pdf_path
             })
@@ -124,7 +139,7 @@ class ParallelAgentOrchestrator:
             domain = structure_result['metadata']['domain_match']
             
             # Phase 2: Parallel extraction
-            print("Phase 2: Parallel extraction (entities, results, figures, reasoning)...")
+            logger.info("phase_2_started", phase="parallel_extraction", agents=["entity", "results", "figure", "reasoning"])
             parallel_tasks = [
                 self.entity_agent.execute({
                     'sections': sections,
@@ -153,7 +168,7 @@ class ParallelAgentOrchestrator:
             reasoning_result = parallel_results[3] if not isinstance(parallel_results[3], Exception) else {}
             
             # Phase 3: Cross-validation and consensus
-            print("Phase 3: Cross-validation...")
+            logger.info("phase_3_started", phase="cross_validation")
             await self._cross_validate(
                 entity_result, 
                 results_result, 
@@ -162,15 +177,25 @@ class ParallelAgentOrchestrator:
             
             # Re-run ResultsAgent with entity context for better validation
             if entity_result.get('entities'):
-                print("Phase 3b: Re-running results extraction with entity context...")
+                logger.info("phase_3b_started", phase="results_reextraction", reason="entity_context_enrichment")
                 results_result = await self.results_agent.execute({
                     'sections': sections,
                     'domain': domain,
                     'entities': entity_result['entities']
                 })
             
+            # Phase 3c: Run ComparisonAgent (after entities and results are available)
+            logger.info("phase_3c_started", phase="comparison_analysis")
+            comparison_result = await self.comparison_agent.process({
+                'entities': entity_result,
+                'results': results_result,
+                'structure': structure_result,
+                'figures': figure_result,
+                'reasoning': reasoning_result
+            })
+            
             # Phase 4: Generate summary
-            print("Phase 4: Generating summary...")
+            logger.info("phase_4_started", phase="summary_generation")
             summary_result = await self.summary_agent.execute({
                 'sections': sections,
                 'entities': entity_result.get('entities', {}),
@@ -178,7 +203,8 @@ class ParallelAgentOrchestrator:
                           results_result.get('results', {}).get('inline_results', []),
                 'reasoning': reasoning_result.get('reasoning', {}),
                 'figures': figure_result.get('figures', []),
-                'metadata': structure_result.get('metadata', {})
+                'metadata': structure_result.get('metadata', {}),
+                'comparison': comparison_result  # Add comparison data to summary context
             })
             
             # Aggregate results
@@ -190,6 +216,7 @@ class ParallelAgentOrchestrator:
                 'results': results_result,
                 'figures': figure_result,
                 'reasoning': reasoning_result,
+                'comparison': comparison_result,
                 'summary': summary_result,
                 'metadata': {
                     'total_time_ms': total_time,
@@ -241,19 +268,19 @@ class ParallelAgentOrchestrator:
             
             if dataset and dataset not in extracted_entities:
                 # Flag potential mismatch
-                print(f"  Warning: Dataset '{dataset}' in results not found in entities")
+                logger.warning("entity_mismatch", type="dataset", value=dataset, location="results")
             
             if model and model not in extracted_entities:
-                print(f"  Warning: Model '{model}' in results not found in entities")
+                logger.warning("entity_mismatch", type="model", value=model, location="results")
         
         # Check reasoning claims against results
         claims = reasoning_result.get('reasoning', {}).get('claims', [])
         unsupported = reasoning_result.get('reasoning', {}).get('unsupported_claims', [])
         
         if unsupported:
-            print(f"  Warning: {len(unsupported)} unsupported claims detected")
-            for claim in unsupported[:3]:  # Show first 3
-                print(f"    - {claim[:100]}...")
+            logger.warning("unsupported_claims_detected", count=len(unsupported))
+            for claim in unsupported[:3]:  # Log only first 3
+                logger.debug("unsupported_claim", claim=claim[:100])
     
     def _get_agent_times(self) -> Dict[str, float]:
         """Get execution time for each agent."""
@@ -344,7 +371,7 @@ async def main_demo():
             enabled=config.get('experience_enabled', True)
         )
     except:
-        print("Warning: Could not initialize experience store")
+        logger.warning("experience_store_init_failed", reason="initialization_error")
         experience_store = None
     
     # Create orchestrator
@@ -358,15 +385,20 @@ async def main_demo():
     pdf_path = "path/to/paper.pdf"
     
     if Path(pdf_path).exists():
-        print(f"Processing: {pdf_path}")
+        logger.info("paper_processing_started", pdf_path=str(pdf_path))
         result = await orchestrator.process_paper(pdf_path)
         
-        print("\n=== RESULTS ===")
-        print(f"Total time: {result['metadata']['total_time_ms']:.2f}ms")
-        print(f"Speedup: {result['metadata']['parallel_speedup']:.2f}x")
-        print(f"\nSummary:\n{result['summary']['summary']['text'][:500]}...")
+        logger.info(
+            "paper_processing_completed",
+            total_time_ms=result['metadata']['total_time_ms'],
+            speedup=result['metadata']['parallel_speedup']
+        )
+        logger.debug(
+            "summary_preview",
+            summary_text=result['summary']['summary']['text'][:500]
+        )
     else:
-        print(f"PDF not found: {pdf_path}")
+        logger.error("pdf_file_not_found", pdf_path=str(pdf_path))
     
     await orchestrator.cleanup()
 

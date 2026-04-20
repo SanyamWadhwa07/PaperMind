@@ -1,7 +1,52 @@
-Flask==3.0.0
-flask-cors==4.0.0
-werkzeug==3.0.1
-python-dotenv==1.0.0
-supabase>=2.0.0
-PyJWT>=2.8.0
-bcrypt>=4.1.0
+Flask
+flask-cors
+werkzeug
+python-dotenv
+supabase
+PyJWT
+bcrypt
+
+# RAG and Vector Search
+sentence-transformers
+pgvector
+
+# LLM and NLP
+transformers
+torch
+ollama
+PyPDF2
+pdfplumber
+
+# Configuration
+PyYAML
+
+# FastAPI for async processing
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Task Queue
+arq
+redis
+
+# Logging and Monitoring
+structlog
+python-json-logger
+sentry-sdk[fastapi]
+
+# Security
+flask-limiter
+flask-talisman
+python-magic
+
+# Testing
+pytest
+pytest-asyncio
+pytest-cov
+pytest-mock
+httpx
+
+# Code Quality
+black
+flake8
+mypy

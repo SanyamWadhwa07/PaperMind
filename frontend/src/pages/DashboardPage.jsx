@@ -3,14 +3,14 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { Link } from 'react-router-dom'
 import ActivityChart from '../components/ActivityChart'
-import { 
-  FileText, 
-  TrendingUp, 
-  Clock, 
+import axios from 'axios'
+import {
+  FileText,
+  TrendingUp,
+  Clock,
   Calendar,
   Search,
-  Filter,
-  Download,
+  Zap,
   Trash2,
   Eye
 } from 'lucide-react'
@@ -25,6 +25,8 @@ export default function DashboardPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState('created_at')
+  const [searchMode, setSearchMode] = useState('keyword') // 'keyword' | 'semantic'
+  const [semanticSearching, setSemanticSearching] = useState(false)
   const [monthlySummaries, setMonthlySummaries] = useState({})
   const [recentActivity, setRecentActivity] = useState([])
 
@@ -59,10 +61,31 @@ export default function DashboardPage() {
     setLoading(false)
   }
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     e.preventDefault()
     setPage(1)
-    fetchDashboardData()
+    if (searchMode === 'semantic' && searchTerm.trim()) {
+      await runSemanticSearch(searchTerm)
+    } else {
+      fetchDashboardData()
+    }
+  }
+
+  const runSemanticSearch = async (query) => {
+    setSemanticSearching(true)
+    try {
+      const res = await axios.post(
+        'http://localhost:5000/api/graph/search',
+        { query, top_k: 20 },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setSummaries(res.data.results || [])
+      setTotalPages(1)
+    } catch {
+      toast.error('Semantic search failed')
+    } finally {
+      setSemanticSearching(false)
+    }
   }
 
   const deleteSummary = async (id) => {
@@ -159,30 +182,74 @@ export default function DashboardPage() {
       />
 
       {/* Search and Filters */}
-      <div className="card">
+      <div className="card space-y-3">
+        {/* Mode toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSearchMode('keyword')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              searchMode === 'keyword'
+                ? 'bg-[#00988F] text-white'
+                : 'bg-[#F9FBFA] dark:bg-[#111312] text-[#8F8F8F] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 hover:text-[#1B1B1B] dark:hover:text-[#F5F5F5]'
+            }`}
+          >
+            <Search className="w-3.5 h-3.5" />
+            Keyword
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchMode('semantic')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              searchMode === 'semantic'
+                ? 'bg-[#00988F] text-white'
+                : 'bg-[#F9FBFA] dark:bg-[#111312] text-[#8F8F8F] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 hover:text-[#1B1B1B] dark:hover:text-[#F5F5F5]'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Semantic
+          </button>
+          {searchMode === 'semantic' && (
+            <span className="text-xs text-[#8F8F8F]">Search by meaning using AI embeddings</span>
+          )}
+        </div>
+
         <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
+            {searchMode === 'keyword'
+              ? <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
+              : <Zap className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#00988F]" />
+            }
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search summaries..."
+              placeholder={searchMode === 'semantic' ? 'Describe what you\'re looking for…' : 'Search summaries...'}
               className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5]"
             />
           </div>
           <div className="flex gap-2">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="px-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5] text-black"
-            >
-              <option value="created_at">Newest First</option>
-              <option value="paper_title">Title A-Z</option>
-              <option value="processing_time_seconds">Processing Time</option>
-            </select>
-            <button type="submit" className="btn-primary px-6">
-              Search
+            {searchMode === 'keyword' && (
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="px-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5] text-black"
+              >
+                <option value="created_at">Newest First</option>
+                <option value="paper_title">Title A-Z</option>
+                <option value="processing_time_seconds">Processing Time</option>
+              </select>
+            )}
+            <button type="submit" className="btn-primary px-6" disabled={semanticSearching}>
+              {semanticSearching ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  Searching…
+                </span>
+              ) : 'Search'}
             </button>
           </div>
         </form>
@@ -193,6 +260,13 @@ export default function DashboardPage() {
         <h2 className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
           Your Summaries
         </h2>
+
+        {searchMode === 'semantic' && summaries.length > 0 && (
+          <p className="text-xs text-[#8F8F8F] flex items-center gap-1">
+            <Zap className="w-3.5 h-3.5 text-[#00988F]" />
+            Showing {summaries.length} semantic matches. Switch to Keyword to see all papers.
+          </p>
+        )}
 
         {summaries.length === 0 ? (
           <div className="card text-center py-12">
@@ -217,17 +291,27 @@ export default function DashboardPage() {
                       {summary.paper_title}
                     </h3>
                     <div className="flex flex-wrap gap-2 text-xs sm:text-sm text-[#8F8F8F] mb-3">
+                      {summary.similarity_score != null && (
+                        <span className="badge bg-[#00988F]/20 text-[#00988F] dark:text-[#00A7A0]">
+                          <Zap className="w-3 h-3 inline mr-0.5" />
+                          {Math.round(summary.similarity_score * 100)}% match
+                        </span>
+                      )}
                       {summary.arxiv_id && (
                         <span className="badge badge-blue">{summary.arxiv_id}</span>
                       )}
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-4 h-4" />
-                        {new Date(summary.created_at).toLocaleDateString()}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
-                        {summary.processing_time_seconds?.toFixed(1)}s
-                      </span>
+                      {summary.created_at && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4" />
+                          {new Date(summary.created_at).toLocaleDateString()}
+                        </span>
+                      )}
+                      {summary.processing_time_seconds != null && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-4 h-4" />
+                          {summary.processing_time_seconds?.toFixed(1)}s
+                        </span>
+                      )}
                     </div>
                     {summary.paper_authors && summary.paper_authors.length > 0 && (
                       <p className="text-sm text-[#1B1B1B] dark:text-[#F5F5F5]">
