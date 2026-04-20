@@ -152,8 +152,12 @@ def get_current_user():
         user = result.data[0]
         
         # Get user statistics
-        stats_result = supabase.table('user_summary_stats').select('*').eq('user_id', request.user_id).execute()
-        stats = stats_result.data[0] if stats_result.data else {}
+        try:
+            stats_result = supabase.table('summaries').select('id', count='exact').eq('user_id', request.user_id).execute()
+            total = stats_result.count or 0
+        except Exception:
+            total = 0
+        stats = {'total_summaries': total}
         
         return jsonify({
             'user': user,

@@ -20,9 +20,9 @@ def _get_model():
         try:
             from sentence_transformers import SentenceTransformer
             _model_instance = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("embedding_model_loaded", model="all-MiniLM-L6-v2")
+            logger.info("embedding_model_loaded: all-MiniLM-L6-v2")
         except Exception as e:
-            logger.error("embedding_model_load_failed", error=str(e))
+            logger.error("embedding_model_load_failed: %s", str(e))
             raise
     return _model_instance
 

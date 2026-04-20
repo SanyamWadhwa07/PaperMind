@@ -8,6 +8,12 @@ Professional REST API with endpoints for:
 - Export functionality
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 from flask import Flask, request, jsonify, send_file, g
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -446,7 +452,7 @@ def get_summary(summary_id):
         }), 500
 
 
-@app.route('/api/export/<summary_id>', methods=['GET'])
+@app.route('/api/export_legacy/<summary_id>', methods=['GET'])
 def export_summary(summary_id):
     """Export summary as JSON or Markdown.
     

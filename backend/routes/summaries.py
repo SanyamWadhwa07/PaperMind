@@ -1,11 +1,13 @@
 """
 User-specific summary routes with authentication
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from supabase import create_client
 from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from auth.utils import token_required
 from datetime import datetime
+import tempfile
+import json as _json
 
 summaries_bp = Blueprint('summaries', __name__)
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -167,3 +169,31 @@ def get_dashboard_stats():
         
     except Exception as e:
         return jsonify({'error': f'Failed to fetch stats: {str(e)}'}), 500
+
+
+@summaries_bp.route('/export/<summary_id>', methods=['GET'])
+@token_required
+def export_summary(summary_id):
+    """Export a summary as JSON or Markdown."""
+    format_type = request.args.get('format', 'json')
+    try:
+        result = supabase.table('summaries').select('*').eq('id', summary_id).execute()
+        if not result.data:
+            return jsonify({'error': 'Summary not found'}), 404
+        row = result.data[0]
+        if format_type == 'markdown':
+            title = row.get('paper_title', 'Untitled')
+            authors = ', '.join(row.get('paper_authors') or [])
+            sdata = row.get('summary_data') or {}
+            summaries = sdata.get('summaries', {})
+            md = f"# {title}\n\n**Authors:** {authors}\n\n**arXiv:** {row.get('arxiv_id','')}\n\n"
+            for stype, text in summaries.items():
+                md += f"## {stype.title()} Summary\n\n{text}\n\n"
+            tmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.md', encoding='utf-8')
+            tmp.write(md); tmp.close()
+            return send_file(tmp.name, as_attachment=True,
+                             download_name=f"{row.get('arxiv_id','paper')}.md",
+                             mimetype='text/markdown')
+        return jsonify(row), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

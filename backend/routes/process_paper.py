@@ -414,6 +414,4 @@ def process_from_arxiv():
                 temp_path.unlink()
         
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         return jsonify({'error': f'Failed to process arXiv paper: {str(e)}'}), 500

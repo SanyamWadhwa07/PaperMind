@@ -16,19 +16,20 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Check if user is logged in on mount
-    if (token) {
-      fetchCurrentUser()
+    const savedToken = localStorage.getItem('token')
+    if (savedToken) {
+      fetchCurrentUser(savedToken)
     } else {
       setLoading(false)
     }
-  }, [token])
+  }, [])
 
-  const fetchCurrentUser = async () => {
+  const fetchCurrentUser = async (authToken) => {
+    const t = authToken || token
     try {
       const response = await fetch('http://localhost:5000/api/auth/me', {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${t}`
         }
       })
 

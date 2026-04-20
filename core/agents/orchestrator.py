@@ -33,8 +33,6 @@ from core.agents.comparison_agent import ComparisonAgent
 logger = structlog.get_logger(__name__)
 from core.memory.experience_db import ExperienceStore
 
-logger = logging.getLogger(__name__)
-
 
 class ParallelAgentOrchestrator:
     """
