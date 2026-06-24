@@ -3,6 +3,10 @@
 Supports:
 - Ollama (recommended): Easy setup, streaming responses
 - Transformers: Direct Python integration, heavier memory
+- OpenAI: Cloud API via openai package
+- Anthropic: Cloud API via anthropic package
+- xAI (Grok): OpenAI-compatible API via openai package + XAI_API_KEY
+- Groq: Ultra-fast inference via openai package + GROQ_API_KEY
 - Fallback chain: Ollama → Transformers → Template-based
 """
 
@@ -12,7 +16,22 @@ from typing import Optional, Dict, Any, List, AsyncIterator
 from enum import Enum
 import json
 
+import re
+
 logger = structlog.get_logger(__name__)
+
+_THINK_CLOSED_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
+_THINK_OPEN_RE = re.compile(r'<think>.*$', re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks from reasoning models (Qwen3, DeepSeek-R1, etc.).
+
+    Handles both closed blocks and truncated blocks (model hit max_tokens inside <think>).
+    """
+    text = _THINK_CLOSED_RE.sub('', text)
+    text = _THINK_OPEN_RE.sub('', text)
+    return text.strip()
 
 # Ollama support (optional)
 try:
@@ -26,14 +45,32 @@ try:
     from transformers import AutoTokenizer, AutoModelForCausalLM
     import torch
     TRANSFORMERS_AVAILABLE = True
-except ImportError:
+except (ImportError, ValueError, Exception):
     TRANSFORMERS_AVAILABLE = False
+
+# OpenAI support (optional — pip install openai)
+try:
+    from openai import AsyncOpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+# Anthropic support (optional — pip install anthropic)
+try:
+    from anthropic import AsyncAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
 
 
 class LLMBackend(Enum):
     """Available LLM backends."""
     OLLAMA = "ollama"
     TRANSFORMERS = "transformers"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    XAI = "xai"
+    GROQ = "groq"
     TEMPLATE = "template"
 
 
@@ -68,7 +105,8 @@ class LocalLLM:
             temperature: Sampling temperature
         """
         import os
-        self.backend_name = backend
+        # PAPERMIND_LLM_BACKEND selects the backend family; defaults to ollama
+        self.backend_name = os.environ.get('PAPERMIND_LLM_BACKEND', backend)
         # env var override → explicit arg → default
         self.model_name = (
             os.environ.get('PAPERMIND_LLM_MODEL')
@@ -77,6 +115,10 @@ class LocalLLM:
         )
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self._openai_client: Optional['AsyncOpenAI'] = None
+        self._anthropic_client: Optional['AsyncAnthropic'] = None
+        self._xai_client: Optional['AsyncOpenAI'] = None
+        self._groq_client: Optional['AsyncOpenAI'] = None
         
         if device is None:
             if TRANSFORMERS_AVAILABLE:
@@ -94,16 +136,32 @@ class LocalLLM:
         self._initialize()
     
     def _initialize(self):
-        """Initialize the configured backend."""
-        if self.backend_name == "ollama" or self.backend_name == "auto":
+        """Initialize the configured backend, trying in priority order."""
+        if self.backend_name == "openai":
+            if self._init_openai():
+                return
+        elif self.backend_name == "anthropic":
+            if self._init_anthropic():
+                return
+        elif self.backend_name == "xai":
+            if self._init_xai():
+                return
+        elif self.backend_name == "groq":
+            if self._init_groq():
+                return
+        elif self.backend_name in ("ollama", "auto"):
             if self._init_ollama():
                 return
-        
-        if self.backend_name == "transformers" or self.backend_name == "auto":
+        elif self.backend_name == "transformers":
             if self._init_transformers():
                 return
-        
-        # Fallback to template
+
+        # auto: try remaining backends in order
+        if self.backend_name == "auto":
+            for init_fn in (self._init_groq, self._init_xai, self._init_openai, self._init_anthropic, self._init_transformers):
+                if init_fn():
+                    return
+
         logger.warning("no_llm_backend_available", using="template_based_generation")
         self.backend = LLMBackend.TEMPLATE
     
@@ -177,6 +235,76 @@ class LocalLLM:
             logger.exception("transformers_init_failed", error=str(e))
             return False
     
+    def _init_openai(self) -> bool:
+        """Initialize OpenAI backend."""
+        import os
+        if not OPENAI_AVAILABLE:
+            logger.warning("openai_not_installed", instruction="pip install openai")
+            return False
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            logger.warning("openai_api_key_missing", instruction="set OPENAI_API_KEY env var")
+            return False
+        self._openai_client = AsyncOpenAI(api_key=api_key)
+        self.model_name = os.environ.get('PAPERMIND_LLM_MODEL', 'gpt-4o-mini')
+        self.backend = LLMBackend.OPENAI
+        logger.info("openai_initialized", model=self.model_name)
+        return True
+
+    def _init_anthropic(self) -> bool:
+        """Initialize Anthropic backend."""
+        import os
+        if not ANTHROPIC_AVAILABLE:
+            logger.warning("anthropic_not_installed", instruction="pip install anthropic")
+            return False
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            logger.warning("anthropic_api_key_missing", instruction="set ANTHROPIC_API_KEY env var")
+            return False
+        self._anthropic_client = AsyncAnthropic(api_key=api_key)
+        self.model_name = os.environ.get('PAPERMIND_LLM_MODEL', 'claude-haiku-4-5-20251001')
+        self.backend = LLMBackend.ANTHROPIC
+        logger.info("anthropic_initialized", model=self.model_name)
+        return True
+
+    def _init_xai(self) -> bool:
+        """Initialize xAI (Grok) backend using OpenAI-compatible API."""
+        import os
+        if not OPENAI_AVAILABLE:
+            logger.warning("openai_not_installed", instruction="pip install openai")
+            return False
+        api_key = os.environ.get('XAI_API_KEY')
+        if not api_key:
+            logger.warning("xai_api_key_missing", instruction="set XAI_API_KEY env var")
+            return False
+        self._xai_client = AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://api.x.ai/v1",
+        )
+        self.model_name = os.environ.get('PAPERMIND_LLM_MODEL', 'grok-beta')
+        self.backend = LLMBackend.XAI
+        logger.info("xai_initialized", model=self.model_name)
+        return True
+
+    def _init_groq(self) -> bool:
+        """Initialize Groq backend using OpenAI-compatible API."""
+        import os
+        if not OPENAI_AVAILABLE:
+            logger.warning("openai_not_installed", instruction="pip install openai")
+            return False
+        api_key = os.environ.get('GROQ_API_KEY')
+        if not api_key:
+            logger.warning("groq_api_key_missing", instruction="set GROQ_API_KEY env var")
+            return False
+        self._groq_client = AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        self.model_name = os.environ.get('PAPERMIND_LLM_MODEL', 'llama-3.3-70b-versatile')
+        self.backend = LLMBackend.GROQ
+        logger.info("groq_initialized", model=self.model_name)
+        return True
+
     async def generate(
         self,
         prompt: str,
@@ -201,7 +329,19 @@ class LocalLLM:
         max_tokens = max_tokens or self.max_tokens
         temperature = temperature or self.temperature
         
-        if self.backend == LLMBackend.OLLAMA:
+        if self.backend == LLMBackend.OPENAI:
+            return await self._generate_openai(prompt, system_prompt, max_tokens, temperature)
+        elif self.backend == LLMBackend.ANTHROPIC:
+            return await self._generate_anthropic(prompt, system_prompt, max_tokens, temperature)
+        elif self.backend == LLMBackend.XAI:
+            return await self._generate_openai(
+                prompt, system_prompt, max_tokens, temperature, client=self._xai_client
+            )
+        elif self.backend == LLMBackend.GROQ:
+            return await self._generate_openai(
+                prompt, system_prompt, max_tokens, temperature, client=self._groq_client
+            )
+        elif self.backend == LLMBackend.OLLAMA:
             return await self._generate_ollama(prompt, system_prompt, max_tokens, temperature)
         elif self.backend == LLMBackend.TRANSFORMERS:
             return await self._generate_transformers(prompt, system_prompt, max_tokens, temperature, stop_sequences)
@@ -237,12 +377,77 @@ class LocalLLM:
                 )
             )
             
-            return response['message']['content']
-            
+            return _strip_think_tags(response['message']['content'])
+
         except Exception as e:
             logger.exception("ollama_generation_error", error=str(e), fallback="template")
             return self._generate_template(prompt)
     
+    # Reasoning models that emit <think> blocks — we disable thinking via API param when possible.
+    _REASONING_MODELS = frozenset({
+        'qwen/qwen3-32b', 'qwen/qwen3-8b', 'qwen/qwen3-14b', 'qwen/qwen3-72b',
+        'qwq-32b', 'deepseek-r1', 'deepseek-r1-distill-llama-70b',
+    })
+
+    async def _generate_openai(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        max_tokens: int,
+        temperature: float,
+        client: Optional['AsyncOpenAI'] = None,
+    ) -> str:
+        """Generate using OpenAI-compatible API (also used by xAI/Grok)."""
+        try:
+            active_client = client or self._openai_client
+            messages = []
+            if system_prompt:
+                messages.append({'role': 'system', 'content': system_prompt})
+            messages.append({'role': 'user', 'content': prompt})
+
+            extra_body: dict = {}
+            # Groq supports reasoning_format to suppress <think> tokens for reasoning models
+            if active_client is self._groq_client and self.model_name in self._REASONING_MODELS:
+                extra_body['reasoning_format'] = 'hidden'
+
+            response = await active_client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **({"extra_body": extra_body} if extra_body else {}),
+            )
+            raw = response.choices[0].message.content or ''
+            return _strip_think_tags(raw)
+        except Exception as e:
+            logger.exception("openai_generation_error", error=str(e), fallback="template")
+            return self._generate_template(prompt)
+
+    async def _generate_anthropic(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        max_tokens: int,
+        temperature: float,
+    ) -> str:
+        """Generate using Anthropic API."""
+        try:
+            kwargs: dict = dict(
+                model=self.model_name,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[{'role': 'user', 'content': prompt}],
+            )
+            if system_prompt:
+                kwargs['system'] = system_prompt
+
+            response = await self._anthropic_client.messages.create(**kwargs)
+            raw = response.content[0].text if response.content else ''
+            return _strip_think_tags(raw)
+        except Exception as e:
+            logger.exception("anthropic_generation_error", error=str(e), fallback="template")
+            return self._generate_template(prompt)
+
     async def _generate_transformers(
         self,
         prompt: str,
@@ -351,8 +556,12 @@ class LocalLLM:
             'temperature': self.temperature,
             'available_backends': {
                 'ollama': OLLAMA_AVAILABLE,
-                'transformers': TRANSFORMERS_AVAILABLE
-            }
+                'transformers': TRANSFORMERS_AVAILABLE,
+                'openai': OPENAI_AVAILABLE,
+                'anthropic': ANTHROPIC_AVAILABLE,
+                'xai': OPENAI_AVAILABLE,   # xAI reuses the openai package
+                'groq': OPENAI_AVAILABLE,  # Groq reuses the openai package
+            },
         }
 
 

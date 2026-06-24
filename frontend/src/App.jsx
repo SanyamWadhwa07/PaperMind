@@ -8,6 +8,8 @@ import SignupPage from './pages/SignupPage'
 import DashboardPage from './pages/DashboardPage'
 import ProfilePage from './pages/ProfilePage'
 import TimelinePage from './pages/TimelinePage'
+import ExplorePage from './pages/ExplorePage'
+import DiscoverPage from './pages/DiscoverPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -48,6 +50,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/explore"
+            element={
+              <ProtectedRoute>
+                <ExplorePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/discover"
+            element={
+              <ProtectedRoute>
+                <DiscoverPage />
               </ProtectedRoute>
             }
           />

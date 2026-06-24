@@ -70,13 +70,18 @@ class ReasoningAgent(BaseAgent):
         if not sections:
             raise ValueError("sections required")
         
-        # Focus on key reasoning sections
-        abstract = sections.get('abstract', '')
-        introduction = sections.get('introduction', '')
-        methodology = sections.get('methodology', '')
-        conclusion = sections.get('conclusion', '')
-        
-        combined_text = abstract + ' ' + introduction + ' ' + methodology + ' ' + conclusion
+        def _sec(kws):
+            parts = [v for k, v in sections.items() if any(kw in k.lower() for kw in kws)]
+            return ' '.join(parts)
+
+        abstract = _sec(['abstract'])
+        introduction = _sec(['introduction', 'intro'])
+        methodology = _sec(['method', 'approach', 'architecture', 'framework'])
+        conclusion = _sec(['conclusion', 'conclud', 'discussion'])
+
+        combined_text = ' '.join(filter(None, [abstract, introduction, methodology, conclusion]))
+        if not combined_text.strip():
+            combined_text = ' '.join(sections.values())
         
         # Extract claims
         claims = self._extract_claims(combined_text)

@@ -50,7 +50,11 @@
   .badge-purple {
     @apply bg-[#C4935F]/10 dark:bg-[#D9A86C]/20 text-[#C4935F] dark:text-[#D9A86C] border border-[#C4935F]/30 dark:border-[#D9A86C]/40;
   }
-  
+
+  .badge-amber {
+    @apply bg-amber-500/10 dark:bg-amber-400/20 text-amber-600 dark:text-amber-300 border border-amber-500/30 dark:border-amber-400/40;
+  }
+
   /* Glassmorphism animations */
   .animate-fade-in {
     animation: fadeIn 0.5s ease-in;

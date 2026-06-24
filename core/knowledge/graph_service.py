@@ -184,3 +184,172 @@ def get_knowledge_graph(
         logger.error("knowledge_graph_build_failed", error=str(e))
 
     return {'nodes': nodes, 'edges': edges}
+
+
+def get_citation_network(user_id: str, supabase_client) -> Dict[str, Any]:
+    """
+    Build a directed citation graph for all papers in the user's library.
+
+    Node types: foundational (in-degree >= 3), frontier (recent, in-degree < 2), bridge (both).
+    Edge direction: source_summary_id → cited paper.
+    """
+    nodes: List[Dict] = []
+    edges: List[Dict] = []
+
+    try:
+        # Fetch all papers
+        papers_resp = supabase_client.table("summaries") \
+            .select("id, paper_title, arxiv_id, published_date, primary_category") \
+            .eq("user_id", user_id) \
+            .limit(200) \
+            .execute()
+        papers = {p["id"]: p for p in (papers_resp.data or [])}
+        paper_ids = list(papers.keys())
+
+        # Fetch citation lineage rows
+        lineage_resp = supabase_client.table("paper_lineage") \
+            .select("ancestor_id, descendant_id, link_type, link_confidence") \
+            .in_("ancestor_id", paper_ids) \
+            .execute()
+
+        in_degree: Dict[str, int] = {pid: 0 for pid in paper_ids}
+        for row in (lineage_resp.data or []):
+            if row["descendant_id"] in in_degree:
+                in_degree[row["descendant_id"]] = in_degree.get(row["descendant_id"], 0) + 1
+            edges.append({
+                "from": f"paper_{row['ancestor_id']}",
+                "to": f"paper_{row['descendant_id']}",
+                "arrows": "to",
+                "link_type": row.get("link_type", "cites"),
+                "value": float(row.get("link_confidence") or 0.7),
+                "title": row.get("link_type", "cites"),
+                "color": _link_type_color(row.get("link_type", "cites")),
+                "group": "citation",
+            })
+
+        # Also fetch paper_citations for cross-referencing
+        cite_resp = supabase_client.table("paper_citations") \
+            .select("source_summary_id, cited_arxiv_id, cited_title, confidence") \
+            .in_("source_summary_id", paper_ids) \
+            .execute()
+
+        # Build arxiv_id → paper_id map
+        arxiv_to_id = {p.get("arxiv_id"): pid for pid, p in papers.items() if p.get("arxiv_id")}
+
+        for cite in (cite_resp.data or []):
+            target_id = arxiv_to_id.get(cite.get("cited_arxiv_id"))
+            src = cite["source_summary_id"]
+            if target_id and target_id != src and target_id in papers:
+                in_degree[target_id] = in_degree.get(target_id, 0) + 1
+                edge_id = f"{src}_{target_id}"
+                edges.append({
+                    "from": f"paper_{src}",
+                    "to": f"paper_{target_id}",
+                    "arrows": "to",
+                    "link_type": "cites",
+                    "value": float(cite.get("confidence") or 0.6),
+                    "title": "cites",
+                    "color": "#94a3b8",
+                    "group": "citation",
+                })
+
+        # Build nodes
+        for pid, paper in papers.items():
+            degree = in_degree.get(pid, 0)
+            if degree >= 3:
+                node_type = "foundational"
+                color = "#ef4444"
+            elif degree <= 1:
+                node_type = "frontier"
+                color = "#22c55e"
+            else:
+                node_type = "bridge"
+                color = "#f59e0b"
+
+            nodes.append({
+                "id": f"paper_{pid}",
+                "label": (paper.get("paper_title") or "Untitled")[:35],
+                "title": paper.get("paper_title"),
+                "group": "paper",
+                "node_type": node_type,
+                "in_degree": degree,
+                "published_date": paper.get("published_date"),
+                "category": paper.get("primary_category", "general"),
+                "summary_id": pid,
+                "color": color,
+                "size": 15 + min(degree * 5, 35),
+            })
+
+    except Exception as e:
+        logger.error("citation_network_build_failed", error=str(e))
+
+    return {"nodes": nodes, "edges": edges}
+
+
+def _link_type_color(link_type: str) -> str:
+    return {
+        "cites": "#94a3b8",
+        "extends": "#3b82f6",
+        "replicates": "#8b5cf6",
+        "contradicts": "#ef4444",
+        "inspired_by": "#f59e0b",
+    }.get(link_type, "#94a3b8")
+
+
+def get_author_graph(user_id: str, supabase_client) -> Dict[str, Any]:
+    """
+    Build a co-authorship graph from the user's paper library.
+    Nodes = authors, edges = co-authored at least one paper (weight = paper count).
+    """
+    nodes: List[Dict] = []
+    edges: List[Dict] = []
+
+    try:
+        resp = supabase_client.table("summaries") \
+            .select("id, paper_title, paper_authors") \
+            .eq("user_id", user_id) \
+            .limit(200) \
+            .execute()
+        papers = resp.data or []
+
+        author_papers: Dict[str, List[str]] = {}
+        co_weight: Dict[tuple, int] = {}
+
+        for paper in papers:
+            authors = paper.get("paper_authors") or []
+            pid = paper["id"]
+            for a in authors[:8]:  # cap per paper to avoid explosion
+                author_papers.setdefault(a, []).append(pid)
+
+            for i, a1 in enumerate(authors[:8]):
+                for a2 in authors[i + 1:8]:
+                    key = (min(a1, a2), max(a1, a2))
+                    co_weight[key] = co_weight.get(key, 0) + 1
+
+        # Build nodes — size proportional to paper count
+        for author, pids in author_papers.items():
+            nodes.append({
+                "id": f"author_{author}",
+                "label": author[:30],
+                "title": f"{author} ({len(pids)} papers)",
+                "group": "author",
+                "paper_count": len(pids),
+                "size": 10 + min(len(pids) * 4, 30),
+                "color": "#6366f1",
+            })
+
+        # Build edges
+        for (a1, a2), weight in co_weight.items():
+            edges.append({
+                "from": f"author_{a1}",
+                "to": f"author_{a2}",
+                "value": weight,
+                "title": f"{weight} co-authored paper(s)",
+                "group": "coauthorship",
+                "color": "#c4b5fd",
+            })
+
+    except Exception as e:
+        logger.error("author_graph_build_failed", error=str(e))
+
+    return {"nodes": nodes, "edges": edges}

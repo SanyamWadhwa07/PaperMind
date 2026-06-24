@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 600" width="1040" height="600" role="img" aria-label="PaperMind architecture">
+  <defs>
+    <linearGradient id="abg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c1414"/>
+      <stop offset="1" stop-color="#0a1f1d"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5fb8b1"/>
+    </marker>
+    <style>
+      .lbl  { font-family: Segoe UI, Helvetica, Arial, sans-serif; fill:#eaf6f4; }
+      .sub  { font-family: Segoe UI, Helvetica, Arial, sans-serif; fill:#8fb6b2; }
+      .h    { font-family: Segoe UI, Helvetica, Arial, sans-serif; fill:#00C2B8; font-weight:700; }
+      .edge { stroke:#5fb8b1; stroke-width:2; fill:none; marker-end:url(#arrow); }
+      .node { fill:#0e1c1b; stroke:#00988F; stroke-opacity:.55; stroke-width:1.6; }
+      .copper { stroke:#D9A86C; stroke-opacity:.6; }
+    </style>
+  </defs>
+
+  <rect width="1040" height="600" rx="20" fill="url(#abg)"/>
+  <text x="40" y="46" class="h" font-size="22">PaperMind &#8212; processing pipeline</text>
+
+  <!-- 1. input -->
+  <rect class="node copper" x="40" y="72" width="220" height="58" rx="12"/>
+  <text x="60" y="100" class="lbl" font-size="16" font-weight="600">PDF upload / arXiv ID</text>
+  <text x="60" y="120" class="sub" font-size="12">React + FastAPI (/api/process)</text>
+
+  <!-- 2. extraction -->
+  <rect class="node" x="40" y="166" width="300" height="74" rx="12"/>
+  <text x="60" y="194" class="lbl" font-size="16" font-weight="600">Layered PDF Extraction</text>
+  <text x="60" y="214" class="sub" font-size="12">MinerU &#8594; pymupdf4llm &#8594; fitz</text>
+  <text x="60" y="230" class="sub" font-size="12">sections · markdown tables · figures</text>
+
+  <path class="edge" d="M150,130 L150,166"/>
+
+  <!-- 3. LangGraph engine container -->
+  <rect class="node" x="40" y="276" width="640" height="250" rx="14" stroke-opacity=".8"/>
+  <text x="60" y="304" class="h" font-size="17">LangGraph Summarization Engine</text>
+  <text x="60" y="324" class="sub" font-size="12">map-reduce over the whole paper · structured (no-regex) extraction</text>
+
+  <path class="edge" d="M190,240 L190,276"/>
+
+  <!-- inner nodes -->
+  <rect class="node" x="60" y="344" width="120" height="46" rx="10"/>
+  <text x="120" y="372" class="lbl" font-size="13" text-anchor="middle">prepare</text>
+
+  <rect class="node" x="206" y="344" width="150" height="46" rx="10"/>
+  <text x="281" y="366" class="lbl" font-size="13" text-anchor="middle">map_sections</text>
+  <text x="281" y="382" class="sub" font-size="10" text-anchor="middle">per-section digest</text>
+
+  <rect class="node" x="382" y="320" width="150" height="44" rx="10"/>
+  <text x="457" y="347" class="lbl" font-size="12" text-anchor="middle">extract_entities</text>
+  <rect class="node" x="382" y="372" width="150" height="44" rx="10"/>
+  <text x="457" y="399" class="lbl" font-size="12" text-anchor="middle">extract_results</text>
+
+  <rect class="node" x="558" y="344" width="104" height="46" rx="10"/>
+  <text x="610" y="372" class="lbl" font-size="13" text-anchor="middle">synthesize</text>
+
+  <rect class="node copper" x="382" y="452" width="150" height="50" rx="10"/>
+  <text x="457" y="474" class="lbl" font-size="13" text-anchor="middle">grade (LLM judge)</text>
+  <text x="457" y="490" class="sub" font-size="10" text-anchor="middle">retry if weak</text>
+
+  <path class="edge" d="M180,367 L206,367"/>
+  <path class="edge" d="M356,360 L382,342"/>
+  <path class="edge" d="M356,374 L382,394"/>
+  <path class="edge" d="M532,342 L558,360"/>
+  <path class="edge" d="M532,394 L558,374"/>
+  <path class="edge" d="M610,390 L610,477 L532,477"/>
+  <path class="edge" d="M457,452 C457,420 540,420 558,388" stroke-dasharray="5 4"/>
+
+  <!-- provider chain -->
+  <rect class="node copper" x="730" y="276" width="270" height="120" rx="14"/>
+  <text x="750" y="304" class="h" font-size="15" fill="#D9A86C">LLM Provider Chain</text>
+  <text x="750" y="330" class="lbl" font-size="14">Gemini  &#8594;  Groq  &#8594;  Ollama</text>
+  <text x="750" y="352" class="sub" font-size="11">free-tier primary &#8594; fast overflow</text>
+  <text x="750" y="368" class="sub" font-size="11">&#8594; local offline fallback</text>
+  <text x="750" y="386" class="sub" font-size="11">auto failover · rate-limit backoff</text>
+  <path class="edge" d="M730,336 L662,360"/>
+
+  <!-- storage -->
+  <rect class="node" x="730" y="430" width="270" height="64" rx="12"/>
+  <text x="750" y="458" class="lbl" font-size="15" font-weight="600">Supabase PostgreSQL</text>
+  <text x="750" y="478" class="sub" font-size="12">pgvector embeddings · summaries · lineage</text>
+  <path class="edge" d="M680,460 L730,462"/>
+
+  <!-- relation + graph -->
+  <rect class="node" x="40" y="548" width="470" height="40" rx="10"/>
+  <text x="60" y="573" class="lbl" font-size="13">RelationAgent &#8594; paper_lineage &#8594; Knowledge / Citation Graph</text>
+  <path class="edge" d="M360,526 L360,548"/>
+
+  <rect class="node copper" x="730" y="516" width="270" height="40" rx="10"/>
+  <text x="750" y="541" class="lbl" font-size="13">React frontend &#8212; summary · entities · graph</text>
+  <path class="edge" d="M865,494 L865,516"/>
+</svg>

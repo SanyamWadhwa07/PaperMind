@@ -29,6 +29,9 @@ from core.agents.figure_agent import FigureAgent
 from core.agents.reasoning_agent import ReasoningAgent
 from core.agents.summary_agent import SummaryAgent
 from core.agents.comparison_agent import ComparisonAgent
+from core.agents.research_gap_agent import ResearchGapAgent
+from core.agents.ablation_parser_agent import AblationParserAgent
+from core.agents.reproducibility_agent import ReproducibilityAgent
 
 logger = structlog.get_logger(__name__)
 from core.memory.experience_db import ExperienceStore
@@ -72,7 +75,7 @@ class ParallelAgentOrchestrator:
         llm_config = {
             'backend': config.get('llm_backend', 'ollama'),
             'model_name': config.get('llm_model', 'qwen2.5:3b'),
-            'max_tokens': config.get('llm_max_tokens', 512),
+            'max_tokens': config.get('llm_max_tokens', 2048),
             'temperature': config.get('llm_temperature', 0.7)
         }
         self.summary_agent = SummaryAgent(patterns=patterns, llm_config=llm_config)
@@ -83,7 +86,12 @@ class ParallelAgentOrchestrator:
             sota_service=config.get('sota_service'),
             patterns=patterns
         )
-        
+
+        # New intelligence pipeline agents
+        self.research_gap_agent = ResearchGapAgent(patterns=patterns, llm_config=llm_config)
+        self.ablation_agent = AblationParserAgent(patterns=patterns, llm_config=llm_config)
+        self.reproducibility_agent = ReproducibilityAgent(patterns=patterns)
+
         # Register all agents with message bus and experience store
         self.all_agents = [
             self.structure_agent,
@@ -92,7 +100,10 @@ class ParallelAgentOrchestrator:
             self.figure_agent,
             self.reasoning_agent,
             self.summary_agent,
-            self.comparison_agent
+            self.comparison_agent,
+            self.research_gap_agent,
+            self.ablation_agent,
+            self.reproducibility_agent,
         ]
         
         for agent in self.all_agents:
@@ -124,7 +135,8 @@ class ParallelAgentOrchestrator:
         start_time = time.time()
         
         # Start message bus background task
-        self.message_bus_task = asyncio.create_task(self.message_bus._process_messages())
+        await self.message_bus.start()
+        self.message_bus_task = self.message_bus._processor_task
         
         try:
             # Phase 1: Structure extraction (sequential - needed by others)
@@ -133,37 +145,48 @@ class ParallelAgentOrchestrator:
                 'pdf_path': pdf_path
             })
             
+            if 'error' in structure_result or 'sections' not in structure_result:
+                raise RuntimeError(
+                    f"StructureAgent failed: {structure_result.get('error', 'no sections returned')}"
+                )
             sections = structure_result['sections']
-            domain = structure_result['metadata']['domain_match']
+            domain = structure_result.get('metadata', {}).get('domain_match', 'general')
             
             # Phase 2: Parallel extraction
-            logger.info("phase_2_started", phase="parallel_extraction", agents=["entity", "results", "figure", "reasoning"])
+            logger.info(
+                "phase_2_started",
+                phase="parallel_extraction",
+                agents=["entity", "results", "figure", "reasoning",
+                        "research_gap", "ablation", "reproducibility"],
+            )
             parallel_tasks = [
-                self.entity_agent.execute({
-                    'sections': sections,
-                    'domain': domain
-                }),
-                self.results_agent.execute({
-                    'sections': sections,
-                    'domain': domain
-                }),
-                self.figure_agent.execute({
-                    'pdf_path': pdf_path,
-                    'sections': sections
-                }),
-                self.reasoning_agent.execute({
-                    'sections': sections
-                })
+                self.entity_agent.execute({'sections': sections, 'domain': domain}),
+                self.results_agent.execute({'sections': sections, 'domain': domain}),
+                self.figure_agent.execute({'pdf_path': pdf_path, 'sections': sections}),
+                self.reasoning_agent.execute({'sections': sections}),
+                self.research_gap_agent.execute({'sections': sections, 'domain': domain}),
+                self.ablation_agent.execute({'sections': sections}),
+                self.reproducibility_agent.execute({'sections': sections}),
             ]
-            
+
             # Wait for all parallel tasks
             parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
-            
+
             # Unpack results (handle exceptions)
+            _agent_names = ['entity', 'results', 'figure', 'reasoning', 'research_gap', 'ablation', 'reproducibility']
+            for _i, (_name, _res) in enumerate(zip(_agent_names, parallel_results)):
+                if isinstance(_res, Exception):
+                    logger.error("parallel_agent_exception", agent=_name, error=str(_res), error_type=type(_res).__name__)
+                elif isinstance(_res, dict) and 'error' in _res:
+                    logger.warning("parallel_agent_error", agent=_name, error=_res['error'])
+
             entity_result = parallel_results[0] if not isinstance(parallel_results[0], Exception) else {}
             results_result = parallel_results[1] if not isinstance(parallel_results[1], Exception) else {}
             figure_result = parallel_results[2] if not isinstance(parallel_results[2], Exception) else {}
             reasoning_result = parallel_results[3] if not isinstance(parallel_results[3], Exception) else {}
+            gap_result = parallel_results[4] if not isinstance(parallel_results[4], Exception) else {}
+            ablation_result = parallel_results[5] if not isinstance(parallel_results[5], Exception) else {}
+            repro_result = parallel_results[6] if not isinstance(parallel_results[6], Exception) else {}
             
             # Phase 3: Cross-validation and consensus
             logger.info("phase_3_started", phase="cross_validation")
@@ -196,11 +219,14 @@ class ParallelAgentOrchestrator:
             logger.info("phase_4_started", phase="summary_generation")
             summary_result = await self.summary_agent.execute({
                 'sections': sections,
+                'domain': domain,
                 'entities': entity_result.get('entities', {}),
-                'results': results_result.get('results', {}).get('table_results', []) + 
+                'results': results_result.get('results', {}).get('table_results', []) +
                           results_result.get('results', {}).get('inline_results', []),
                 'reasoning': reasoning_result.get('reasoning', {}),
                 'figures': figure_result.get('figures', []),
+                # Real PDF tables (markdown) for the LangGraph results extractor.
+                'tables_md': structure_result.get('tables_md', []),
                 'metadata': structure_result.get('metadata', {}),
                 'comparison': comparison_result  # Add comparison data to summary context
             })
@@ -216,6 +242,9 @@ class ParallelAgentOrchestrator:
                 'reasoning': reasoning_result,
                 'comparison': comparison_result,
                 'summary': summary_result,
+                'research_gaps': gap_result,
+                'ablation_studies': ablation_result,
+                'reproducibility': repro_result,
                 'metadata': {
                     'total_time_ms': total_time,
                     'agent_times': self._get_agent_times(),
@@ -229,13 +258,7 @@ class ParallelAgentOrchestrator:
             return aggregated
         
         finally:
-            # Stop message bus
-            if self.message_bus_task:
-                self.message_bus_task.cancel()
-                try:
-                    await self.message_bus_task
-                except asyncio.CancelledError:
-                    pass
+            await self.message_bus.stop()
     
     async def _cross_validate(
         self,

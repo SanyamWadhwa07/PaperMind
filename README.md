@@ -1,16 +1,18 @@
-# 🧠 PaperMind - AI Research Paper Summarizer
-
 <div align="center">
-  
-  ![PaperMind Logo](https://img.shields.io/badge/PaperMind-AI%20Research%20Assistant-00988F?style=for-the-badge&logo=brain&logoColor=white)
-  
-  **Transform complex research papers into clear, actionable insights with AI**
-  
-  [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react&logoColor=white)](https://reactjs.org/)
-  [![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
-  [![PyTorch](https://img.shields.io/badge/PyTorch-2.0-EE4C2C?style=flat&logo=pytorch&logoColor=white)](https://pytorch.org/)
-  [![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?style=flat&logo=supabase&logoColor=white)](https://supabase.com/)
-  
+
+<img src="docs/assets/banner.svg" alt="PaperMind" width="100%"/>
+
+<br/>
+
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react&logoColor=white)](https://reactjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?style=flat)](https://langchain-ai.github.io/langgraph/)
+[![Supabase](https://img.shields.io/badge/Supabase-pgvector-3ECF8E?style=flat&logo=supabase&logoColor=white)](https://supabase.com/)
+[![LLMs](https://img.shields.io/badge/LLM-Gemini%20·%20Groq%20·%20Ollama-D9A86C?style=flat)](#-llm-provider-chain)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat)](LICENSE)
+
+**Turn academic PDFs into faithful, structured intelligence — full-paper summaries, typed entities, results tables, and a knowledge graph of how papers relate.**
+
 </div>
 
 ---
@@ -18,18 +20,15 @@
 ## 📖 Table of Contents
 
 - [Overview](#-overview)
-- [Key Features](#-key-features)
-- [Demo](#-demo)
-- [Quick Start](#-quick-start)
-- [Project Structure](#-project-structure)
-- [Architecture](#-architecture)
-- [Tech Stack](#-tech-stack)
-- [Documentation](#-documentation)
-- [Usage Examples](#-usage-examples)
-- [API Reference](#-api-reference)
+- [What makes it different](#-what-makes-it-different)
+- [Architecture](#️-architecture)
+- [The summarization engine](#-the-summarization-engine)
+- [LLM provider chain](#-llm-provider-chain)
+- [Quick start](#-quick-start)
+- [Configuration](#️-configuration)
+- [API reference](#-api-reference)
 - [Deployment](#-deployment)
-- [Troubleshooting](#-troubleshooting)
-- [FAQ](#-faq)
+- [Project structure](#-project-structure)
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -37,720 +36,228 @@
 
 ## 🌟 Overview
 
-**PaperMind** is an advanced AI-powered research paper summarization platform that helps researchers, students, and professionals quickly understand complex academic papers. Using state-of-the-art NLP models and a parallel multi-agent architecture, PaperMind delivers comprehensive analysis including:
+**PaperMind** turns research papers into structured, trustworthy insight. Upload a PDF or paste an arXiv ID and it reads the **whole** paper through a [LangGraph](https://langchain-ai.github.io/langgraph/) map-reduce pipeline, then returns:
 
-- 📝 **Hierarchical Summaries** - From high-level overviews to detailed section breakdowns
-- 🔍 **Entity Extraction** - Automatic identification of models, datasets, metrics, and frameworks
-- 📊 **Quantitative Results** - Extraction of experimental results and performance metrics
-- 🖼️ **Figure Analysis** - Smart extraction and ranking of important figures
-- 🌐 **Methodology Flowcharts** - Visual representation of research methodologies
-- 🔑 **Keyword Analysis** - KeyBERT-powered keyword extraction with context
+- 📝 a **comprehensive summary** grounded in the full text (not just the abstract)
+- 🔑 **key findings, contributions, limitations & future work**
+- 🧬 **domain-agnostic typed entities** — *methods · materials · measurements · tools* (works for biomedicine, physics, ML… not just CS)
+- 📊 a **quantitative results table** extracted from prose *and* real PDF tables
+- 🧾 **per-section digests**
+- 🕸️ a **knowledge graph** linking papers by AI-derived relationships (extends / replicates / contradicts / shares-method …)
 
-### Why PaperMind?
-
-- **Save Time**: Read a 20-page paper in 2 minutes
-- **Deep Understanding**: Multi-level summaries (simple, detailed, ELI5, technical)
-- **Smart Organization**: Store and track all your research in one place
-- **Collaborative**: Share summaries and insights with your team
-- **Always Learning**: Cross-paper learning improves summaries over time
+It runs entirely on **free LLM tiers** (Gemini → Groq) with a **local Ollama** fallback, so there are no API costs to get started.
 
 ---
 
-## 🎯 Key Features
+## ✨ What makes it different
 
-### 🧠 **AI-Powered Summarization**
-- **LED Transformer** with 16,384 token context window
-- **Parallel Multi-Agent System** for 2.5x faster processing
-- **Multiple Summary Types**: Simple, Detailed, ELI5, Technical
-- **Cross-Paper Learning**: Experience-based improvements via Supabase
+Most summarizers paste an abstract into one prompt. PaperMind is built like a production AI system:
 
-### ⚡ **Lightning Fast Processing**
-- Process papers in 10-30 seconds with GPU acceleration
-- Async batch processing for multiple papers
-- Real-time progress tracking
-- Smart caching and optimization
-
-### 🔐 **Enterprise-Grade Security**
-- Full authentication system with JWT tokens
-- Email verification for new accounts
-- Password reset with secure tokens
-- Role-based access control (coming soon)
-
-### 📊 **Advanced Analytics**
-- Interactive activity charts (Chart.js)
-- Entity extraction (SciBERT)
-- Keyword analysis (KeyBERT)
-- Quantitative results extraction from tables and text
-- Methodology flowcharts (Mermaid.js)
-
-### 🎨 **Beautiful User Experience**
-- Modern, responsive design with Tailwind CSS
-- Dark mode support
-- Real-time toast notifications
-- Drag-and-drop file upload
-- Mobile-optimized interface
-
-### 💾 **Comprehensive Storage**
-- PostgreSQL database via Supabase
-- Avatar uploads to Supabase Storage
-- Export summaries to JSON/Markdown
-- Full-text search capabilities
-
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- **Python** 3.8 or higher
-- **Node.js** 16 or higher
-- **GPU with CUDA** (optional, for faster processing)
-- **Supabase Account** ([Sign up free](https://supabase.com))
-
-### Installation
-
-#### 1️⃣ Clone the Repository
-
-```bash
-git clone https://github.com/SanyamWadhwa07/PaperMind.git
-cd PaperMind
-```
-
-#### 2️⃣ Backend Setup
-
-```powershell
-# Create and activate virtual environment
-python -m venv research
-.\research\Scripts\Activate.ps1
-
-# Navigate to backend
-cd backend
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Create .env file
-New-Item -Path .env -ItemType File
-```
-
-Add to `backend/.env`:
-```env
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_KEY=your_supabase_anon_key
-JWT_SECRET_KEY=your_random_secret_key_here
-```
-
-#### 3️⃣ Frontend Setup
-
-```powershell
-# Navigate to frontend
-cd ..\frontend
-
-# Install Node dependencies
-npm install
-```
-
-#### 4️⃣ Database Setup
-
-1. Create a new project at [Supabase](https://supabase.com)
-2. Go to SQL Editor
-3. Run the schema from `backend/database/schema.sql`
-4. Update your `.env` file with credentials
-
-#### 5️⃣ Run the Application
-
-**Terminal 1 - Backend (Flask API)**
-```powershell
-cd backend
-python app.py
-```
-Backend runs on `http://localhost:5000`
-
-**Terminal 2 - Frontend (React)**
-```powershell
-cd frontend
-npm run dev
-```
-Frontend runs on `http://localhost:5173`
-
-🎉 **Open your browser and visit `http://localhost:5173`!**
-
----
-
-## 📁 Project Structure
-
-```
-PaperMind/
-├── 📂 backend/                  # Flask REST API
-│   ├── app.py                   # Main Flask application
-│   ├── requirements.txt         # Python dependencies
-│   ├── auth/                    # Authentication modules
-│   │   ├── routes.py           # Auth endpoints
-│   │   ├── supabase_auth.py    # Supabase integration
-│   │   └── utils.py            # Auth utilities
-│   ├── database/               # Database configuration
-│   │   ├── schema.sql          # PostgreSQL schema
-│   │   ├── config.py           # Supabase config
-│   │   └── experience_schema.sql
-│   ├── routes/                 # API route blueprints
-│   │   ├── summaries.py        # Summary CRUD operations
-│   │   ├── process_paper.py    # Paper processing
-│   │   └── profile.py          # User profile management
-│   ├── uploads/                # Uploaded PDF files
-│   └── summaries_api/          # Generated summaries
-│
-├── 📂 frontend/                 # React application
-│   ├── package.json            # Node dependencies
-│   ├── vite.config.js          # Vite configuration
-│   ├── tailwind.config.js      # Tailwind CSS config
-│   ├── index.html              # HTML entry point
-│   └── src/
-│       ├── components/         # Reusable UI components
-│       ├── pages/              # Page components
-│       ├── contexts/           # React contexts
-│       ├── api.js              # API client
-│       └── App.jsx             # Root component
-│
-├── 📂 core/                     # AI/ML Core Engine
-│   ├── agent_integration.py    # Multi-agent orchestration
-│   ├── agents/                 # Specialized AI agents
-│   │   ├── orchestrator.py    # Agent coordinator
-│   │   ├── summary_agent.py   # Summarization agent
-│   │   ├── entity_agent.py    # Entity extraction
-│   │   ├── figure_agent.py    # Figure analysis
-│   │   └── reasoning_agent.py # Reasoning tasks
-│   ├── llm/                    # LLM integrations
-│   └── memory/                 # Memory management
-│
-├── 📂 docs/                     # Documentation
-│   ├── QUICKSTART.md
-│   ├── COMPLETE_DOCUMENTATION.md
-│   ├── AGENT_SYSTEM_README.md
-│   ├── AUTH_SETUP.md
-│   └── OLLAMA_SETUP.md
-│
-├── 📂 setups/                   # Setup scripts
-│   ├── setup.ps1               # Main setup script
-│   ├── setup_ollama.ps1        # Ollama installation
-│   └── setup_supabase_experience.ps1
-│
-├── main.py                      # CLI summarization tool
-├── requirements.txt             # Root Python dependencies
-├── patterns.json                # Entity extraction patterns
-├── config.example.yaml          # Configuration template
-├── .gitignore                   # Git ignore rules
-└── README.md                    # This file
-```
+| | Old approach | PaperMind |
+|---|---|---|
+| **Coverage** | abstract + first ~1k tokens | map-reduce over **every section** |
+| **Extraction** | hard-coded ML regex (BERT, ImageNet…) | **LLM structured output**, domain-agnostic |
+| **Results** | regex over text | LLM over **prose + extracted markdown tables** |
+| **Quality control** | none | **LLM-as-judge grade** with a retry loop |
+| **Reliability** | single model | **Gemini → Groq → Ollama** auto-failover |
+| **Relations** | cosine similarity number | **RelationAgent** explains *how* papers relate |
 
 ---
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Frontend Layer                        │
-│  React 18 + Vite + Tailwind CSS + Chart.js + Router        │
-└────────────────────┬────────────────────────────────────────┘
-                     │ REST API (axios)
-┌────────────────────▼────────────────────────────────────────┐
-│                        Backend Layer                         │
-│         Flask 3.0 + Flask-CORS + JWT + Blueprints           │
-├──────────────────────────────────────────────────────────────┤
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐            │
-│  │   Auth     │  │  Summaries │  │  Process   │            │
-│  │  Routes    │  │   Routes   │  │   Paper    │            │
-│  └────────────┘  └────────────┘  └────────────┘            │
-└────────────────────┬───────────────┬────────────────────────┘
-                     │               │
-        ┌────────────▼─────┐   ┌────▼──────────────────┐
-        │   Supabase DB    │   │   AI/ML Core Engine   │
-        │   PostgreSQL     │   │   Multi-Agent System  │
-        │   + Storage      │   │   LED + SciBERT       │
-        └──────────────────┘   └───────────────────────┘
-```
-
-### Multi-Agent Architecture
-
-PaperMind uses a **parallel multi-agent system** for efficient paper analysis:
+<div align="center">
+<img src="docs/assets/architecture.svg" alt="PaperMind architecture" width="100%"/>
+</div>
 
 ```
-┌─────────────────┐
-│   Orchestrator  │  (Coordinates all agents)
-└────────┬────────┘
-         │
-    ┌────┴────┬────────┬─────────┬─────────┐
-    ▼         ▼        ▼         ▼         ▼
-┌────────┐ ┌──────┐ ┌──────┐ ┌───────┐ ┌──────┐
-│Summary │ │Entity│ │Figure│ │Results│ │Reason│
-│ Agent  │ │Agent │ │Agent │ │ Agent │ │Agent │
-└────────┘ └──────┘ └──────┘ └───────┘ └──────┘
-```
-
-**Benefits:**
-- 2.5x faster than sequential processing
-- Parallel execution of independent tasks
-- Modular and maintainable codebase
-- Easy to extend with new agents
-
----
-
-## 🛠️ Tech Stack
-
-### Frontend Technologies
-| Technology | Purpose | Version |
-|------------|---------|---------|
-| **React** | UI Framework | 18.2.0 |
-| **Vite** | Build Tool | 5.0.8 |
-| **Tailwind CSS** | Styling | 3.3.6 |
-| **React Router** | Navigation | 6.20.0 |
-| **Chart.js** | Data Visualization | 4.5.1 |
-| **Axios** | HTTP Client | 1.6.2 |
-| **React Toastify** | Notifications | 11.0.5 |
-| **Lucide React** | Icons | 0.294.0 |
-| **Mermaid** | Flowcharts | 10.6.1 |
-
-### Backend Technologies
-| Technology | Purpose | Version |
-|------------|---------|---------|
-| **Flask** | Web Framework | 3.0.0 |
-| **Flask-CORS** | CORS Support | 4.0.0 |
-| **Supabase** | Database & Auth | 2.0+ |
-| **PyJWT** | JWT Tokens | 2.8.0 |
-| **bcrypt** | Password Hashing | 4.1.0 |
-
-### AI/ML Technologies
-| Technology | Purpose | Version |
-|------------|---------|---------|
-| **PyTorch** | Deep Learning | 2.0+ |
-| **Transformers** | NLP Models | 4.30+ |
-| **LED** | Long Document Summarization | - |
-| **SciBERT** | Scientific Entity Extraction | - |
-| **KeyBERT** | Keyword Extraction | 0.8.0 |
-| **NLTK** | Text Processing | 3.8.1 |
-| **PyMuPDF** | PDF Parsing | 1.23+ |
-| **pdfplumber** | Table Extraction | 0.10+ |
-
----
-
-## 📚 Documentation
-
-| Document | Description |
-|----------|-------------|
-| **[QUICKSTART.md](docs/QUICKSTART.md)** | Fast 5-minute setup guide |
-| **[COMPLETE_DOCUMENTATION.md](docs/COMPLETE_DOCUMENTATION.md)** | Comprehensive system documentation |
-| **[AGENT_SYSTEM_README.md](docs/AGENT_SYSTEM_README.md)** | Multi-agent architecture details |
-| **[AUTH_SETUP.md](docs/AUTH_SETUP.md)** | Authentication system guide |
-| **[OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md)** | Local LLM setup instructions |
-| **[API_RESPONSE_SCHEMA.md](backend/API_RESPONSE_SCHEMA.md)** | API response formats |
-
----
-
-## 💡 Usage Examples
-
-### 1. Summarize from arXiv
-
-```python
-# Using the CLI
-python main.py --query "cat:cs.LG" --max-results 5
-
-# Using the API
-import requests
-
-response = requests.post('http://localhost:5000/api/search', json={
-    'query': 'cat:cs.CV AND ti:transformer',
-    'max_results': 3
-})
-papers = response.json()['papers']
-```
-
-### 2. Upload and Process PDF
-
-```python
-# Using the API
-files = {'file': open('paper.pdf', 'rb')}
-upload_response = requests.post('http://localhost:5000/api/upload', files=files)
-file_id = upload_response.json()['file_id']
-
-# Summarize uploaded paper
-summary_response = requests.post('http://localhost:5000/api/summarize', json={
-    'pdf_path': upload_response.json()['filepath'],
-    'title': 'My Research Paper'
-})
-```
-
-### 3. Batch Processing
-
-```python
-# Process multiple papers
-papers = [
-    {'pdf_path': 'paper1.pdf', 'title': 'Paper 1'},
-    {'pdf_path': 'paper2.pdf', 'title': 'Paper 2'},
-]
-
-response = requests.post('http://localhost:5000/api/batch/summarize', json={
-    'papers': papers
-})
-results = response.json()['results']
-```
-
-### 4. Export Summary
-
-```python
-# Export as Markdown
-response = requests.get(
-    f'http://localhost:5000/api/export/{summary_id}',
-    params={'format': 'markdown'}
-)
-# Downloads summary.md file
+React (Vite)  ──/api──▶  FastAPI  ──▶  LangGraph engine  ──▶  Supabase (pgvector)
+                                          │
+                            Gemini → Groq → Ollama (auto-failover)
 ```
 
 ---
 
-## 🔌 API Reference
+## 🧠 The summarization engine
 
-### Authentication Endpoints
+The engine ([`core/graph/summary_graph.py`](core/graph/summary_graph.py)) is a LangGraph `StateGraph`:
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/auth/register` | Register new user |
-| `POST` | `/api/auth/login` | Login user |
-| `POST` | `/api/auth/reset-password` | Request password reset |
-| `POST` | `/api/auth/update-password` | Update password |
-| `GET` | `/api/auth/me` | Get current user |
+```
+START → prepare → map_sections ─┬─▶ extract_entities ─┐
+                                └─▶ extract_results  ──┴─▶ synthesize → grade ──▶ END
+                                                                          └──(retry if weak)
+```
 
-### Paper Processing Endpoints
+1. **prepare** — order & clean sections, pick chunks to map over.
+2. **map_sections** — summarize **every** meaningful section concurrently (fast tier).
+3. **extract_entities / extract_results** — typed JSON via `with_structured_output` (Pydantic schemas in [`core/graph/schemas.py`](core/graph/schemas.py)). No regex.
+4. **synthesize** — final 300–450-word summary + findings/contributions/limitations/future-work (smart tier).
+5. **grade** — an LLM judge scores faithfulness & specificity; a weak result loops back once.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/search` | Search arXiv papers |
-| `POST` | `/api/upload` | Upload PDF file |
-| `POST` | `/api/summarize` | Summarize paper (sync) |
-| `POST` | `/api/summarize/async` | Summarize paper (async) |
-| `GET` | `/api/status/:task_id` | Check async task status |
+Enable it with `PAPERMIND_USE_GRAPH=1` (it falls back to the legacy path on error). Free-tier rate limits are absorbed by a concurrency semaphore + exponential-backoff retries.
 
-### Summary Management Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/summaries` | List all summaries |
-| `GET` | `/api/summary/:id` | Get specific summary |
-| `DELETE` | `/api/summary/:id` | Delete summary |
-| `GET` | `/api/export/:id` | Export summary |
-
-### User Profile Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/profile` | Get user profile |
-| `PUT` | `/api/profile` | Update profile |
-| `POST` | `/api/profile/avatar` | Upload avatar |
-
-For detailed API documentation, see [API_RESPONSE_SCHEMA.md](backend/API_RESPONSE_SCHEMA.md).
+**RelationAgent** ([`core/graph/relation_agent.py`](core/graph/relation_agent.py)) labels how papers relate and writes typed edges into `paper_lineage`, which the knowledge-graph endpoints render.
 
 ---
 
-## 🚀 Deployment
+## 🔌 LLM provider chain
 
-### Frontend Deployment (Vercel/Netlify)
+A single env-driven chain, defined in [`core/llm/providers.py`](core/llm/providers.py):
 
-**Option 1: Vercel**
+| Provider | Role | Why |
+|----------|------|-----|
+| **Gemini** (`gemini-2.0-flash`) | primary | most generous free tier |
+| **Groq** (`llama-3.3-70b` / `llama-3.1-8b-instant`) | overflow | ultra-fast, free |
+| **Ollama** (`qwen2.5:7b`/`3b`) | offline fallback | private, $0, runs locally |
+
+`PAPERMIND_LLM_PROVIDER=auto` orders by available keys; a named provider becomes primary with the rest as fallbacks. On a failure or rate-limit the chain cascades automatically.
+
+> **Local model sizing (e.g. RTX 2050, 4 GB):** `qwen2.5:3b` runs fully on-GPU; `qwen2.5:7b-instruct-q4_K_M` (~4.5 GB) is the practical ceiling and spills a few layers to CPU. The 7B is markedly more reliable at structured extraction.
+
+---
+
+## 🚀 Quick start
+
+### Prerequisites
+- Python 3.10+ · Node.js 18+
+- A free [Supabase](https://supabase.com) project
+- A free LLM key — [Google AI Studio](https://aistudio.google.com/apikey) (Gemini) and/or [Groq](https://console.groq.com) — **or** [Ollama](https://ollama.com) for fully local
+
+### 1 — Backend
+
 ```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy from frontend directory
-cd frontend
-vercel
+cd backend
+python -m venv research
+# Windows: .\research\Scripts\Activate.ps1   |   macOS/Linux: source research/bin/activate
+pip install -r ../requirements.txt -r requirements.txt
+cp .env.example .env        # then fill in the values (see Configuration)
+uvicorn main_app:app --reload --port 8000
 ```
 
-**Option 2: Netlify**
+### 2 — Database
+Run the SQL in [`backend/database/`](backend/database/) via the Supabase SQL editor, in order:
+`schema.sql` → `experience_schema.sql` → `migrations/001` … `migrations/009`.
+
+### 3 — Frontend
+
 ```bash
-# Build the frontend
 cd frontend
-npm run build
-
-# Deploy dist/ folder to Netlify
-# Or connect your GitHub repo to Netlify for automatic deployments
+npm install
+npm run dev      # http://localhost:3000  (proxies /api → :8000)
 ```
 
-### Backend Deployment (Railway/Render/Heroku)
+### 4 — (optional) Local LLM
 
-**Option 1: Railway**
-1. Create account at [Railway](https://railway.app)
-2. New Project → Deploy from GitHub
-3. Add environment variables from `.env`
-4. Railway will auto-detect Flask and deploy
+```bash
+ollama pull qwen2.5:3b        # fast tier
+ollama pull qwen2.5:7b-instruct-q4_K_M   # better quality
+ollama serve
+```
 
-**Option 2: Render**
-1. Create account at [Render](https://render.com)
-2. New Web Service → Connect repository
-3. Build Command: `pip install -r backend/requirements.txt`
-4. Start Command: `cd backend && python app.py`
-5. Add environment variables
+---
 
-### Environment Variables for Production
+## ⚙️ Configuration
+
+Key `backend/.env` values (full list in [`.env.example`](backend/.env.example)):
 
 ```env
-# Backend .env
-SUPABASE_URL=your_production_supabase_url
-SUPABASE_KEY=your_production_supabase_key
-JWT_SECRET_KEY=your_strong_random_secret
-FLASK_ENV=production
-FRONTEND_URL=https://your-frontend-domain.com
+# Supabase
+SUPABASE_URL=...
+SUPABASE_SERVICE_KEY=...
+JWT_SECRET_KEY=<64-char-random>
 
-# Frontend .env
-VITE_API_URL=https://your-backend-domain.com
-VITE_SUPABASE_URL=your_production_supabase_url
-VITE_SUPABASE_ANON_KEY=your_production_supabase_key
+# Summarization engine
+PAPERMIND_USE_GRAPH=1                 # turn on the LangGraph engine
+PAPERMIND_LLM_PROVIDER=auto           # gemini | groq | ollama | auto
+
+# Free LLM keys (use either / both; Ollama needs none)
+GOOGLE_API_KEY=...                    # Gemini  (recommended primary)
+GROQ_API_KEY=gsk_...                  # Groq
+
+# Free-tier safety
+PAPERMIND_LLM_CONCURRENCY=2           # cap simultaneous calls
+PAPERMIND_LLM_MAX_RETRIES=6           # backoff retries for 429s
 ```
 
-### Database Migration
-
-```bash
-# Export from local Supabase (if needed)
-supabase db dump > backup.sql
-
-# Import to production Supabase
-psql -h your-db.supabase.co -U postgres -d postgres < backend/database/schema.sql
-```
+> ⚠️ Groq's free tier is **per-account** (≈6k tokens/min, shared across all users), so it won't scale to a multi-user deployment on its own — set `GOOGLE_API_KEY` to make **Gemini** the primary for hosted use.
 
 ---
 
-## 🔧 Troubleshooting
+## 📡 API reference
 
-### Common Issues
+All authenticated routes take `Authorization: Bearer <jwt>`. Interactive docs at `/api/docs`.
 
-#### 1. **ModuleNotFoundError: No module named 'transformers'**
-```powershell
-# Ensure you're in the virtual environment
-.\research\Scripts\Activate.ps1
-
-# Reinstall dependencies
-pip install -r requirements.txt
-```
-
-#### 2. **CUDA Out of Memory**
-```python
-# Use lightweight mode
-python main.py --lightweight --no-ocr
-
-# Or use CPU only
-python main.py --device cpu
-```
-
-#### 3. **Supabase Connection Error**
-```powershell
-# Check your .env file exists
-ls backend\.env
-
-# Verify credentials are correct
-echo $env:SUPABASE_URL  # Should show your URL
-```
-
-#### 4. **React App Not Loading**
-```powershell
-# Clear cache and reinstall
-cd frontend
-Remove-Item -Recurse -Force node_modules
-Remove-Item package-lock.json
-npm install
-npm run dev
-```
-
-#### 5. **Port Already in Use**
-```powershell
-# Find process using port 5000
-netstat -ano | findstr :5000
-
-# Kill the process (replace PID with actual process ID)
-Stop-Process -Id PID -Force
-
-# Or use different port
-set FLASK_RUN_PORT=5001
-python app.py
-```
-
-#### 6. **PDF Upload Fails**
-- Check file size < 50MB
-- Ensure `uploads/` directory exists
-- Verify correct file permissions
-
-```powershell
-# Create uploads directory if missing
-New-Item -ItemType Directory -Path backend\uploads -Force
-```
-
-### Performance Optimization
-
-**For Better GPU Utilization:**
-```python
-# Check GPU availability
-python -c "import torch; print(torch.cuda.is_available())"
-
-# Monitor GPU usage
-nvidia-smi -l 1
-```
-
-**For Faster Summarization:**
-- Use `--lightweight` mode for quick tests
-- Enable GPU acceleration if available
-- Reduce `--max-figures` and `--max-entities`
-- Use `config.yaml` for persistent settings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/register` · `/login` · `GET /me` | Auth |
+| `POST` | `/api/process/upload` · `/api/process/arxiv` | Process a paper |
+| `GET`  | `/api/summaries` · `/api/summaries/{id}` | List / fetch summaries |
+| `GET`  | `/api/graph/paper/{id}` · `/recommendations/{id}` | Per-paper graph |
+| `GET`  | `/api/corpus/citation-network` · `/author-graph` | Corpus graphs |
+| `POST` | `/api/corpus/relate-papers` | **Run RelationAgent across the library** |
+| `GET`  | `/api/health` | Dependency + LLM provider health |
 
 ---
 
-## ❓ FAQ
+## 🚢 Deployment
 
-### General Questions
+Designed to run free across three services:
 
-**Q: Is PaperMind free to use?**  
-A: Yes! PaperMind is open-source and free. You only pay for your own infrastructure (Supabase free tier is sufficient for personal use).
+| Layer | Host | Notes |
+|-------|------|-------|
+| Frontend | **Vercel** | `npm run build`, output `dist/` |
+| Backend | **Render** | `uvicorn main_app:app --host 0.0.0.0 --port $PORT` |
+| Database | **Supabase** | managed Postgres + pgvector |
+| LLM | **Gemini/Groq** free tiers | no GPU needed in the cloud |
 
-**Q: Do I need a GPU to run PaperMind?**  
-A: No, but it's recommended. CPU mode works but is slower (2-5 minutes per paper vs 10-30 seconds with GPU).
-
-**Q: What paper formats are supported?**  
-A: Currently PDF and arXiv papers. Support for Word docs, HTML, and LaTeX coming soon.
-
-**Q: Can I run this locally without internet?**  
-A: Partially. You need internet for arXiv downloads and Supabase. For fully offline mode, use local LLM (Ollama) and SQLite database.
-
-**Q: How accurate are the summaries?**  
-A: Entity extraction is ~95% accurate. Summary quality depends on paper complexity. We use LED (state-of-the-art for long documents) with 16K context.
-
-### Technical Questions
-
-**Q: Can I use a different database instead of Supabase?**  
-A: Yes! You can modify `backend/database/config.py` to use PostgreSQL, MySQL, or SQLite.
-
-**Q: How do I add custom summary types?**  
-A: Edit `config.yaml` under `summary_config` section and update the agent system in `core/agents/`.
-
-**Q: Can I integrate with other LLMs (GPT-4, Claude)?**  
-A: Yes! Update `core/llm/` with your LLM client. Currently supports Ollama and HuggingFace models.
-
-**Q: What's the maximum paper length?**  
-A: LED supports up to 16,384 tokens (~50-60 pages). Longer papers are chunked and summarized hierarchically.
-
-**Q: Can I batch process hundreds of papers?**  
-A: Yes! Use the `/api/batch/summarize` endpoint. For large batches, consider using background workers (Celery/RQ).
-
-### Deployment Questions
-
-**Q: Where should I deploy this?**  
-A: Frontend: Vercel/Netlify. Backend: Railway/Render/Heroku. Database: Supabase (managed PostgreSQL).
-
-**Q: What are the hosting costs?**  
-A: Free tier options available:
-- Supabase: Free (500MB database, 1GB storage)
-- Vercel: Free (100GB bandwidth)
-- Railway: $5/month (500 hours)
-
-**Q: Can I self-host everything?**  
-A: Absolutely! Deploy on your own VPS with Docker (Dockerfile coming soon).
+Point the frontend at the backend and restrict CORS to your deployed origin in [`backend/main_app.py`](backend/main_app.py).
 
 ---
 
-## 📊 Performance Metrics
+## 📁 Project structure
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Context Window** | 16,384 tokens | LED model capacity |
-| **Compression Ratio** | 70-80% | Summary vs original |
-| **Processing Time** | 10-30s | With GPU acceleration |
-| **Speedup (Agents)** | 2.5x | vs sequential |
-| **Max File Size** | 50 MB | PDF upload limit |
-| **GPU Memory** | 3-4 GB | RTX 2050/3050 |
-| **Accuracy** | ~95% | Entity extraction |
-| **Supported Formats** | PDF, arXiv | More coming soon |
+```
+PaperMind/
+├── backend/
+│   ├── main_app.py            # FastAPI app (routers, health, CORS)
+│   ├── routes/                # process_paper, summaries, corpus, graph, …
+│   ├── auth/                  # JWT auth + dependencies
+│   └── database/migrations/   # 001 … 009 (run in order)
+├── core/
+│   ├── graph/                 # ⭐ LangGraph engine
+│   │   ├── summary_graph.py   #   map-reduce StateGraph
+│   │   ├── schemas.py         #   domain-agnostic Pydantic schemas
+│   │   ├── relation_agent.py  #   paper-to-paper RelationAgent
+│   │   └── adapter.py         #   legacy-format adapter
+│   ├── llm/providers.py       # Gemini→Groq→Ollama chain
+│   ├── agents/                # orchestrator + extraction agents
+│   ├── knowledge/             # graph, citations, semantic scholar
+│   └── pipeline/pdf_extractor.py  # MinerU → pymupdf4llm → fitz
+├── frontend/src/              # React (pages, components, contexts)
+└── docs/assets/              # banner.svg · architecture.svg
+```
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Here's how you can help:
-
-### Ways to Contribute
-- 🐛 Report bugs and issues
-- 💡 Suggest new features
-- 📝 Improve documentation
-- 🔧 Submit pull requests
-- ⭐ Star the repository
-
-### Development Setup
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests (coming soon)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-### Code Style
-- **Python**: Follow PEP 8
-- **JavaScript/React**: Use ESLint configuration
-- **Commits**: Use conventional commits (feat, fix, docs, etc.)
-
-### Reporting Issues
-
-When reporting issues, please include:
-- Python version (`python --version`)
-- Node version (`node --version`)
-- Operating system
-- Error messages and stack traces
-- Steps to reproduce
-
-### Feature Requests
-
-We're always looking for ideas! Submit feature requests via [GitHub Issues](https://github.com/SanyamWadhwa07/PaperMind/issues) with the `enhancement` label.
+1. Fork & branch (`git checkout -b feature/x`)
+2. Keep Python PEP-8, run the frontend build (`npm run build`) before PRs
+3. Conventional commits (`feat:`, `fix:`, `docs:`)
+4. Open a PR describing the change
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **Hugging Face** for the amazing Transformers library
-- **Supabase** for the awesome backend platform
-- **arXiv** for providing free access to research papers
-- **React** and **Vite** communities for excellent tooling
-- All contributors and users who provide feedback
-
----
-
-## 📧 Contact & Support
-
-- **Author**: Sanyam Wadhwa
-- **GitHub**: [@SanyamWadhwa07](https://github.com/SanyamWadhwa07)
-- **Issues**: [GitHub Issues](https://github.com/SanyamWadhwa07/PaperMind/issues)
-
-### Get Help
-- 📖 Check the [Documentation](docs/)
-- 🐛 Report bugs via [Issues](https://github.com/SanyamWadhwa07/PaperMind/issues)
-- 💬 Ask questions in [Discussions](https://github.com/SanyamWadhwa07/PaperMind/discussions)
-
----
-
-## ⭐ Show Your Support
-
-If you find PaperMind useful, please consider:
-- ⭐ Starring the repository
-- 🐦 Sharing on social media
-- 📝 Writing a blog post about your experience
-- 💰 Sponsoring the project (coming soon)
+MIT — see [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 
-**Made with ❤️ by researchers, for researchers**
+**Built by [@SanyamWadhwa07](https://github.com/SanyamWadhwa07)** · powered by LangGraph + free LLM tiers
 
-[⬆ Back to Top](#-papermind---ai-research-paper-summarizer)
+[⬆ Back to top](#-table-of-contents)
 
 </div>

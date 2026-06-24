@@ -66,7 +66,13 @@ class EntityAgent(BaseAgent):
         domain = input_data.get('domain', 'general')
         
         if not sections:
-            raise ValueError("sections required")
+            return {
+                'extractions': [],
+                'confidence_scores': {},
+                'entities': {'datasets': [], 'models': [], 'metrics': [], 'tasks': [], 'frameworks': []},
+                'relationships': [],
+                'metadata': {'total_entities': 0, 'validated_count': 0, 'uncertain_entities': [], 'by_type': {}, 'relationships_inferred': 0},
+            }
         
         # Extract entities using existing extractor
         try:
@@ -141,6 +147,10 @@ class EntityAgent(BaseAgent):
                 relationship=rel['relationship_type'],
                 confidence=rel['confidence'],
             )
+
+        # Ensure all expected keys are always present
+        for _key in ('models', 'datasets', 'metrics', 'tasks', 'frameworks'):
+            validated_entities.setdefault(_key, [])
 
         return {
             'extractions': all_extractions,

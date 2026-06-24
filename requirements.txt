@@ -1,43 +1,77 @@
-# Core dependencies
-streamlit>=1.28.0
-pandas>=2.0.0
-plotly>=5.17.0
+# Root requirements — core pipeline dependencies (agents, PDF, ML).
+# Web server and API-specific deps are in backend/requirements.txt.
+#
+# Install both for local development:
+#   pip install -r requirements.txt -r backend/requirements.txt
 
-# Machine Learning & NLP
+# PDF processing
+PyMuPDF>=1.23.0
+pymupdf4llm
+pdfplumber>=0.10.0
 
+# ML & NLP
 transformers>=4.30.0
+sentence-transformers
 scikit-learn>=1.3.0
 nltk>=3.8.1
 numpy>=1.24.0
-sentencepiece>=0.1.99
 
-# PDF Processing
-PyMuPDF>=1.23.0
-pdfplumber>=0.10.0
+# LLM backends
+ollama>=0.1.0
+# openai       # set PAPERMIND_LLM_BACKEND=openai  OPENAI_API_KEY=...
+# anthropic    # set PAPERMIND_LLM_BACKEND=anthropic  ANTHROPIC_API_KEY=...
 
-# ArXiv & Web
+# Image processing (figure extraction)
+Pillow>=10.0.0
+
+# ArXiv API
 arxiv>=2.0.0
 requests>=2.31.0
 
-# OCR & Image Processing
-pytesseract>=0.3.10
-Pillow>=10.0.0
-
-# Model Optimization
-onnxruntime>=1.16.0
-optimum>=1.14.0
-
-# Optional - Enhanced Features
-keybert>=0.8.0
-spacy>=3.6.0
-
-# Evaluation (optional)
-bert-score>=0.3.13
-
-# Configuration
+# Configuration & logging
 pyyaml>=6.0.0
+structlog
 
-# Agent System & LLM (NEW)
-ollama>=0.1.0  # Optional - for local LLM inference
-aiofiles>=23.0.0  # Async file operations
+# LangGraph / LangChain — summarization graph engine (core/graph/).
+# Hybrid LLM: Groq free tier in production, Ollama for local/offline dev.
+langgraph>=1.0,<2.0
+langchain-core>=1.0,<2.0
+langchain-groq>=1.0,<2.0
+langchain-ollama>=1.0,<2.0
+langchain-google-genai>=4.0,<5.0   # Gemini free tier (primary in the fallback chain)
+# langchain-openai>=0.1.0          # optional extra backend
+# langchain-anthropic>=0.1.0       # optional extra backend
 
+# Topic clustering (optional — guarded with try/except; CPU-only via pre-computed embeddings)
+# bertopic>=0.16.0
+# hdbscan>=0.8.33
+# umap-learn>=0.5.5
+
+# ── PDF extraction upgrade ────────────────────────────────────────────────────
+# MinerU — Tier-1 academic PDF extractor (figures + equations + tables + OCR)
+#   Install: pip install magic-pdf[full]   (heavy: PaddleOCR, ~2 GB)
+#   Then download model weights: python -m magic_pdf.tools.common download_models
+# magic-pdf[full]
+
+# Docling — IBM enterprise PDF extractor (LangChain integration)
+#   Install: pip install docling
+# docling
+
+# ── Diagram understanding ─────────────────────────────────────────────────────
+# CLIP zero-shot figure classifier (~600 MB, auto-downloads on first use)
+#   Already covered by: transformers>=4.30.0 (in this file)
+#   No extra install needed — CLIPModel loaded from transformers.
+
+# DePlot — chart → data table (Pix2Struct, ~1 GB, auto-downloads)
+#   Already covered by: transformers>=4.30.0
+#   No extra install needed — Pix2StructForConditionalGeneration loaded from transformers.
+
+# pix2tex — equation image → LaTeX (~250 MB, optional)
+#   Install: pip install pix2tex[cli]
+# pix2tex[cli]
+
+# HTTP client for async external API calls
+httpx>=0.27.0
+
+# OpenAI SDK — used for Groq, xAI, and OpenAI backends
+openai>=1.0.0

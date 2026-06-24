@@ -1,199 +1,205 @@
-"""
-User-specific summary routes with authentication
-"""
-from flask import Blueprint, request, jsonify, send_file
-from supabase import create_client
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
-from auth.utils import token_required
-from datetime import datetime
-import tempfile
-import json as _json
+"""User summary CRUD, export, and dashboard stats."""
 
-summaries_bp = Blueprint('summaries', __name__)
+import asyncio
+import structlog
+import tempfile
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse, FileResponse
+from supabase import create_client
+
+from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+from auth.dependencies import CurrentUser
+
+logger = structlog.get_logger(__name__)
+router = APIRouter()
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-@summaries_bp.route('/summaries', methods=['GET'])
-@token_required
-def get_user_summaries():
-    """Get all summaries for the authenticated user"""
+_SORTABLE = {'created_at', 'paper_title', 'processing_time_seconds', 'word_count'}
+
+
+@router.get('/summaries')
+async def get_user_summaries(
+    current_user: CurrentUser,
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=10, ge=1, le=100),
+    sort_by: str = Query(default='created_at'),
+    order: str = Query(default='desc'),
+    search: str = Query(default=''),
+):
+    user_id = current_user['user_id']
+    if sort_by not in _SORTABLE:
+        sort_by = 'created_at'
+    search = search[:200]
+    offset = (page - 1) * per_page
+
     try:
-        # Query parameters for filtering and pagination (sanitized)
-        page = max(1, int(request.args.get('page', 1)))
-        per_page = min(100, max(1, int(request.args.get('per_page', 10))))
-        sort_by = request.args.get('sort_by', 'created_at')
-        # Whitelist sortable columns to prevent injection via order-by
-        if sort_by not in ('created_at', 'paper_title', 'processing_time_seconds', 'word_count'):
-            sort_by = 'created_at'
-        order = request.args.get('order', 'desc')
-        search = request.args.get('search', '')[:200]  # cap length
-        
-        # Calculate offset
-        offset = (page - 1) * per_page
-        
-        # Build query
-        query = supabase.table('summaries').select('*', count='exact').eq('user_id', request.user_id)
-        
-        # Add search if provided
+        query = (
+            supabase.table('summaries')
+            .select('*', count='exact')
+            .eq('user_id', user_id)
+        )
         if search:
             query = query.or_(f'paper_title.ilike.%{search}%,arxiv_id.ilike.%{search}%')
-        
-        # Add sorting
-        query = query.order(sort_by, desc=(order == 'desc'))
-        
-        # Add pagination
-        query = query.range(offset, offset + per_page - 1)
-        
-        result = query.execute()
-        
-        return jsonify({
+        query = query.order(sort_by, desc=(order == 'desc')).range(offset, offset + per_page - 1)
+
+        result = await asyncio.to_thread(query.execute)
+        return {
             'summaries': result.data,
             'total': result.count,
             'page': page,
             'per_page': per_page,
-            'total_pages': (result.count + per_page - 1) // per_page
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': f'Failed to fetch summaries: {str(e)}'}), 500
-
-@summaries_bp.route('/summaries/<summary_id>', methods=['GET'])
-@token_required
-def get_summary(summary_id):
-    """Get a specific summary by ID"""
-    try:
-        result = supabase.table('summaries').select('*').eq('id', summary_id).eq('user_id', request.user_id).execute()
-        
-        if not result.data:
-            return jsonify({'error': 'Summary not found'}), 404
-        
-        return jsonify({'summary': result.data[0]}), 200
-        
-    except Exception as e:
-        return jsonify({'error': f'Failed to fetch summary: {str(e)}'}), 500
-
-@summaries_bp.route('/summaries', methods=['POST'])
-@token_required
-def create_summary():
-    """Save a new summary for the authenticated user"""
-    try:
-        data = request.get_json()
-        
-        summary_data = {
-            'user_id': request.user_id,
-            'paper_title': data.get('paper_title', ''),
-            'paper_authors': data.get('paper_authors', []),
-            'paper_url': data.get('paper_url'),
-            'arxiv_id': data.get('arxiv_id'),
-            'summary_data': data.get('summary_data', {}),
-            'model_used': data.get('model_used', 'LED'),
-            'processing_time_seconds': data.get('processing_time_seconds'),
-            'word_count': data.get('word_count'),
-            'created_at': datetime.utcnow().isoformat()
+            'total_pages': (result.count + per_page - 1) // per_page if result.count else 0,
         }
-        
-        result = supabase.table('summaries').insert(summary_data).execute()
-        
+    except Exception as e:
+        logger.exception('get_summaries_error', error=str(e))
+        return JSONResponse(status_code=500, content={'error': 'Failed to fetch summaries'})
+
+
+@router.get('/summaries/{summary_id}')
+async def get_summary(summary_id: str, current_user: CurrentUser):
+    user_id = current_user['user_id']
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase.table('summaries')
+            .select('*')
+            .eq('id', summary_id)
+            .eq('user_id', user_id)
+            .execute()
+        )
         if not result.data:
-            return jsonify({'error': 'Failed to save summary'}), 500
-        
-        # Log activity
-        supabase.table('user_activity').insert({
-            'user_id': request.user_id,
-            'activity_type': 'summarize',
-            'activity_data': {'summary_id': result.data[0]['id'], 'paper_title': summary_data['paper_title']},
-            'created_at': datetime.utcnow().isoformat()
-        }).execute()
-        
-        return jsonify({
-            'message': 'Summary saved successfully',
-            'summary': result.data[0]
-        }), 201
-        
+            return JSONResponse(status_code=404, content={'error': 'Summary not found'})
+        return {'summary': result.data[0]}
     except Exception as e:
-        return jsonify({'error': f'Failed to save summary: {str(e)}'}), 500
+        logger.exception('get_summary_error', summary_id=summary_id, error=str(e))
+        return JSONResponse(status_code=500, content={'error': 'Failed to fetch summary'})
 
-@summaries_bp.route('/summaries/<summary_id>', methods=['DELETE'])
-@token_required
-def delete_summary(summary_id):
-    """Delete a summary"""
+
+@router.delete('/summaries/{summary_id}')
+async def delete_summary(summary_id: str, current_user: CurrentUser):
+    user_id = current_user['user_id']
     try:
-        # Verify ownership
-        check_result = supabase.table('summaries').select('id').eq('id', summary_id).eq('user_id', request.user_id).execute()
-        
-        if not check_result.data:
-            return jsonify({'error': 'Summary not found or unauthorized'}), 404
-        
-        supabase.table('summaries').delete().eq('id', summary_id).execute()
-        
-        return jsonify({'message': 'Summary deleted successfully'}), 200
-        
+        check = await asyncio.to_thread(
+            lambda: supabase.table('summaries')
+            .select('id')
+            .eq('id', summary_id)
+            .eq('user_id', user_id)
+            .execute()
+        )
+        if not check.data:
+            return JSONResponse(status_code=404, content={'error': 'Summary not found or unauthorized'})
+
+        await asyncio.to_thread(
+            lambda: supabase.table('summaries').delete().eq('id', summary_id).execute()
+        )
+        return {'message': 'Summary deleted successfully'}
     except Exception as e:
-        return jsonify({'error': f'Failed to delete summary: {str(e)}'}), 500
+        logger.exception('delete_summary_error', summary_id=summary_id, error=str(e))
+        return JSONResponse(status_code=500, content={'error': 'Failed to delete summary'})
 
-@summaries_bp.route('/dashboard/stats', methods=['GET'])
-@token_required
-def get_dashboard_stats():
-    """Get dashboard statistics for the authenticated user"""
+
+@router.get('/dashboard/stats')
+async def get_dashboard_stats(current_user: CurrentUser):
+    user_id = current_user['user_id']
     try:
-        # Get user stats from view
-        stats_result = supabase.table('user_summary_stats').select('*').eq('user_id', request.user_id).execute()
-        
-        # Get recent activity
-        activity_result = supabase.table('user_activity').select('*').eq('user_id', request.user_id).order('created_at', desc=True).limit(10).execute()
-        
-        # Get summaries by month (last 6 months)
-        from datetime import datetime, timedelta
+        stats_result = await asyncio.to_thread(
+            lambda: supabase.table('user_summary_stats').select('*').eq('user_id', user_id).execute()
+        )
+        activity_result = await asyncio.to_thread(
+            lambda: supabase.table('user_activity')
+            .select('*')
+            .eq('user_id', user_id)
+            .order('created_at', desc=True)
+            .limit(10)
+            .execute()
+        )
         six_months_ago = (datetime.utcnow() - timedelta(days=180)).isoformat()
-        
-        monthly_result = supabase.table('summaries').select('created_at').eq('user_id', request.user_id).gte('created_at', six_months_ago).execute()
-        
-        # Process monthly data
-        monthly_counts = {}
-        for summary in monthly_result.data:
-            month_key = summary['created_at'][:7]  # YYYY-MM
-            monthly_counts[month_key] = monthly_counts.get(month_key, 0) + 1
-        
+        monthly_result = await asyncio.to_thread(
+            lambda: supabase.table('summaries')
+            .select('created_at')
+            .eq('user_id', user_id)
+            .gte('created_at', six_months_ago)
+            .execute()
+        )
+
+        monthly_counts: dict[str, int] = {}
+        for s in (monthly_result.data or []):
+            key = s['created_at'][:7]
+            monthly_counts[key] = monthly_counts.get(key, 0) + 1
+
         stats = stats_result.data[0] if stats_result.data else {}
-        
-        return jsonify({
+        return {
             'stats': {
-                'total_summaries': stats.get('total_summaries', 0),
-                'avg_processing_time': float(stats.get('avg_processing_time', 0)) if stats.get('avg_processing_time') else 0,
+                'total_summaries':       stats.get('total_summaries', 0),
+                'avg_processing_time':   float(stats.get('avg_processing_time', 0) or 0),
                 'total_words_processed': stats.get('total_words_processed', 0),
-                'last_summary_date': stats.get('last_summary_date'),
-                'active_days': stats.get('active_days', 0)
+                'last_summary_date':     stats.get('last_summary_date'),
+                'active_days':           stats.get('active_days', 0),
             },
-            'recent_activity': activity_result.data,
-            'monthly_summaries': monthly_counts
-        }), 200
-        
+            'recent_activity':   activity_result.data,
+            'monthly_summaries': monthly_counts,
+        }
     except Exception as e:
-        return jsonify({'error': f'Failed to fetch stats: {str(e)}'}), 500
+        logger.exception('dashboard_stats_error', error=str(e))
+        return JSONResponse(status_code=500, content={'error': 'Failed to fetch stats'})
 
 
-@summaries_bp.route('/export/<summary_id>', methods=['GET'])
-@token_required
-def export_summary(summary_id):
-    """Export a summary as JSON or Markdown."""
-    format_type = request.args.get('format', 'json')
+@router.get('/export/{summary_id}')
+async def export_summary(summary_id: str, current_user: CurrentUser, format: str = 'json'):
+    user_id = current_user['user_id']
     try:
-        result = supabase.table('summaries').select('*').eq('id', summary_id).execute()
+        result = await asyncio.to_thread(
+            lambda: supabase.table('summaries')
+            .select('*')
+            .eq('id', summary_id)
+            .eq('user_id', user_id)
+            .execute()
+        )
         if not result.data:
-            return jsonify({'error': 'Summary not found'}), 404
+            return JSONResponse(status_code=404, content={'error': 'Summary not found'})
+
         row = result.data[0]
-        if format_type == 'markdown':
+
+        if format == 'markdown':
             title = row.get('paper_title', 'Untitled')
             authors = ', '.join(row.get('paper_authors') or [])
             sdata = row.get('summary_data') or {}
             summaries = sdata.get('summaries', {})
-            md = f"# {title}\n\n**Authors:** {authors}\n\n**arXiv:** {row.get('arxiv_id','')}\n\n"
+            md = f"# {title}\n\n**Authors:** {authors}\n\n**arXiv:** {row.get('arxiv_id', '')}\n\n"
             for stype, text in summaries.items():
                 md += f"## {stype.title()} Summary\n\n{text}\n\n"
+
             tmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.md', encoding='utf-8')
-            tmp.write(md); tmp.close()
-            return send_file(tmp.name, as_attachment=True,
-                             download_name=f"{row.get('arxiv_id','paper')}.md",
-                             mimetype='text/markdown')
-        return jsonify(row), 200
+            tmp.write(md)
+            tmp.close()
+            arxiv_id = row.get('arxiv_id', 'paper')
+            return FileResponse(
+                tmp.name,
+                media_type='text/markdown',
+                filename=f'{arxiv_id}.md',
+                headers={'Content-Disposition': f'attachment; filename="{arxiv_id}.md"'},
+            )
+
+        if format == 'bibtex':
+            arxiv_id = row.get('arxiv_id', '')
+            title = row.get('paper_title', 'Unknown')
+            authors = ' and '.join(row.get('paper_authors') or [])
+            year = (row.get('published_date') or '')[:4] or '2024'
+            bib = (
+                f"@article{{{arxiv_id},\n"
+                f"  title   = {{{title}}},\n"
+                f"  author  = {{{authors}}},\n"
+                f"  year    = {{{year}}},\n"
+                f"  archivePrefix = {{arXiv}},\n"
+                f"  eprint  = {{{arxiv_id}}},\n"
+                f"}}\n"
+            )
+            tmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.bib', encoding='utf-8')
+            tmp.write(bib)
+            tmp.close()
+            return FileResponse(tmp.name, media_type='text/plain', filename=f'{arxiv_id}.bib')
+
+        return row
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.exception('export_error', summary_id=summary_id, error=str(e))
+        return JSONResponse(status_code=500, content={'error': str(e)})

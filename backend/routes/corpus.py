@@ -1,0 +1,158 @@
+"""Corpus-level analysis routes — topic clusters, contradiction map, recompute triggers."""
+
+import asyncio
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
+from supabase import create_client
+
+from auth.dependencies import CurrentUser
+from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+
+@router.get("/corpus/topic-clusters")
+async def get_topic_clusters(current_user: CurrentUser):
+    """Return pre-computed topic cluster landscape for the user's library."""
+    user_id = current_user["user_id"]
+    try:
+        from core.knowledge.topic_clustering import get_topic_landscape
+        data = await asyncio.to_thread(get_topic_landscape, user_id, supabase)
+        return data
+    except Exception as e:
+        logger.error("topic_clusters_error", error=str(e))
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.post("/corpus/recompute-clusters", status_code=202)
+async def recompute_clusters(current_user: CurrentUser):
+    """Trigger BERTopic clustering for the user's library (runs in background)."""
+    user_id = current_user["user_id"]
+    try:
+        from core.knowledge.topic_clustering import BERTOPIC_AVAILABLE
+        if not BERTOPIC_AVAILABLE:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "BERTopic not installed. Run: pip install bertopic hdbscan umap-learn"},
+            )
+    except Exception:
+        pass
+
+    async def _run():
+        try:
+            from core.knowledge.topic_clustering import compute_topic_clusters
+            result = await asyncio.to_thread(compute_topic_clusters, user_id, supabase)
+            logger.info("topic_clustering_complete", user_id=user_id, result=result)
+        except Exception as e:
+            logger.error("topic_clustering_failed", user_id=user_id, error=str(e))
+
+    asyncio.create_task(_run())
+    return {"message": "Topic clustering started in background. Check /corpus/topic-clusters in a minute."}
+
+
+@router.post("/corpus/relate-papers", status_code=202)
+async def relate_papers_route(current_user: CurrentUser):
+    """Run the RelationAgent across the user's library (background).
+
+    Writes typed, explained links into paper_lineage, which the citation /
+    knowledge graph endpoints already render. Poll /corpus/citation-network after.
+    """
+    user_id = current_user["user_id"]
+
+    async def _run():
+        try:
+            from core.graph.relation_agent import relate_library
+            result = await relate_library(user_id, supabase)
+            logger.info("relate_papers_complete", user_id=user_id, result=result)
+        except Exception as e:
+            logger.error("relate_papers_failed", user_id=user_id, error=str(e))
+
+    asyncio.create_task(_run())
+    return {"message": "Relation mapping started. Check /corpus/citation-network shortly."}
+
+
+@router.get("/corpus/citation-network")
+async def corpus_citation_network(current_user: CurrentUser):
+    """Directed citation graph for the entire corpus."""
+    user_id = current_user["user_id"]
+    try:
+        from core.knowledge.graph_service import get_citation_network
+        data = await asyncio.to_thread(get_citation_network, user_id, supabase)
+        return data
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.get("/corpus/author-graph")
+async def corpus_author_graph(current_user: CurrentUser):
+    """Co-authorship graph for the entire corpus."""
+    user_id = current_user["user_id"]
+    try:
+        from core.knowledge.graph_service import get_author_graph
+        data = await asyncio.to_thread(get_author_graph, user_id, supabase)
+        return data
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.get("/corpus/contradiction-map")
+async def corpus_contradiction_map(current_user: CurrentUser):
+    """Papers connected by 'contradicts' lineage edges."""
+    user_id = current_user["user_id"]
+    try:
+        # Fetch user's paper ids
+        papers_resp = (
+            supabase.table("summaries")
+            .select("id, paper_title")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        papers = {p["id"]: p["paper_title"] for p in (papers_resp.data or [])}
+        paper_ids = list(papers.keys())
+
+        if not paper_ids:
+            return {"nodes": [], "edges": []}
+
+        lineage_resp = (
+            supabase.table("paper_lineage")
+            .select("ancestor_id, descendant_id, link_confidence")
+            .in_("ancestor_id", paper_ids)
+            .eq("link_type", "contradicts")
+            .execute()
+        )
+
+        nodes = []
+        edges = []
+        seen = set()
+
+        for row in (lineage_resp.data or []):
+            src = row["ancestor_id"]
+            dst = row["descendant_id"]
+            for pid in [src, dst]:
+                if pid not in seen and pid in papers:
+                    seen.add(pid)
+                    nodes.append({
+                        "id": f"paper_{pid}",
+                        "label": (papers.get(pid) or "")[:35],
+                        "group": "paper",
+                        "summary_id": pid,
+                        "color": "#ef4444",
+                    })
+            if src in papers and dst in papers:
+                edges.append({
+                    "from": f"paper_{src}",
+                    "to": f"paper_{dst}",
+                    "arrows": "to",
+                    "title": "contradicts",
+                    "color": "#ef4444",
+                    "group": "contradiction",
+                })
+
+        return {"nodes": nodes, "edges": edges}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})

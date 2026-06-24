@@ -1,52 +1,58 @@
-flask
-flask-cors
-werkzeug
+# ── Core web framework ──────────────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+python-multipart          # file upload support for FastAPI
+werkzeug                  # secure_filename utility
+
+# ── Auth ────────────────────────────────────────────────────────────────────
 python-dotenv
-supabase
 PyJWT
 bcrypt
 
-# RAG and Vector Search
-sentence-transformers
+# ── Database ─────────────────────────────────────────────────────────────────
+supabase
 pgvector
 
-# LLM and NLP
-transformers
-torch
-ollama
-PyPDF2
-pdfplumber
+# ── PDF extraction ───────────────────────────────────────────────────────────
+PyMuPDF                   # fitz — PDF parsing, figure extraction
+pymupdf4llm               # LLM-optimised Markdown extraction from PDFs
+pdfplumber                # table extraction fallback
 
-# Configuration
+# ── LLM backends ─────────────────────────────────────────────────────────────
+ollama                    # local inference via Ollama (default)
+transformers              # HuggingFace transformers fallback
+torch                     # required by transformers
+# Optional cloud LLM backends (uncomment or install as needed):
+# openai                  # PAPERMIND_LLM_BACKEND=openai  OPENAI_API_KEY=...
+# anthropic               # PAPERMIND_LLM_BACKEND=anthropic  ANTHROPIC_API_KEY=...
+
+# ── NLP & embeddings ─────────────────────────────────────────────────────────
+sentence-transformers     # all-MiniLM-L6-v2 for paper embeddings
+nltk
 PyYAML
+arxiv
+requests
 
-# FastAPI for async processing
-fastapi
-uvicorn[standard]
-python-multipart
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+slowapi                   # FastAPI rate limiting (equiv. of flask-limiter)
 
-# Task Queue
+# ── Task queue (optional — needed for Celery background tasks) ───────────────
 arq
 redis
 
-# Logging and Monitoring
+# ── Logging & monitoring ─────────────────────────────────────────────────────
 structlog
 python-json-logger
-sentry-sdk[fastapi]
+sentry-sdk[fastapi]       # optional: set SENTRY_DSN env var to enable
 
-# Security
-flask-limiter
-flask-talisman
-python-magic
-
-# Testing
+# ── Testing ──────────────────────────────────────────────────────────────────
 pytest
 pytest-asyncio
 pytest-cov
 pytest-mock
-httpx
+httpx                     # FastAPI TestClient transport
 
-# Code Quality
+# ── Code quality ─────────────────────────────────────────────────────────────
 black
 flake8
 mypy

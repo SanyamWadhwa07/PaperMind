@@ -1,49 +1,49 @@
 """Batch comparison routes — cross-paper metrics/entity comparison."""
 
-from flask import Blueprint, request, jsonify
-from supabase import create_client
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
-from auth.utils import token_required
+import asyncio
 import sys
+import structlog
 from pathlib import Path
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from supabase import create_client
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from core.knowledge.comparison_service import compare_papers
 
-batch_compare_bp = Blueprint('batch_compare', __name__)
+from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+from auth.dependencies import CurrentUser
+from schemas import BatchCompareRequest
+
+logger = structlog.get_logger(__name__)
+router = APIRouter()
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-@batch_compare_bp.route('/batch/compare', methods=['POST'])
-@token_required
-def compare_papers_endpoint():
-    """Compare metrics, entities, and findings across multiple papers.
+@router.post('/batch/compare')
+async def compare_papers_endpoint(data: BatchCompareRequest, current_user: CurrentUser):
+    """Compare metrics, entities, and findings across 2–10 papers."""
+    user_id = current_user['user_id']
+    summary_ids = data.summary_ids
 
-    Body: {"summary_ids": ["uuid1", "uuid2", ...]}  (2–10 IDs)
-    """
-    data = request.get_json() or {}
-    summary_ids = data.get('summary_ids', [])
-
-    if not isinstance(summary_ids, list) or len(summary_ids) < 2:
-        return jsonify({'error': 'Provide at least 2 summary IDs'}), 400
-
-    if len(summary_ids) > 10:
-        return jsonify({'error': 'Maximum 10 papers per comparison'}), 400
-
-    # Verify all papers belong to the requesting user
-    result = supabase.table('summaries') \
-        .select('id') \
-        .in_('id', summary_ids) \
-        .eq('user_id', request.user_id) \
+    result = await asyncio.to_thread(
+        lambda: supabase.table('summaries')
+        .select('id')
+        .in_('id', summary_ids)
+        .eq('user_id', user_id)
         .execute()
-
+    )
     owned_ids = {r['id'] for r in (result.data or [])}
     unauthorized = [pid for pid in summary_ids if pid not in owned_ids]
     if unauthorized:
-        return jsonify({'error': 'Some paper IDs not found or not owned by you'}), 403
+        return JSONResponse(
+            status_code=403,
+            content={'error': 'Some paper IDs not found or not owned by you'},
+        )
 
     try:
-        comparison = compare_papers(summary_ids, supabase)
-        return jsonify(comparison), 200
+        comparison = await asyncio.to_thread(compare_papers, summary_ids, supabase)
+        return comparison
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.exception('batch_compare_error', error=str(e))
+        return JSONResponse(status_code=500, content={'error': str(e)})

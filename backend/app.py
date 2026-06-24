@@ -1,12 +1,13 @@
-"""Flask Backend API for Research Paper Summarizer.
-
-Professional REST API with endpoints for:
-- Paper search and fetching from arXiv
-- PDF upload and processing
-- Summarization with progress tracking
-- Entity extraction and keyword analysis
-- Export functionality
 """
+DEPRECATED — legacy Flask entry point.
+
+The production entry point is now `backend/main_app.py` (FastAPI + uvicorn).
+This file is kept for reference only and will be removed in a future release.
+
+Start the server with:
+    uvicorn backend.main_app:app --reload --port 8000
+"""
+# fmt: off  # noqa
 
 import sys
 if hasattr(sys.stdout, 'reconfigure'):

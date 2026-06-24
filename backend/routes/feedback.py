@@ -1,72 +1,68 @@
-"""User feedback routes — star ratings and error reports for summaries."""
+"""Feedback routes — star ratings and error reports for summaries."""
 
-from flask import Blueprint, request, jsonify
-from supabase import create_client
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
-from auth.utils import token_required
+import asyncio
+import structlog
 from datetime import datetime
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from supabase import create_client
 
-feedback_bp = Blueprint('feedback', __name__)
+from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+from auth.dependencies import CurrentUser
+from schemas import FeedbackRequest
+
+logger = structlog.get_logger(__name__)
+router = APIRouter()
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 VALID_TYPES = {'rating', 'error_report', 'flag_hallucination'}
 
 
-@feedback_bp.route('/feedback/summary/<summary_id>', methods=['POST'])
-@token_required
-def submit_feedback(summary_id):
-    """Submit a star rating + optional comment for a summary.
-
-    Body: {"rating": 4, "comment": "Great summary", "feedback_type": "rating"}
-    """
-    data = request.get_json() or {}
-    rating = data.get('rating')
-    comment = str(data.get('comment', ''))[:1000]
-    feedback_type = data.get('feedback_type', 'rating')
-
-    if rating is not None and (not isinstance(rating, int) or not 1 <= rating <= 5):
-        return jsonify({'error': 'rating must be an integer between 1 and 5'}), 400
-
-    if feedback_type not in VALID_TYPES:
-        feedback_type = 'rating'
+@router.post('/feedback/summary/{summary_id}', status_code=201)
+async def submit_feedback(summary_id: str, data: FeedbackRequest, current_user: CurrentUser):
+    user_id = current_user['user_id']
+    feedback_type = data.feedback_type if data.feedback_type in VALID_TYPES else 'rating'
 
     try:
         row = {
-            'summary_id': summary_id,
-            'user_id': request.user_id,
-            'rating': rating,
+            'summary_id':    summary_id,
+            'user_id':       user_id,
+            'rating':        data.rating,
             'feedback_type': feedback_type,
-            'comment': comment or None,
-            'created_at': datetime.utcnow().isoformat(),
+            'comment':       data.comment,
+            'created_at':    datetime.utcnow().isoformat(),
         }
-        supabase.table('summary_feedback') \
-            .upsert(row, on_conflict='summary_id,user_id') \
+        await asyncio.to_thread(
+            lambda: supabase.table('summary_feedback')
+            .upsert(row, on_conflict='summary_id,user_id')
             .execute()
-        return jsonify({'message': 'Feedback saved'}), 201
+        )
+        return {'message': 'Feedback saved'}
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.exception('submit_feedback_error', summary_id=summary_id, error=str(e))
+        return JSONResponse(status_code=500, content={'error': str(e)})
 
 
-@feedback_bp.route('/feedback/summary/<summary_id>', methods=['GET'])
-@token_required
-def get_feedback(summary_id):
-    """Get aggregate rating and feedback count for a summary."""
+@router.get('/feedback/summary/{summary_id}')
+async def get_feedback(summary_id: str, current_user: CurrentUser):
     try:
-        result = supabase.table('summary_feedback') \
-            .select('rating, feedback_type, comment, created_at') \
-            .eq('summary_id', summary_id) \
+        result = await asyncio.to_thread(
+            lambda: supabase.table('summary_feedback')
+            .select('rating, feedback_type, comment, created_at')
+            .eq('summary_id', summary_id)
             .execute()
-
+        )
         rows = result.data or []
         ratings = [r['rating'] for r in rows if r.get('rating') is not None]
         avg_rating = round(sum(ratings) / len(ratings), 2) if ratings else None
 
-        return jsonify({
-            'summary_id': summary_id,
+        return {
+            'summary_id':     summary_id,
             'average_rating': avg_rating,
-            'rating_count': len(ratings),
+            'rating_count':   len(ratings),
             'total_feedback': len(rows),
-            'feedback': rows,
-        }), 200
+            'feedback':       rows,
+        }
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.exception('get_feedback_error', summary_id=summary_id, error=str(e))
+        return JSONResponse(status_code=500, content={'error': str(e)})

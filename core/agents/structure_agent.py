@@ -1,9 +1,12 @@
 """StructureAgent - Analyzes PDF structure and extracts sections.
 
-Wraps existing AdvancedSectionExtractor with agent capabilities:
-- Async execution
-- Experience-based section template learning
-- Inter-agent communication for section queries
+Extraction priority:
+  1. MinerU (magic-pdf) — best quality, also extracts figure PNGs
+  2. pymupdf4llm — fast, handles clean native PDFs
+  3. AdvancedSectionExtractor (backend.main) — font-heuristic fallback
+
+Pre-extracted figures are passed downstream via 'pre_extracted_figures'
+in the returned result so FigureAgent can skip redundant extraction.
 """
 
 import sys
@@ -11,10 +14,10 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-# Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from core.agents.base_agent import BaseAgent, AgentState
+from core.pipeline.pdf_extractor import extract_pdf, ExtractionResult
 from backend.main import AdvancedSectionExtractor
 
 logger = logging.getLogger(__name__)
@@ -36,8 +39,9 @@ class StructureAgent(BaseAgent):
         self.font_config = font_config or {'percentile': 75, 'strong_percentile': 90}
         self.section_extractor = AdvancedSectionExtractor(font_config=self.font_config)
         self.current_sections: Dict[str, str] = {}
-        self.section_locations: Dict[str, List[int]] = {}  # section -> [page_nums]
-        self.domain_font_cache: Dict[str, Dict[str, float]] = {}  # Cache learned font configs
+        self.section_locations: Dict[str, List[int]] = {}
+        self.domain_font_cache: Dict[str, Dict[str, float]] = {}
+        self._pre_extracted_figures: list = []  # FigureInfo list from last extraction
     
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -66,17 +70,30 @@ class StructureAgent(BaseAgent):
         
         if not pdf_path:
             raise ValueError("pdf_path required")
-        
+
         # Load domain-specific font configuration from experience if available
         font_config = await self._get_domain_font_config(domain)
         if font_config:
-            # Update extractor with learned config
             self.section_extractor = AdvancedSectionExtractor(font_config=font_config)
-            logger.info(f"Using learned font config for domain '{domain}': {font_config}")
-        
-        # Extract sections using extractor with domain-tuned thresholds
-        sections = self.section_extractor.extract_sections_from_pdf(pdf_path)
+
+        # ── New layered extractor: MinerU → pymupdf4llm → fitz ─────────────
+        extraction: ExtractionResult = extract_pdf(pdf_path, prefer_mineru=True)
+        sections = extraction.sections
+        pre_extracted_figures = extraction.figures  # List[FigureInfo]
+
+        # ── Legacy fallback if new extractor found too few sections ─────────
+        if len(sections) < 3:
+            logger.info(
+                "new_extractor_insufficient_sections",
+                found=len(sections),
+                backend=extraction.backend,
+                fallback="AdvancedSectionExtractor",
+            )
+            sections = self.section_extractor.extract_sections_from_pdf(pdf_path)
+            pre_extracted_figures = []
+
         self.current_sections = sections
+        self._pre_extracted_figures = pre_extracted_figures
         
         # Query experience for expected structure
         expected_template = await self.query_experience(
@@ -120,15 +137,34 @@ class StructureAgent(BaseAgent):
             'extractions': list(sections.keys()),
             'confidence_scores': confidence_scores,
             'sections': sections,
+            'pre_extracted_figures': self._pre_extracted_figures,
+            # Structured artifacts from the layered extractor — consumed by the
+            # LangGraph summarizer (results tables) and downstream agents.
+            'tables_md': getattr(extraction, 'tables_md', []) or [],
+            'equations': getattr(extraction, 'equations', []) or [],
             'metadata': {
                 'section_count': len(sections),
                 'total_words': total_words,
                 'domain_match': domain_match,
                 'expected_sections': expected_sections,
-                'has_expected_structure': all(s in sections for s in expected_sections[:3])
+                'has_expected_structure': all(s in sections for s in expected_sections[:3]),
+                'figures_pre_extracted': len(self._pre_extracted_figures),
+                'extraction_backend': getattr(extraction, 'backend', 'unknown'),
+                'table_count': len(getattr(extraction, 'tables_md', []) or []),
             }
         }
     
+    def _extract_via_pymupdf4llm(self, pdf_path: str) -> Dict[str, str]:
+        """Thin shim retained for backwards compatibility and tests.
+
+        Delegates to the pdf_extractor pipeline (pymupdf4llm backend).
+        """
+        from core.pipeline.pdf_extractor import _extract_pymupdf4llm, ExtractionResult
+        import tempfile, pathlib
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        result = _extract_pymupdf4llm(pdf_path, tmp)
+        return result.sections if result else {}
+
     async def _update_section_template(self, domain: str, section_sequence: List[str]):
         """Update learned section templates in experience DB."""
         # This would update section_templates table

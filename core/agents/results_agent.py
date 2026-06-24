@@ -68,14 +68,22 @@ class ResultsAgent(BaseAgent):
         if not sections:
             raise ValueError("sections required")
         
-        # Focus on results/experiments sections
-        results_text = sections.get('results', '')
-        experiments_text = sections.get('experiments', '')
-        combined_text = results_text + ' ' + experiments_text
+        # Search all sections whose key contains results/experiment/evaluation keywords
+        result_keywords = ('result', 'experiment', 'evaluat', 'perform', 'ablat', 'benchmark', 'measur', 'compar')
+        matching = {k: v for k, v in sections.items()
+                    if any(kw in k.lower() for kw in result_keywords)}
+        # Fallback: search all sections if none matched
+        if not matching:
+            matching = sections
+        combined_text = ' '.join(matching.values())
         
-        # Extract results using existing extractor
-        table_results = self.results_extractor.extract_table_results(combined_text)
-        inline_results = self.results_extractor.extract_inline_results(combined_text)
+        # Extract results using existing extractor — use text method (no PDF path needed)
+        raw = self.results_extractor._extract_from_text(combined_text, 'results')
+        table_results = [
+            {'metric': r.metric, 'value': str(r.value), 'dataset': r.dataset or '', 'context': r.context or ''}
+            for r in raw
+        ]
+        inline_results = []
         
         all_results = table_results + inline_results
         self.extracted_results = all_results

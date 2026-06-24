@@ -1,48 +1,57 @@
 import React, { createContext, useState, useContext, useEffect } from 'react'
+import api from '../lib/api'
 
 const AuthContext = createContext(null)
 
 export const useAuth = () => {
   const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider')
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider')
   return context
+}
+
+/** Return true if a JWT token string is expired (checks exp claim). */
+function isTokenExpired(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return Date.now() >= payload.exp * 1000
+  } catch {
+    return true
+  }
 }
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
-  const [token, setToken] = useState(localStorage.getItem('token'))
+  const [token, setToken] = useState(() => localStorage.getItem('token'))
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const savedToken = localStorage.getItem('token')
     if (savedToken) {
-      fetchCurrentUser(savedToken)
+      if (isTokenExpired(savedToken)) {
+        _clearAuth()
+        setLoading(false)
+      } else {
+        fetchCurrentUser(savedToken)
+      }
     } else {
       setLoading(false)
     }
   }, [])
 
-  const fetchCurrentUser = async (authToken) => {
-    const t = authToken || token
-    try {
-      const response = await fetch('http://localhost:5000/api/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${t}`
-        }
-      })
+  function _clearAuth() {
+    localStorage.removeItem('token')
+    setToken(null)
+    setUser(null)
+  }
 
-      if (response.ok) {
-        const data = await response.json()
-        setUser(data.user)
-      } else {
-        // Token is invalid
-        logout()
-      }
-    } catch (error) {
-      console.error('Failed to fetch user:', error)
-      logout()
+  const fetchCurrentUser = async (authToken) => {
+    try {
+      const { data } = await api.get('/api/auth/me', {
+        headers: { Authorization: `Bearer ${authToken || token}` },
+      })
+      setUser(data.user)
+    } catch {
+      _clearAuth()
     } finally {
       setLoading(false)
     }
@@ -50,87 +59,48 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, password })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed')
-      }
-
+      const { data } = await api.post('/api/auth/login', { email, password })
       localStorage.setItem('token', data.token)
       setToken(data.token)
       setUser(data.user)
-
       return { success: true }
     } catch (error) {
-      return { success: false, error: error.message }
+      return { success: false, error: error.response?.data?.error || error.message }
     }
   }
 
   const signup = async (email, password, fullName) => {
     try {
-      const response = await fetch('http://localhost:5000/api/auth/signup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          email, 
-          password,
-          full_name: fullName 
-        })
+      const { data } = await api.post('/api/auth/signup', {
+        email,
+        password,
+        full_name: fullName,
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Signup failed')
-      }
-
       localStorage.setItem('token', data.token)
       setToken(data.token)
       setUser(data.user)
-
       return { success: true }
     } catch (error) {
-      return { success: false, error: error.message }
+      return { success: false, error: error.response?.data?.error || error.message }
     }
   }
 
-  const logout = () => {
-    localStorage.removeItem('token')
-    setToken(null)
-    setUser(null)
+  const logout = async () => {
+    try {
+      await api.post('/api/auth/logout')
+    } catch {
+      // ignore — clear local state regardless
+    }
+    _clearAuth()
   }
 
   const updateProfile = async (updates) => {
     try {
-      const response = await fetch('http://localhost:5000/api/auth/me', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(updates)
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Update failed')
-      }
-
+      const { data } = await api.put('/api/auth/me', updates)
       setUser(data.user)
       return { success: true }
     } catch (error) {
-      return { success: false, error: error.message }
+      return { success: false, error: error.response?.data?.error || error.message }
     }
   }
 
@@ -142,7 +112,7 @@ export const AuthProvider = ({ children }) => {
     signup,
     logout,
     updateProfile,
-    isAuthenticated: !!user
+    isAuthenticated: !!user,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

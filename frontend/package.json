@@ -19,7 +19,6 @@
     "react-dom": "^18.2.0",
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.20.0",
-    "react-toastify": "^11.0.5",
     "recharts": "^2.10.3",
     "vis-network": "^9.1.9",
     "vis-timeline": "^7.7.3",
