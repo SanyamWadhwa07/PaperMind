@@ -304,11 +304,13 @@ class ParallelAgentOrchestrator:
                 logger.debug("unsupported_claim", claim=claim[:100])
     
     def _get_agent_times(self) -> Dict[str, float]:
-        """Get execution time for each agent."""
-        return {
-            agent.name: agent.execution_stats.get('avg_time_ms', 0)
-            for agent in self.all_agents
-        }
+        """Get average execution time for each agent."""
+        times = {}
+        for agent in self.all_agents:
+            stats = agent.execution_stats
+            runs = stats.get('total_runs', 0)
+            times[agent.name] = stats.get('total_time_ms', 0) / runs if runs else 0
+        return times
     
     def _calculate_speedup(self) -> float:
         """

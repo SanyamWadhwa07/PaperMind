@@ -1,0 +1,6 @@
+# Dev/test/eval dependencies — on top of requirements.txt + backend/requirements.txt
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
+pytest-cov>=4.1.0
+rouge-score>=0.1.2

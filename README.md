@@ -27,6 +27,7 @@
 - [Quick start](#-quick-start)
 - [Configuration](#️-configuration)
 - [API reference](#-api-reference)
+- [Testing & benchmarks](#-testing--benchmarks)
 - [Deployment](#-deployment)
 - [Project structure](#-project-structure)
 - [Contributing](#-contributing)
@@ -196,6 +197,39 @@ All authenticated routes take `Authorization: Bearer <jwt>`. Interactive docs at
 | `GET`  | `/api/corpus/citation-network` · `/author-graph` | Corpus graphs |
 | `POST` | `/api/corpus/relate-papers` | **Run RelationAgent across the library** |
 | `GET`  | `/api/health` | Dependency + LLM provider health |
+
+---
+
+## 🧪 Testing & benchmarks
+
+**90/90 tests passing · 42% coverage** across `core/` + `backend/` (unit,
+integration, and API-contract tests). CI runs the full suite with coverage on
+every push — see [`.github/workflows/tests.yml`](.github/workflows/tests.yml)
+and [`docs/TESTING.md`](docs/TESTING.md).
+
+```bash
+pip install -r requirements.txt -r backend/requirements.txt -r requirements-dev.txt
+pytest tests/ --cov=core --cov=backend
+```
+
+Beyond unit tests, [`evals/run_benchmark.py`](evals/run_benchmark.py) runs the
+**full 10-agent pipeline against real arXiv papers** (not fixtures) and
+measures latency, parallel speedup, extraction coverage, and summary quality
+(ROUGE vs. each paper's own abstract). Full results and methodology in
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — headline numbers:
+
+| Metric | Value |
+|---|---|
+| Pipeline success rate (8 real papers, 10 agents each) | **100%** |
+| Summary quality (ROUGE-1 F1 vs. abstract) | **0.64 mean** |
+| Extraction-only latency (no LLM) | **23–34s/paper** median |
+| Parallel speedup (concurrent agent phase) | up to **2.5×** |
+| Entities / figures extracted | **13 / 8.5** per paper (median) |
+
+Building the benchmark surfaced and fixed a real bug: the legacy figure
+extractor was silently producing 0 usable figures per paper — see
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md#what-this-benchmark-caught) for the
+root cause and fix.
 
 ---
 

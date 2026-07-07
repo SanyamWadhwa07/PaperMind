@@ -10,6 +10,7 @@ Understanding:
 """
 
 import sys
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -17,6 +18,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from core.agents.base_agent import BaseAgent, AgentState
 from core.pipeline.diagram_processor import DiagramProcessor
+from core.pipeline.pdf_extractor import FigureInfo
 
 
 class FigureAgent(BaseAgent):
@@ -57,6 +59,32 @@ class FigureAgent(BaseAgent):
                 self._legacy_extractor = None
         return self._legacy_extractor
 
+    def _materialize_legacy_figures(self, legacy_figures: List[Any]) -> List[FigureInfo]:
+        """Write legacy ExtractedFigure image bytes to disk as FigureInfo.
+
+        DiagramProcessor.classify()/understand() open images via
+        Image.open(path); the legacy extractor only holds raw bytes, so it
+        needs a real file on disk to feed into the same pipeline as the
+        MinerU/pymupdf4llm path.
+        """
+        materialized: List[FigureInfo] = []
+        for i, fig in enumerate(legacy_figures):
+            image_data = getattr(fig, "image_data", None)
+            if not image_data:
+                continue
+            with tempfile.NamedTemporaryFile(
+                suffix=".png", delete=False, prefix="papermind_fig_"
+            ) as tmp:
+                tmp.write(image_data)
+                tmp_path = tmp.name
+            materialized.append(FigureInfo(
+                path=tmp_path,
+                caption=getattr(fig, "caption", "") or "",
+                page_number=getattr(fig, "page_number", 0),
+                figure_number=f"Figure {i + 1}",
+            ))
+        return materialized
+
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Extract and understand figures from a PDF.
@@ -96,7 +124,8 @@ class FigureAgent(BaseAgent):
             # Legacy path: extract via backend.main.FigureExtractor
             extractor = self._get_legacy_extractor()
             if extractor and pdf_path:
-                raw_figures = extractor.extract_figures(pdf_path, sections)
+                legacy_figures = extractor.extract_figures(pdf_path, sections)
+                raw_figures = self._materialize_legacy_figures(legacy_figures)
             else:
                 raw_figures = []
 

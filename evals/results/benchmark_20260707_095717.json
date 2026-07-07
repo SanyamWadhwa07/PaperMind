@@ -1,0 +1,465 @@
+{
+  "generated_at": "20260707_095717",
+  "aggregate": {
+    "papers_total": 8,
+    "papers_succeeded": 8,
+    "success_rate": 1.0,
+    "wall_time_s": {
+      "mean": 229.695,
+      "median": 182.28,
+      "p95": 566.06,
+      "min": 110.88,
+      "max": 566.06
+    },
+    "extraction_time_s": {
+      "mean": 100.175,
+      "median": 33.415,
+      "p95": 446.55,
+      "min": 18.13,
+      "max": 446.55
+    },
+    "summary_time_s": {
+      "mean": 129.52,
+      "median": 126.01,
+      "p95": 166.61,
+      "min": 92.75,
+      "max": 166.61
+    },
+    "parallel_speedup": {
+      "mean": 1.315,
+      "median": 1.05,
+      "p95": 2.51,
+      "min": 1.03,
+      "max": 2.51
+    },
+    "entities_total": {
+      "mean": 12.875,
+      "median": 13.5,
+      "p95": 22,
+      "min": 5,
+      "max": 22
+    },
+    "results_extracted": {
+      "mean": 26.75,
+      "median": 3.5,
+      "p95": 180,
+      "min": 0,
+      "max": 180
+    },
+    "figures_extracted": {
+      "mean": 7.75,
+      "median": 8.5,
+      "p95": 10,
+      "min": 4,
+      "max": 10
+    },
+    "summary_words": {
+      "mean": 166.125,
+      "median": 197.0,
+      "p95": 304,
+      "min": 2,
+      "max": 304
+    },
+    "compression_ratio": {
+      "mean": 0.04,
+      "median": 0.042,
+      "p95": 0.085,
+      "min": 0.0,
+      "max": 0.085
+    },
+    "entity_keyword_coverage": {
+      "mean": 0.266,
+      "median": 0.279,
+      "p95": 0.571,
+      "min": 0.0,
+      "max": 0.571
+    },
+    "rouge1_f1_mean": 0.6385,
+    "rouge2_f1_mean": 0.4519,
+    "rougeL_f1_mean": 0.4291,
+    "section_detection_rate": {
+      "abstract": 0.5,
+      "introduction": 0.875,
+      "methodology": 0.5,
+      "results": 0.875,
+      "conclusion": 0.875
+    },
+    "llm_backends_used": {
+      "groq": 8
+    }
+  },
+  "papers": [
+    {
+      "paper": "2001.08844v1.pdf",
+      "success": true,
+      "wall_time_s": 198.99,
+      "summary_time_s": 166.61,
+      "extraction_time_s": 32.38,
+      "parallel_speedup": 1.07,
+      "agent_times_ms": {
+        "StructureAgent": 17873.0,
+        "EntityAgent": 29.0,
+        "ResultsAgent": 34.0,
+        "FigureAgent": 12252.0,
+        "ReasoningAgent": 92.0,
+        "SummaryAgent": 166610.0,
+        "ComparisonAgent": 0,
+        "ResearchGapAgent": 13275.0,
+        "AblationParserAgent": 8.0,
+        "ReproducibilityAgent": 26.0
+      },
+      "sections_detected": 18,
+      "canonical_sections_found": {
+        "abstract": true,
+        "introduction": true,
+        "methodology": true,
+        "results": true,
+        "conclusion": true
+      },
+      "entities_total": 6,
+      "entities_by_type": {
+        "models": 2,
+        "metrics": 4,
+        "datasets": 0,
+        "frameworks": 0,
+        "techniques": 0,
+        "tasks": 0
+      },
+      "results_extracted": 180,
+      "figures_extracted": 10,
+      "paper_words": 5377,
+      "summary_words": 205,
+      "llm_backend": "groq",
+      "compression_ratio": 0.0381,
+      "rouge": {
+        "rouge1": 0.6368,
+        "rouge2": 0.3063,
+        "rougeL": 0.2377
+      },
+      "entity_keyword_coverage": 0.3333
+    },
+    {
+      "paper": "2012.12410v1.pdf",
+      "success": true,
+      "wall_time_s": 149.58,
+      "summary_time_s": 125.17,
+      "extraction_time_s": 24.41,
+      "parallel_speedup": 1.04,
+      "agent_times_ms": {
+        "StructureAgent": 18627.0,
+        "EntityAgent": 3019.0,
+        "ResultsAgent": 7.0,
+        "FigureAgent": 5751.0,
+        "ReasoningAgent": 41.0,
+        "SummaryAgent": 125167.0,
+        "ComparisonAgent": 0,
+        "ResearchGapAgent": 3529.0,
+        "AblationParserAgent": 3.0,
+        "ReproducibilityAgent": 10.0
+      },
+      "sections_detected": 12,
+      "canonical_sections_found": {
+        "abstract": true,
+        "introduction": true,
+        "methodology": false,
+        "results": true,
+        "conclusion": true
+      },
+      "entities_total": 7,
+      "entities_by_type": {
+        "metrics": 7,
+        "models": 0,
+        "datasets": 0,
+        "frameworks": 0,
+        "techniques": 0,
+        "tasks": 0
+      },
+      "results_extracted": 9,
+      "figures_extracted": 6,
+      "paper_words": 3598,
+      "summary_words": 304,
+      "llm_backend": "groq",
+      "compression_ratio": 0.0845,
+      "rouge": {
+        "rouge1": 0.4554,
+        "rouge2": 0.2744,
+        "rougeL": 0.2574
+      },
+      "entity_keyword_coverage": 0.5714
+    },
+    {
+      "paper": "2107.12321v2.pdf",
+      "success": true,
+      "wall_time_s": 151.76,
+      "summary_time_s": 126.85,
+      "extraction_time_s": 24.91,
+      "parallel_speedup": 1.04,
+      "agent_times_ms": {
+        "StructureAgent": 15773.0,
+        "EntityAgent": 9070.0,
+        "ResultsAgent": 11.0,
+        "FigureAgent": 2330.0,
+        "ReasoningAgent": 67.0,
+        "SummaryAgent": 126847.0,
+        "ComparisonAgent": 0,
+        "ResearchGapAgent": 2932.0,
+        "AblationParserAgent": 4.0,
+        "ReproducibilityAgent": 13.0
+      },
+      "sections_detected": 13,
+      "canonical_sections_found": {
+        "abstract": true,
+        "introduction": true,
+        "methodology": false,
+        "results": true,
+        "conclusion": true
+      },
+      "entities_total": 22,
+      "entities_by_type": {
+        "models": 10,
+        "metrics": 11,
+        "frameworks": 1,
+        "datasets": 0,
+        "techniques": 0,
+        "tasks": 0
+      },
+      "results_extracted": 0,
+      "figures_extracted": 4,
+      "paper_words": 4001,
+      "summary_words": 213,
+      "llm_backend": "groq",
+      "compression_ratio": 0.0532,
+      "rouge": {
+        "rouge1": 0.5463,
+        "rouge2": 0.3116,
+        "rougeL": 0.3056
+      },
+      "entity_keyword_coverage": 0.4545
+    },
+    {
+      "paper": "2212.13599v1.pdf",
+      "success": true,
+      "wall_time_s": 110.88,
+      "summary_time_s": 92.75,
+      "extraction_time_s": 18.13,
+      "parallel_speedup": 1.05,
+      "agent_times_ms": {
+        "StructureAgent": 14954.0,
+        "EntityAgent": 3031.0,
+        "ResultsAgent": 4.0,
+        "FigureAgent": 2687.0,
+        "ReasoningAgent": 11.0,
+        "SummaryAgent": 92749.0,
+        "ComparisonAgent": 0,
+        "ResearchGapAgent": 2923.0,
+        "AblationParserAgent": 2.0,
+        "ReproducibilityAgent": 8.0
+      },
+      "sections_detected": 12,
+      "canonical_sections_found": {
+        "abstract": false,
+        "introduction": true,
+        "methodology": false,
+        "results": false,
+        "conclusion": false
+      },
+      "entities_total": 20,
+      "entities_by_type": {
+        "models": 9,
+        "datasets": 2,
+        "metrics": 7,
+        "frameworks": 2,
+        "techniques": 0,
+        "tasks": 0
+      },
+      "results_extracted": 2,
+      "figures_extracted": 10,
+      "paper_words": 3163,
+      "summary_words": 228,
+      "llm_backend": "groq",
+      "compression_ratio": 0.0721,
+      "entity_keyword_coverage": 0.25
+    },
+    {
+      "paper": "2304.10039v2.pdf",
+      "success": true,
+      "wall_time_s": 566.06,
+      "summary_time_s": 119.51,
+      "extraction_time_s": 446.55,
+      "parallel_speedup": 2.51,
+      "agent_times_ms": {
+        "StructureAgent": 16869.0,
+        "EntityAgent": 429645.0,
+        "ResultsAgent": 9.5,
+        "FigureAgent": 427816.0,
+        "ReasoningAgent": 23.0,
+        "SummaryAgent": 119511.0,
+        "ComparisonAgent": 0,
+        "ResearchGapAgent": 428522.0,
+        "AblationParserAgent": 3.0,
+        "ReproducibilityAgent": 10.0
+      },
+      "sections_detected": 17,
+      "canonical_sections_found": {
+        "abstract": false,
+        "introduction": false,
+        "methodology": false,
+        "results": true,
+        "conclusion": true
+      },
+      "entities_total": 13,
+      "entities_by_type": {
+        "models": 4,
+        "metrics": 9,
+        "datasets": 0,
+        "frameworks": 0,
+        "techniques": 0,
+        "tasks": 0
+      },
+      "results_extracted": 0,
+      "figures_extracted": 5,
+      "paper_words": 4028,
+      "summary_words": 186,
+      "llm_backend": "groq",
+      "compression_ratio": 0.0462,
+      "entity_keyword_coverage": 0.3077
+    },
+    {
+      "paper": "2305.00257v1.pdf",
+      "success": true,
+      "wall_time_s": 165.57,
+      "summary_time_s": 131.12,
+      "extraction_time_s": 34.45,
+      "parallel_speedup": 1.05,
+      "agent_times_ms": {
+        "StructureAgent": 29050.0,
+        "EntityAgent": 3054.0,
+        "ResultsAgent": 12.5,
+        "FigureAgent": 5115.0,
+        "ReasoningAgent": 79.0,
+        "SummaryAgent": 131117.0,
+        "ComparisonAgent": 0,
+        "ResearchGapAgent": 4535.0,
+        "AblationParserAgent": 11.0,
+        "ReproducibilityAgent": 37.0
+      },
+      "sections_detected": 16,
+      "canonical_sections_found": {
+        "abstract": false,
+        "introduction": true,
+        "methodology": true,
+        "results": true,
+        "conclusion": true
+      },
+      "entities_total": 16,
+      "entities_by_type": {
+        "models": 6,
+        "metrics": 9,
+        "frameworks": 1,
+        "datasets": 0,
+        "techniques": 0,
+        "tasks": 0
+      },
+      "results_extracted": 0,
+      "figures_extracted": 10,
+      "paper_words": 5268,
+      "summary_words": 2,
+      "llm_backend": "groq",
+      "compression_ratio": 0.0004,
+      "entity_keyword_coverage": 0.0
+    },
+    {
+      "paper": "2402.05975v1.pdf",
+      "success": true,
+      "wall_time_s": 287.32,
+      "summary_time_s": 120.56,
+      "extraction_time_s": 166.76,
+      "parallel_speedup": 1.73,
+      "agent_times_ms": {
+        "StructureAgent": 54351.0,
+        "EntityAgent": 80.0,
+        "ResultsAgent": 67.0,
+        "FigureAgent": 112176.0,
+        "ReasoningAgent": 495.0,
+        "SummaryAgent": 120556.0,
+        "ComparisonAgent": 0,
+        "ResearchGapAgent": 105228.0,
+        "AblationParserAgent": 104283.0,
+        "ReproducibilityAgent": 28.0
+      },
+      "sections_detected": 10,
+      "canonical_sections_found": {
+        "abstract": false,
+        "introduction": true,
+        "methodology": true,
+        "results": true,
+        "conclusion": true
+      },
+      "entities_total": 5,
+      "entities_by_type": {
+        "datasets": 1,
+        "metrics": 3,
+        "frameworks": 1,
+        "models": 0,
+        "techniques": 0,
+        "tasks": 0
+      },
+      "results_extracted": 5,
+      "figures_extracted": 10,
+      "paper_words": 7159,
+      "summary_words": 2,
+      "llm_backend": "groq",
+      "compression_ratio": 0.0003,
+      "entity_keyword_coverage": 0.0
+    },
+    {
+      "paper": "2503.09474v2.pdf",
+      "success": true,
+      "wall_time_s": 207.4,
+      "summary_time_s": 153.59,
+      "extraction_time_s": 53.81,
+      "parallel_speedup": 1.03,
+      "agent_times_ms": {
+        "StructureAgent": 49841.0,
+        "EntityAgent": 3114.0,
+        "ResultsAgent": 61.0,
+        "FigureAgent": 2571.0,
+        "ReasoningAgent": 440.0,
+        "SummaryAgent": 153586.0,
+        "ComparisonAgent": 0,
+        "ResearchGapAgent": 3110.0,
+        "AblationParserAgent": 15.0,
+        "ReproducibilityAgent": 30.0
+      },
+      "sections_detected": 19,
+      "canonical_sections_found": {
+        "abstract": true,
+        "introduction": true,
+        "methodology": true,
+        "results": true,
+        "conclusion": true
+      },
+      "entities_total": 14,
+      "entities_by_type": {
+        "models": 3,
+        "metrics": 7,
+        "frameworks": 4,
+        "datasets": 0,
+        "techniques": 0,
+        "tasks": 0
+      },
+      "results_extracted": 18,
+      "figures_extracted": 7,
+      "paper_words": 7470,
+      "summary_words": 189,
+      "llm_backend": "groq",
+      "compression_ratio": 0.0253,
+      "rouge": {
+        "rouge1": 0.9156,
+        "rouge2": 0.9152,
+        "rougeL": 0.9156
+      },
+      "entity_keyword_coverage": 0.2143
+    }
+  ]
+}
