@@ -206,9 +206,16 @@ class FigureAgent(BaseAgent):
             # Position bonus (earlier = more likely to be overview/key figure)
             score += (len(figures) - i) * 0.5
 
-            fig["relevance_score"] = score
+            fig["relevance_raw"] = score
 
-        return sorted(figures, key=lambda x: x.get("relevance_score", 0), reverse=True)
+        # Normalise to 0–1. The raw score is unbounded (references alone add 2
+        # each), and the UI renders it as `width: relevance * 100%` — an
+        # unnormalised score of 15 rendered as a "1500%" bar.
+        ranked = sorted(figures, key=lambda x: x.get("relevance_raw", 0), reverse=True)
+        top = max((f.get("relevance_raw", 0) for f in ranked), default=0)
+        for fig in ranked:
+            fig["relevance_score"] = round(fig["relevance_raw"] / top, 4) if top > 0 else 0.0
+        return ranked
 
     # ------------------------------------------------------------------
     # Message bus handlers

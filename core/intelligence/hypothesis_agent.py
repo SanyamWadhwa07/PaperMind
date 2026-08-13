@@ -1,12 +1,13 @@
 """HypothesisGenerator — suggests novel research directions from a paper cluster."""
 
 import json
-import logging
+import structlog
+from core.llm.json_parse import parse_json_object
 from typing import Any, Dict, List, Optional
 
 from core.intelligence.base_intelligence_agent import BackendAwareReActAgent
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class HypothesisGenerator(BackendAwareReActAgent):
@@ -33,13 +34,9 @@ class HypothesisGenerator(BackendAwareReActAgent):
         )
 
     def parse_result(self, final_answer: str, input_data: Dict) -> Dict:
-        try:
-            # Try to parse embedded JSON
-            json_match = __import__("re").search(r"\{.*\}", final_answer, __import__("re").DOTALL)
-            if json_match:
-                return json.loads(json_match.group())
-        except Exception:
-            pass
+        parsed = parse_json_object(final_answer)
+        if parsed:
+            return parsed
         # Fallback: wrap raw text as a single hypothesis
         return {
             "hypotheses": [

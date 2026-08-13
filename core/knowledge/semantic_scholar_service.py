@@ -1,11 +1,11 @@
 """Semantic Scholar API integration (free, no key required)."""
 
-import logging
+import structlog
 from typing import List, Dict, Any, Optional
 
 import httpx
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 S2_BASE = "https://api.semanticscholar.org/graph/v1"
 DEFAULT_FIELDS = "title,authors,year,abstract,externalIds,citationCount,openAccessPdf"

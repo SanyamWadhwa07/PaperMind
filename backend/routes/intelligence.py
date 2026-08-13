@@ -1,21 +1,21 @@
 """Intelligence layer API routes — on-demand reasoning agents."""
 
 import asyncio
-import logging
+import structlog
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from supabase import create_client
+from db import supabase as _shared_supabase
 
+from api.errors import ExternalServiceError
 from auth.dependencies import CurrentUser
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 
 # ── Request schemas ────────────────────────────────────────────────────────────
@@ -42,11 +42,19 @@ def _get_cached(summary_id: str, analysis_type: str):
             .execute()
         )
         return resp.data[0] if resp.data else None
-    except Exception:
-        return None
+    except Exception as e:
+        logger.warning("intelligence_cache_read_failed",
+                       summary_id=summary_id, analysis_type=analysis_type, error=str(e))
+        raise ExternalServiceError("Could not read cached analysis.") from e
 
 
 def _check_paper_ownership(summary_id: str, user_id: str) -> bool:
+    """True if the user owns this paper.
+
+    Raises on infrastructure failure instead of returning False — returning
+    False surfaced to the user as 404 "Paper not found" for a paper they own,
+    whenever the database was merely unreachable.
+    """
     try:
         resp = (
             supabase.table("summaries")
@@ -56,8 +64,9 @@ def _check_paper_ownership(summary_id: str, user_id: str) -> bool:
             .execute()
         )
         return bool(resp.data)
-    except Exception:
-        return False
+    except Exception as e:
+        logger.warning("ownership_check_failed", summary_id=summary_id, error=str(e))
+        raise ExternalServiceError("Could not verify paper ownership.") from e
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -111,10 +120,12 @@ async def get_research_gaps(summary_id: str, current_user: CurrentUser):
             .execute()
         )
         if resp.data:
-            return resp.data["summary_data"].get("research_gaps", {})
-    except Exception:
-        pass
-    return {}
+            return resp.data["summary_data"].get("research_gaps", {}) or {}
+        return {}
+    except Exception as e:
+        # Previously swallowed, so a failed lookup rendered as "no research gaps found".
+        logger.warning("research_gaps_lookup_failed", summary_id=summary_id, error=str(e))
+        raise ExternalServiceError("Could not load research gaps for this paper.") from e
 
 
 @router.get("/intelligence/reproducibility/{summary_id}")
@@ -137,10 +148,12 @@ async def get_reproducibility(summary_id: str, current_user: CurrentUser):
             .execute()
         )
         if resp.data:
-            return resp.data["summary_data"].get("reproducibility", {})
-    except Exception:
-        pass
-    return {}
+            return resp.data["summary_data"].get("reproducibility", {}) or {}
+        return {}
+    except Exception as e:
+        # Previously swallowed, so a failed lookup rendered as "no reproducibility found".
+        logger.warning("reproducibility_lookup_failed", summary_id=summary_id, error=str(e))
+        raise ExternalServiceError("Could not load reproducibility for this paper.") from e
 
 
 @router.post("/intelligence/peer-review/{summary_id}", status_code=201)

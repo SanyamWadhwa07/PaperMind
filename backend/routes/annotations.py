@@ -1,19 +1,18 @@
 """Paper annotation routes — highlight and annotate sections."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from supabase import create_client
+from db import supabase as _shared_supabase
 
 from auth.dependencies import CurrentUser
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 
 class CreateAnnotationRequest(BaseModel):
@@ -79,7 +78,7 @@ async def update_annotation(annotation_id: str, body: UpdateAnnotationRequest, c
         updates["color"] = body.color
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
-    updates["updated_at"] = datetime.utcnow().isoformat()
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     try:
         resp = (
             supabase.table("paper_annotations")

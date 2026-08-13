@@ -1,18 +1,17 @@
 """Extra export routes — slide deck generation."""
 
 import asyncio
-import logging
+import structlog
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
-from supabase import create_client
+from db import supabase as _shared_supabase
 
 from auth.dependencies import CurrentUser
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 
 @router.post("/export/slides/{summary_id}")

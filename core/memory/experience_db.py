@@ -7,7 +7,7 @@ enabling agents to query historical knowledge and update their learnings.
 import asyncio
 import structlog
 from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
@@ -322,7 +322,7 @@ class ExperienceStore:
                     .update({
                         'frequency_count': new_freq,
                         'confidence_score': new_conf,
-                        'last_seen': datetime.utcnow().isoformat()
+                        'last_seen': datetime.now(timezone.utc).isoformat()
                     })\
                     .eq('id', current['id'])\
                     .execute()

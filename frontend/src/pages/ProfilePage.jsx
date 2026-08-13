@@ -2,14 +2,31 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import AvatarUpload from '../components/AvatarUpload'
-import { User, Mail, Calendar, Edit2, Save, X, AlertCircle, CheckCircle, BookMarked, Plus, Trash2 } from 'lucide-react'
-import axios from 'axios'
+import { Mail, Edit2, Save, X, BookMarked, Plus, Trash2 } from 'lucide-react'
+import { papers, queue } from '../lib/api'
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  ErrorState,
+  Eyebrow,
+  Field,
+  Input,
+  Metric,
+  Skeleton,
+  Textarea,
+  cx,
+} from '../components/ui/primitives'
 
 const EXPERTISE_LEVELS = ['student', 'researcher', 'expert']
 const FOCUS_PRESETS = ['NLP', 'Computer Vision', 'Reinforcement Learning', 'Graph Neural Networks', 'Generative Models', 'Robotics', 'Multimodal', 'Healthcare AI', 'Time Series']
 
+const QUEUE_TONE = { read: 'success', reading: 'accent' }
+
 export default function ProfilePage() {
-  const { user, updateProfile, token } = useAuth()
+  const { user, updateProfile } = useAuth()
   const toast = useToast()
   const [editing, setEditing] = useState(false)
   const [formData, setFormData] = useState({
@@ -41,13 +58,10 @@ export default function ProfilePage() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/auth/me', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      const data = await response.json()
-      setStats(data.stats)
+      setStats(await papers.dashboardStats().then((d) => d.stats))
     } catch (error) {
-      console.error('Failed to fetch stats:', error)
+      // Stats are supplementary; the profile form still works without them.
+      console.error('Could not load profile stats:', error.message)
     }
   }
 
@@ -86,24 +100,20 @@ export default function ProfilePage() {
 
   const fetchReadingQueue = async () => {
     try {
-      const res = await axios.get('/api/queue', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setReadingQueue(res.data || [])
+      const data = await queue.list()
+      setReadingQueue(Array.isArray(data) ? data : data?.items || [])
     } catch {
-      // ignore
+      // The queue is an optional panel; a failure here should not block the page.
     }
   }
 
   const removeFromQueue = async (queueId) => {
     try {
-      await axios.delete(`/api/queue/${queueId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      await queue.remove(queueId)
       setReadingQueue(q => q.filter(item => item.id !== queueId))
-      toast.success('Removed from reading queue.')
-    } catch (e) {
-      toast.error('Failed to remove: ' + (e.response?.data?.detail || e.message))
+      toast.success('Removed from your reading queue')
+    } catch (error) {
+      toast.error(error.message || 'Could not remove that item')
     }
   }
 
@@ -132,315 +142,290 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#00988F] border-t-transparent"></div>
+      <div className="mx-auto max-w-3xl space-y-6">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-10 w-1/2" />
+        <Skeleton className="h-64 w-full" />
       </div>
     )
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
-          Profile
-        </h1>
-        <p className="mt-2 text-sm sm:text-base text-[#1B1B1B] dark:text-[#F5F5F5]">
-          Manage your account information and preferences
+    <div className="animate-rise mx-auto max-w-3xl space-y-8">
+      <header className="border-b border-line pb-6">
+        <Eyebrow className="block">Account</Eyebrow>
+        <h1 className="display mt-2 text-display-sm text-ink">Profile</h1>
+        <p className="mt-2 text-sm text-ink-muted">
+          What PaperMind knows about you, and what it uses to rank papers.
         </p>
-      </div>
+      </header>
 
-      {/* Messages */}
-      {message.text && (
-        <div className={`${
-          message.type === 'success' 
-            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
-            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-        } border rounded-lg p-4 flex items-start gap-3`}>
-          {message.type === 'success' ? (
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
-          ) : (
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-          )}
-          <p className={`text-sm ${
-            message.type === 'success' 
-              ? 'text-green-600 dark:text-green-400' 
-              : 'text-red-600 dark:text-red-400'
-          }`}>
-            {message.text}
-          </p>
-        </div>
-      )}
-
-      {/* Profile Card */}
-      <div className="card">
-        <div className="flex flex-col items-center gap-6 mb-8">
-          <AvatarUpload 
-            currentAvatar={formData.avatar_url}
-            onAvatarUpdate={handleAvatarUpdate}
-          />
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-6">
-          <div className="flex items-center gap-4">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
-                {user.full_name || 'User'}
-              </h2>
-              <p className="text-sm text-[#8F8F8F] break-all">{user.email}</p>
-            </div>
+      {message.text &&
+        (message.type === 'error' ? (
+          <ErrorState title="Could not save" message={message.text} />
+        ) : (
+          <div className="rounded-lg border border-success/30 bg-success-soft px-5 py-3">
+            <p className="text-sm text-success">{message.text}</p>
           </div>
-          
-          {!editing ? (
-            <button
-              onClick={() => setEditing(true)}
-              className="btn-primary w-full sm:w-auto justify-center"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit Profile
-            </button>
-          ) : (
-            <div className="flex gap-2 w-full sm:w-auto">
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="btn-primary flex-1 sm:flex-initial justify-center disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                Save
-              </button>
-              <button
-                onClick={handleCancel}
-                className="btn-secondary flex-1 sm:flex-initial justify-center"
-              >
-                <X className="w-4 h-4" />
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
+        ))}
 
-        {/* Profile Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-              Full Name
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-              <input
+      <Card>
+        <CardBody className="space-y-8">
+          <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center">
+            <AvatarUpload
+              currentAvatar={formData.avatar_url}
+              onAvatarUpdate={handleAvatarUpdate}
+            />
+
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-lg font-semibold text-ink">
+                {user.full_name || 'Unnamed researcher'}
+              </h2>
+              <p className="mt-0.5 flex items-center gap-1.5 truncate text-sm text-ink-muted">
+                <Mail className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                {user.email}
+              </p>
+              <p className="mt-2 font-mono tabular text-code text-ink-faint">
+                Member since{' '}
+                {new Date(user.created_at).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </p>
+            </div>
+
+            {!editing ? (
+              <Button variant="secondary" onClick={() => setEditing(true)}>
+                <Edit2 className="h-4 w-4" aria-hidden="true" />
+                Edit
+              </Button>
+            ) : (
+              <div className="flex gap-2">
+                <Button onClick={handleSubmit} loading={loading}>
+                  <Save className="h-4 w-4" aria-hidden="true" />
+                  Save
+                </Button>
+                <Button variant="secondary" onClick={handleCancel}>
+                  <X className="h-4 w-4" aria-hidden="true" />
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5 border-t border-line pt-8">
+            <Field label="Full name" htmlFor="full_name">
+              <Input
+                id="full_name"
                 type="text"
                 name="full_name"
                 value={formData.full_name}
                 onChange={handleChange}
                 disabled={!editing}
-                className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5] disabled:opacity-60"
                 placeholder="Your full name"
               />
-            </div>
-          </div>
+            </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-              Email
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-              <input
-                type="email"
-                value={user.email}
-                disabled
-                className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg text-[#1B1B1B] dark:text-[#F5F5F5] opacity-60 cursor-not-allowed"
+            <Field label="Bio" htmlFor="bio">
+              <Textarea
+                id="bio"
+                name="bio"
+                value={formData.bio}
+                onChange={handleChange}
+                disabled={!editing}
+                rows={4}
+                className="resize-none"
+                placeholder="What do you work on?"
               />
-            </div>
-            <p className="mt-1 text-xs text-[#8F8F8F]">Email cannot be changed</p>
-          </div>
+            </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-              Bio
-            </label>
-            <textarea
-              name="bio"
-              value={formData.bio}
-              onChange={handleChange}
-              disabled={!editing}
-              rows={4}
-              className="w-full px-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5] disabled:opacity-60 resize-none"
-              placeholder="Tell us about yourself..."
-            />
-          </div>
+            <Field
+              label="Research focus"
+              hint={editing ? 'Press Enter to add your own, or pick from below.' : undefined}
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {(formData.research_focus || []).map((tag) => (
+                  <Badge key={tag} tone="accent">
+                    {tag}
+                    {editing && (
+                      <button
+                        type="button"
+                        onClick={() => removeFocusTag(tag)}
+                        className="-mr-1 ml-0.5 rounded-full p-0.5 hover:text-danger"
+                        aria-label={`Remove ${tag}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </Badge>
+                ))}
+                {formData.research_focus?.length === 0 && !editing && (
+                  <span className="text-sm text-ink-faint">Nothing set yet</span>
+                )}
+              </div>
+            </Field>
 
-          {/* Research Focus */}
-          <div>
-            <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-              Research Focus Areas
-            </label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {(formData.research_focus || []).map(tag => (
-                <span key={tag} className="flex items-center gap-1 px-2 py-0.5 bg-[#00988F]/10 border border-[#00988F]/30 rounded-full text-xs text-[#00988F]">
-                  {tag}
-                  {editing && (
-                    <button onClick={() => removeFocusTag(tag)} className="hover:text-red-500">
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </span>
-              ))}
-              {formData.research_focus?.length === 0 && !editing && (
-                <span className="text-xs text-[#8F8F8F]">No focus areas set</span>
-              )}
-            </div>
             {editing && (
-              <>
-                <div className="flex gap-2 mb-2">
-                  <input
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
                     type="text"
                     value={focusInput}
-                    onChange={e => setFocusInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addFocusTag(focusInput) } }}
-                    placeholder="Type a focus area and press Enter"
-                    className="flex-1 px-3 py-1.5 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#00988F]"
+                    onChange={(e) => setFocusInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addFocusTag(focusInput)
+                      }
+                    }}
+                    placeholder="Add a focus area"
+                    aria-label="Add a research focus area"
                   />
-                  <button type="button" onClick={() => addFocusTag(focusInput)} className="px-3 py-1.5 bg-[#00988F] text-white rounded-lg text-sm">
-                    <Plus className="w-4 h-4" />
-                  </button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    onClick={() => addFocusTag(focusInput)}
+                    aria-label="Add focus area"
+                    className="h-11 w-11 shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {FOCUS_PRESETS.filter(p => !formData.research_focus.includes(p)).map(p => (
-                    <button key={p} type="button" onClick={() => addFocusTag(p)}
-                      className="px-2 py-0.5 text-xs border border-slate-300 dark:border-slate-600 rounded-full text-slate-500 hover:border-[#00988F] hover:text-[#00988F]">
-                      + {p}
-                    </button>
-                  ))}
+
+                <div className="flex flex-wrap gap-1.5">
+                  {FOCUS_PRESETS.filter((p) => !formData.research_focus.includes(p)).map(
+                    (p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => addFocusTag(p)}
+                        className="rounded-full border border-line px-2.5 py-1 text-eyebrow font-semibold uppercase text-ink-faint transition-colors duration-fast ease-out hover:border-accent hover:text-accent"
+                      >
+                        + {p}
+                      </button>
+                    ),
+                  )}
                 </div>
-              </>
+              </div>
             )}
-          </div>
 
-          {/* Expertise Level */}
-          <div>
-            <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-              Expertise Level
-            </label>
-            <div className="flex gap-3">
-              {EXPERTISE_LEVELS.map(level => (
-                <label key={level} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                  formData.expertise_level === level
-                    ? 'border-[#00988F] bg-[#00988F]/10 text-[#00988F]'
-                    : 'border-slate-200 dark:border-slate-600 text-slate-500'
-                } ${!editing ? 'cursor-default' : ''}`}>
-                  <input
-                    type="radio"
-                    name="expertise_level"
-                    value={level}
-                    checked={formData.expertise_level === level}
-                    onChange={e => editing && setFormData(prev => ({ ...prev, expertise_level: e.target.value }))}
-                    disabled={!editing}
-                    className="sr-only"
-                  />
-                  <span className="text-sm capitalize">{level}</span>
-                </label>
-              ))}
-            </div>
-          </div>
+            <Field label="Expertise level">
+              <div className="flex flex-wrap gap-2">
+                {EXPERTISE_LEVELS.map((level) => (
+                  <label
+                    key={level}
+                    className={cx(
+                      'rounded border px-3.5 py-2 text-sm capitalize',
+                      'transition-colors duration-fast ease-out',
+                      formData.expertise_level === level
+                        ? 'border-accent bg-accent-soft text-accent'
+                        : 'border-line text-ink-muted',
+                      editing ? 'cursor-pointer hover:border-line-strong' : 'cursor-default',
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="expertise_level"
+                      value={level}
+                      checked={formData.expertise_level === level}
+                      onChange={(e) =>
+                        editing &&
+                        setFormData((prev) => ({
+                          ...prev,
+                          expertise_level: e.target.value,
+                        }))
+                      }
+                      disabled={!editing}
+                      className="sr-only"
+                    />
+                    {level}
+                  </label>
+                ))}
+              </div>
+            </Field>
+          </form>
+        </CardBody>
+      </Card>
 
-          <div>
-            <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-              Member Since
-            </label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-              <input
-                type="text"
-                value={new Date(user.created_at).toLocaleDateString('en-US', { 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
-                disabled
-                className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg text-[#1B1B1B] dark:text-[#F5F5F5] opacity-60 cursor-not-allowed"
-              />
-            </div>
-          </div>
-        </form>
-      </div>
+      <Card>
+        <CardHeader
+          title="Reading queue"
+          description="Papers waiting for your attention, ranked by priority."
+          action={<BookMarked className="h-4 w-4 text-ink-faint" aria-hidden="true" />}
+        />
+        <CardBody>
+          {readingQueue.length === 0 ? (
+            <p className="text-sm text-ink-faint">
+              Nothing queued. Add papers from any summary page.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-line">
+                {readingQueue.slice(0, 8).map((item) => (
+                  <li key={item.id} className="flex items-center justify-between gap-3 py-3 first:pt-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-serif text-sm text-ink">
+                        {item.summaries?.paper_title || item.summary_id}
+                      </p>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <Badge tone={QUEUE_TONE[item.status] || 'neutral'}>
+                          {item.status}
+                        </Badge>
+                        <span className="font-mono tabular text-code text-ink-faint">
+                          priority {Math.round((item.priority_score || 0) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeFromQueue(item.id)}
+                      aria-label="Remove from queue"
+                      className="hover:text-danger"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              {readingQueue.length > 8 && (
+                <p className="mt-3 font-mono tabular text-code text-ink-faint">
+                  +{readingQueue.length - 8} more queued
+                </p>
+              )}
+            </>
+          )}
+        </CardBody>
+      </Card>
 
-      {/* Reading Queue Card */}
-      <div className="card">
-        <h3 className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C] mb-4 flex items-center gap-2">
-          <BookMarked className="w-5 h-5" /> Reading Queue
-        </h3>
-        {readingQueue.length === 0 ? (
-          <p className="text-sm text-[#8F8F8F]">No papers in your queue. Add them from any paper's page.</p>
-        ) : (
-          <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-            {readingQueue.slice(0, 8).map(item => (
-              <li key={item.id} className="flex items-center justify-between py-2 gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] truncate">
-                    {item.summaries?.paper_title || item.summary_id}
-                  </p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                      item.status === 'read' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                        : item.status === 'reading' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                    }`}>
-                      {item.status}
-                    </span>
-                    <span className="text-xs text-[#8F8F8F]">priority {Math.round((item.priority_score || 0) * 100)}%</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => removeFromQueue(item.id)}
-                  className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
-                  title="Remove from queue"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {readingQueue.length > 8 && (
-          <p className="text-xs text-[#8F8F8F] mt-2">+{readingQueue.length - 8} more papers in queue</p>
-        )}
-      </div>
-
-      {/* Stats Card */}
       {stats && (
-        <div className="card">
-          <h3 className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C] mb-4">
-            Activity Stats
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs sm:text-sm text-[#8F8F8F]">Total Summaries</p>
-              <p className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C] mt-1">
-                {stats.total_summaries || 0}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs sm:text-sm text-[#8F8F8F]">Avg Time</p>
-              <p className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C] mt-1">
-                {stats.avg_processing_time?.toFixed(1) || 0}s
-              </p>
-            </div>
-            <div>
-              <p className="text-xs sm:text-sm text-[#8F8F8F]">Words Processed</p>
-              <p className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C] mt-1">
-                {(stats.total_words_processed || 0).toLocaleString()}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs sm:text-sm text-[#8F8F8F]">Active Days</p>
-              <p className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C] mt-1">
-                {stats.active_days || 0}
-              </p>
-            </div>
+        <Card>
+          <CardHeader title="Activity" />
+          <div className="grid grid-cols-2 md:grid-cols-4">
+            {[
+              { label: 'Papers', value: stats.total_summaries || 0 },
+              { label: 'Avg. run', value: `${stats.avg_processing_time?.toFixed(1) || 0}s` },
+              {
+                label: 'Words read',
+                value: (stats.total_words_processed || 0).toLocaleString(),
+              },
+              { label: 'Active days', value: stats.active_days || 0 },
+            ].map(({ label, value }, i) => (
+              <div
+                key={label}
+                className={cx(
+                  'border-line p-5',
+                  i % 2 === 1 && 'border-l',
+                  i < 2 && 'border-b md:border-b-0',
+                  'md:border-l md:first:border-l-0',
+                )}
+              >
+                <Metric label={label} value={value} />
+              </div>
+            ))}
           </div>
-        </div>
+        </Card>
       )}
     </div>
   )

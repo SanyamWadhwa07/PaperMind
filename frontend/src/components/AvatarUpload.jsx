@@ -1,13 +1,13 @@
 import { useState, useRef } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { Camera, Upload, X, User } from 'lucide-react';
+import { Camera, X, User } from 'lucide-react';
+import { profile } from '../lib/api';
+import { Spinner } from './ui/primitives';
 
 export default function AvatarUpload({ currentAvatar, onAvatarUpdate }) {
-  const { token, user } = useAuth();
   const toast = useToast();
   const fileInputRef = useRef(null);
-  
+
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(currentAvatar || null);
 
@@ -42,123 +42,71 @@ export default function AvatarUpload({ currentAvatar, onAvatarUpdate }) {
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.append('avatar', file);
-
-      const response = await fetch('http://localhost:5000/api/profile/avatar', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast.success('Avatar uploaded successfully!');
-        setPreview(data.avatar_url);
-        if (onAvatarUpdate) {
-          onAvatarUpdate(data.avatar_url);
-        }
-      } else {
-        toast.error(data.error || 'Failed to upload avatar');
-        setPreview(currentAvatar);
-      }
+      const data = await profile.uploadAvatar(file);
+      toast.success('Avatar updated');
+      setPreview(data.avatar_url);
+      onAvatarUpdate?.(data.avatar_url);
     } catch (error) {
-      console.error('Upload error:', error);
-      toast.error('Failed to upload avatar');
+      toast.error(error.message || 'Could not upload the avatar');
       setPreview(currentAvatar);
+    } finally {
+      setUploading(false);
     }
-
-    setUploading(false);
   };
 
   const deleteAvatar = async () => {
     if (!confirm('Are you sure you want to remove your avatar?')) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/profile/avatar', {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        toast.success('Avatar removed');
-        setPreview(null);
-        if (onAvatarUpdate) {
-          onAvatarUpdate(null);
-        }
-      } else {
-        toast.error('Failed to remove avatar');
-      }
+      await profile.removeAvatar();
+      toast.success('Avatar removed');
+      setPreview(null);
+      onAvatarUpdate?.(null);
     } catch (error) {
-      toast.error('Failed to remove avatar');
+      toast.error(error.message || 'Could not remove the avatar');
     }
   };
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="relative">
-        {/* Avatar Display */}
-        <div className="w-32 h-32 rounded-full bg-slate-700 border-4 border-slate-600 overflow-hidden flex items-center justify-center">
-          {preview ? (
-            <img 
-              src={preview} 
-              alt="Avatar" 
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <User className="w-16 h-16 text-slate-400" />
-          )}
-        </div>
-
-        {/* Upload Button Overlay */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="absolute bottom-0 right-0 bg-teal-500 hover:bg-teal-600 text-white p-2 rounded-full shadow-lg transition-colors disabled:opacity-50"
-          title="Upload avatar"
-        >
-          {uploading ? (
-            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
-          ) : (
-            <Camera className="w-5 h-5" />
-          )}
-        </button>
-
-        {/* Delete Button */}
-        {preview && (
-          <button
-            onClick={deleteAvatar}
-            className="absolute top-0 right-0 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-lg transition-colors"
-            title="Remove avatar"
-          >
-            <X className="w-4 h-4" />
-          </button>
+    <div className="relative shrink-0">
+      <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-line bg-surface-sunk">
+        {preview ? (
+          <img src={preview} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <User className="h-8 w-8 text-ink-faint" aria-hidden="true" />
         )}
       </div>
 
-      {/* Hidden File Input */}
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+        className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface text-ink-muted transition-colors duration-fast ease-out hover:border-line-strong hover:text-ink disabled:opacity-50"
+        aria-label="Upload a new avatar"
+        title="Upload avatar"
+      >
+        {uploading ? <Spinner size="sm" /> : <Camera className="h-4 w-4" />}
+      </button>
+
+      {preview && !uploading && (
+        <button
+          type="button"
+          onClick={deleteAvatar}
+          className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-ink-faint transition-colors duration-fast ease-out hover:border-danger/50 hover:text-danger"
+          aria-label="Remove avatar"
+          title="Remove avatar"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
         onChange={handleFileSelect}
-        className="hidden"
+        className="sr-only"
       />
-
-      {/* Upload Instructions */}
-      <div className="text-center">
-        <p className="text-sm text-slate-400">
-          Click the camera icon to upload
-        </p>
-        <p className="text-xs text-slate-500 mt-1">
-          JPG, PNG or GIF • Max 5MB
-        </p>
-      </div>
     </div>
   );
 }

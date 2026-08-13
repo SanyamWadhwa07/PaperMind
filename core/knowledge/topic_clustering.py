@@ -1,9 +1,9 @@
 """BERTopic-based topic clustering using pre-computed embeddings from Supabase."""
 
-import logging
+import structlog
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 try:
     from bertopic import BERTopic
@@ -41,7 +41,12 @@ def compute_topic_clusters(user_id: str, supabase_client: Any) -> Dict[str, Any]
         return {"error": "Need at least 3 papers with embeddings", "clusters": []}
 
     import numpy as np
-    embeddings = np.array([p["embedding"] for p in papers], dtype=np.float32)
+
+    from .graph_service import _as_vector
+
+    # Same pgvector-returns-text quirk as the similarity cache: the column comes
+    # back as "[0.1,-0.2,…]", which numpy cannot read as floats.
+    embeddings = np.stack([_as_vector(p["embedding"]) for p in papers])
     docs = [
         f"{p.get('paper_title', '')} {(p.get('abstract_text') or '')[:200]}"
         for p in papers

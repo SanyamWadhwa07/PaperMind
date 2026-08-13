@@ -84,9 +84,63 @@ def sample_sections(sample_pdf_text):
 
 @pytest.fixture
 def mock_supabase():
-    """Minimal Supabase client mock."""
+    """Minimal Supabase client mock.
+
+    The query builder is chainable, so every builder method returns the same
+    mock and `.execute()` yields empty data unless a test overrides it.
+    """
     from unittest.mock import MagicMock
+
     client = MagicMock()
-    client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+    builder = MagicMock()
+    for method in (
+        'select', 'insert', 'update', 'upsert', 'delete',
+        'eq', 'neq', 'in_', 'gte', 'lte', 'or_', 'ilike',
+        'order', 'range', 'limit', 'single',
+    ):
+        getattr(builder, method).return_value = builder
+
+    builder.execute.return_value.data = []
+    builder.execute.return_value.count = 0
+
+    client.table.return_value = builder
     client.rpc.return_value.execute.return_value.data = []
     return client
+
+
+@pytest.fixture
+def api_client(mock_supabase):
+    """FastAPI TestClient with the Supabase dependency overridden.
+
+    Routes resolve their client through `db.get_supabase`, so a single override
+    covers every repository and every route — no patching of module globals.
+    """
+    pytest.importorskip('fastapi', reason='fastapi required')
+    from fastapi.testclient import TestClient
+
+    from db import get_supabase, reset_supabase
+    import backend.main_app as app_module
+
+    app = app_module.app
+    app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    reset_supabase(mock_supabase)  # covers modules still using the lazy proxy
+
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()
+        reset_supabase(None)
+
+
+@pytest.fixture
+def auth_token():
+    """A valid bearer token for a synthetic user."""
+    from auth.utils import create_access_token
+
+    return create_access_token('user-123', 'test@example.com')
+
+
+@pytest.fixture
+def auth_headers(auth_token):
+    return {'Authorization': f'Bearer {auth_token}'}

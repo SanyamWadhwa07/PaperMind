@@ -36,6 +36,48 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
+    @field_validator('email')
+    @classmethod
+    def normalise_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator('token')
+    @classmethod
+    def require_token(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('token is required')
+        return v
+
+
+class ArxivSearchRequest(BaseModel):
+    """Search arXiv by free-text query."""
+
+    query: str
+    max_results: int = 10
+
+    @field_validator('query')
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        v = v.strip()[:300]
+        if not v:
+            raise ValueError('query is required')
+        return v
+
+    @field_validator('max_results')
+    @classmethod
+    def cap_results(cls, v: int) -> int:
+        return min(max(v, 1), 50)
+
+
 class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = None
     bio: Optional[str] = None

@@ -1,0 +1,50 @@
+# Keep the build context small and secrets out of images.
+
+.git
+.github
+.gitignore
+
+# Virtualenvs — the image builds its own.
+venv/
+.venv/
+backend/research/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Node — the frontend image runs its own npm ci.
+**/node_modules/
+frontend/dist/
+
+# Secrets. Never copy a real .env into an image.
+.env
+*.env
+!.env.example
+!backend/.env.example
+
+# Test and tooling artefacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+tests/
+
+# Sample data and local run output
+backend/arxiv_papers/
+backend/uploads/
+backend/summaries_api/
+arxiv_papers/
+uploads/
+evals/results/
+test_final/
+*.log
+
+# Docs and editor cruft
+docs/
+*.md
+!README.md
+.vscode/
+.idea/
+.DS_Store

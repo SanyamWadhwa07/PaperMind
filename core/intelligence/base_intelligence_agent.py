@@ -6,11 +6,11 @@ reliably support structured function calls.
 """
 
 import json
-import logging
+import structlog
 import re
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 try:
     from langgraph.prebuilt import create_react_agent

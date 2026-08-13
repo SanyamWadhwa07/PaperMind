@@ -6,12 +6,12 @@ clean for LLM invocation.
 
 import json
 import asyncio
-import logging
+import structlog
 from typing import List, Optional, Any
 
 import httpx
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 try:
     from langchain_core.tools import tool

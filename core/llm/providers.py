@@ -43,9 +43,14 @@ PROVIDER_PRIORITY: Tuple[str, ...] = ("gemini", "groq", "ollama")
 # ── Defaults (override any of these via env) ───────────────────────────────────
 DEFAULTS: Dict[str, Dict[str, str]] = {
     "gemini": {
-        # Gemini free tier is the most generous; flash is fast + strong enough.
-        "smart": "gemini-2.0-flash",
-        "fast": "gemini-2.0-flash",
+        # Rolling aliases rather than pinned versions. Google retires numbered
+        # Gemini models on a rolling basis — `gemini-2.0-flash` and the whole 2.5
+        # line now return 404 — and because the provider chain treats any error
+        # as "try the next provider", a retired pin degrades the product silently
+        # instead of failing. The alias tracks whatever is current; pin a specific
+        # version via PAPERMIND_GEMINI_SMART_MODEL if you need reproducibility.
+        "smart": "gemini-flash-latest",
+        "fast": "gemini-flash-lite-latest",
     },
     "groq": {
         "smart": "llama-3.3-70b-versatile",
@@ -59,6 +64,36 @@ DEFAULTS: Dict[str, Dict[str, str]] = {
 }
 
 _TIER_TEMPERATURE: Dict[Tier, float] = {"fast": 0.2, "smart": 0.3}
+
+# How much paper text a provider can absorb in a single request, in characters
+# (~4 chars/token). This is deliberately *not* the raw context window — the
+# binding constraint differs per provider:
+#
+#   gemini — 1M-token window, and the free tier limits requests/day far more
+#            tightly than tokens, so one large call is strictly cheaper than
+#            twelve small ones.
+#   groq   — 128k window, but the free tier meters tokens *per minute*, so a
+#            whole paper in one request stalls behind the TPM budget.
+#   ollama — bounded by OLLAMA_NUM_CTX (8k default) on consumer hardware.
+#
+# A paper over the budget is summarised by map-reduce instead of in one pass.
+_CONTEXT_BUDGET_CHARS: Dict[str, int] = {
+    "gemini": 400_000,
+    "groq": 24_000,
+    "ollama": 12_000,
+}
+
+
+def context_budget_chars(provider: Optional[str] = None) -> int:
+    """Characters of source text the given provider can take in one request."""
+    name = provider or resolve_provider()
+    override = os.environ.get("PAPERMIND_LLM_CONTEXT_CHARS")
+    if override:
+        try:
+            return int(override)
+        except ValueError:
+            logger.warning("invalid_context_budget_override", value=override)
+    return _CONTEXT_BUDGET_CHARS.get(name, 24_000)
 
 
 # ── Availability + ordering ─────────────────────────────────────────────────────
@@ -225,6 +260,41 @@ def get_chat_model(
         temp = _TIER_TEMPERATURE[tier] if temperature is None else float(temperature)
         return _build_model(provider.lower(), tier, temp, int(max_tokens))
     return get_model_chain(tier, temperature=temperature, max_tokens=max_tokens)[0]
+
+
+async def check_providers(tier: Tier = "smart", timeout_s: float = 20.0) -> Dict[str, Any]:
+    """Probe each configured provider with a trivial prompt.
+
+    Exists because a *configured* provider is not a *working* one, and the
+    fallback chain hides the difference: when Google retired `gemini-2.0-flash`,
+    every Gemini call 404'd, the chain silently fell through to the next
+    provider, and the only visible symptom was worse summaries. This turns that
+    into an explicit, checkable status.
+
+    Returns ``{provider: {"ok": bool, "model": str, "error": str | None}}``.
+    """
+    import asyncio
+
+    async def probe(provider: str) -> Dict[str, Any]:
+        model_id = _model_id(provider, tier)
+        try:
+            model = _build_model(provider, tier, _TIER_TEMPERATURE[tier], 16)
+            await asyncio.wait_for(
+                model.ainvoke([{"role": "user", "content": "ping"}]), timeout=timeout_s
+            )
+            return {"ok": True, "model": model_id, "error": None}
+        except Exception as e:
+            return {"ok": False, "model": model_id, "error": f"{type(e).__name__}: {e}"[:300]}
+
+    order = provider_order()
+    results = await asyncio.gather(*(probe(p) for p in order), return_exceptions=False)
+    status = dict(zip(order, results))
+
+    for provider, info in status.items():
+        if not info["ok"]:
+            logger.warning("llm_provider_unhealthy", provider=provider,
+                           model=info["model"], error=info["error"])
+    return status
 
 
 def get_provider_info() -> Dict[str, Any]:

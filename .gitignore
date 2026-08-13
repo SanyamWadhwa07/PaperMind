@@ -130,10 +130,19 @@ config.yaml
 # PaperMind Project Specific
 # ===================================================================
 
-# Downloaded papers and archives
-arxiv_papers/*.pdf
-backend/arxiv_papers/*.pdf
+# Downloaded papers and archives.
+# Whole directories, not just *.pdf — 37 sample PDFs were committed under these
+# paths and pushed the packed repo to 258 MB.
+arxiv_papers/
+backend/arxiv_papers/
 archives/arxiv_papers/
+
+# Generated summary dumps and local test output
+backend/summaries_api/
+test_final/
+evals/results/
+backend_stdout.log
+backend_stderr.log
 
 # Uploaded files
 uploads/

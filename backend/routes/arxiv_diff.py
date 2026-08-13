@@ -4,14 +4,13 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException
-from supabase import create_client
+from db import supabase as _shared_supabase
 
 from auth.dependencies import CurrentUser
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 
 @router.get("/arxiv/versions/{arxiv_id}")

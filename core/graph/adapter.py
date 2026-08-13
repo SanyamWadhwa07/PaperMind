@@ -76,15 +76,28 @@ async def run_graph_summary(input_data: Dict[str, Any]) -> Dict[str, Any]:
     from core.llm.providers import resolve_provider, get_provider_info
     provider_info = get_provider_info()
 
+    # None when the judge never ran — kept as None all the way to the DB column
+    # so an ungraded summary is not shown as a real score.
+    raw_score = grade.get("score")
+    quality = float(raw_score) if raw_score is not None else None
+
+    degraded_sections = [
+        d["section"] for d in state.get("digests", []) if d.get("degraded")
+    ]
+
     return {
         # SummaryAgent-compatible keys
         "extractions": [summary_text],
-        "confidence_scores": {"main": float(grade.get("score", 0.0))},
+        "confidence_scores": {"main": quality if quality is not None else 0.0},
         "summaries": {"main": summary_text},
         "key_findings": synthesis.get("key_findings", []),
         "limitations": synthesis.get("limitations", []),
         "future_work": synthesis.get("future_work", []),
         "section_summaries": section_summaries,
+        # Long-form detail so a reader doesn't need the PDF for the method or
+        # the experimental design.
+        "methods_detail": synthesis.get("methods_detail", ""),
+        "experimental_setup": synthesis.get("experimental_setup", ""),
         # new, richer outputs
         "contributions": synthesis.get("contributions", []),
         "graph_entities": graph_entities,                 # domain-agnostic typed
@@ -96,9 +109,12 @@ async def run_graph_summary(input_data: Dict[str, Any]) -> Dict[str, Any]:
             "llm_provider": provider_info["provider"],
             "llm_model": provider_info["models"]["smart"],
             "domain": domain,
-            "summary_quality": float(grade.get("score", 0.0)),
+            "summary_quality": quality,
+            "graded": grade.get("graded", True),
             "validation_passed": bool(summary_text and len(summary_text.split()) > 50),
             "faithful": grade.get("faithful"),
             "specific": grade.get("specific"),
+            # Sections where the map step failed and raw paper text stood in.
+            "degraded_sections": degraded_sections,
         },
     }

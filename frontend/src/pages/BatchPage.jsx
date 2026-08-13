@@ -1,20 +1,28 @@
 import { useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import ComparisonTable from '../components/ComparisonTable'
 import {
-  Upload, Search, X, Loader2, BarChart2, FileText, CheckCircle2, AlertCircle
+  Upload, Search, X, BarChart2, FileText, CheckCircle2, AlertCircle, Circle
 } from 'lucide-react'
-import axios from 'axios'
+import { batch, papers } from '../lib/api'
+import {
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Eyebrow,
+  Identifier,
+  Input,
+  Spinner,
+} from '../components/ui/primitives'
 
 const STATUS_ICON = {
-  processing: <Loader2 className="w-4 h-4 animate-spin text-[#00988F]" />,
-  done: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-  error: <AlertCircle className="w-4 h-4 text-red-500" />,
+  processing: <Spinner size="sm" className="text-accent" />,
+  done: <CheckCircle2 className="h-4 w-4 text-success" />,
+  error: <AlertCircle className="h-4 w-4 text-danger" />,
 }
 
 export default function BatchPage() {
-  const { token } = useAuth()
   const toast = useToast()
 
   // arXiv search
@@ -36,13 +44,10 @@ export default function BatchPage() {
     setSearching(true)
     setSearchResults([])
     try {
-      const res = await axios.post('http://localhost:5000/api/search', {
-        query: arxivQuery,
-        max_results: 8,
-      })
-      setSearchResults(res.data.papers || [])
-    } catch {
-      toast.error('Search failed')
+      const data = await papers.search(arxivQuery, 8)
+      setSearchResults(data.papers || [])
+    } catch (error) {
+      toast.error(error.message || 'Search failed')
     } finally {
       setSearching(false)
     }
@@ -85,38 +90,42 @@ export default function BatchPage() {
   const processItem = async (item) => {
     setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'processing' } : q))
     try {
-      let summaryId
-      if (item.file) {
-        const form = new FormData()
-        form.append('pdf', item.file)
-        const res = await axios.post('http://localhost:5000/api/process/upload', form, {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
-        })
-        summaryId = res.data?.summary_id
-      } else {
-        const res = await axios.post(
-          'http://localhost:5000/api/process/arxiv',
-          { arxiv_id: item.arxivId },
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
-        summaryId = res.data?.summary_id
-      }
+      // The upload field is named `file` to match the API; sending `pdf` was
+      // rejected with a validation error before it ever reached the pipeline.
+      const data = item.file
+        ? await papers.processUpload(item.file)
+        : await papers.processArxiv(item.arxivId)
+
+      const summaryId = data?.summary_id || data?.id
       setQueue((prev) =>
         prev.map((q) => q.id === item.id ? { ...q, status: 'done', summaryId } : q)
       )
-    } catch (err) {
-      const msg = err.response?.data?.error || 'Processing failed'
-      setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'error', error: msg } : q))
+    } catch (error) {
+      setQueue((prev) =>
+        prev.map((q) =>
+          q.id === item.id
+            ? { ...q, status: 'error', error: error.message || 'Processing failed' }
+            : q,
+        ),
+      )
     }
   }
 
   // ── process all pending ───────────────────────────────────────────────────────
   const processBatch = async () => {
-    if (!token) { toast.error('Please log in to process papers'); return }
     const pending = queue.filter((q) => q.status === 'pending')
-    if (!pending.length) { toast.error('No pending papers to process'); return }
+    if (!pending.length) {
+      toast.error('No pending papers to process')
+      return
+    }
     setComparisonData(null)
-    await Promise.all(pending.map(processItem))
+
+    // Sequential on purpose. Each paper runs a full LLM pipeline, so firing the
+    // whole queue at once burns through provider rate limits and every request
+    // fails together.
+    for (const item of pending) {
+      await processItem(item)
+    }
     toast.success('Batch processing complete')
   }
 
@@ -127,14 +136,9 @@ export default function BatchPage() {
     setComparing(true)
     setComparisonData(null)
     try {
-      const res = await axios.post(
-        'http://localhost:5000/api/batch/compare',
-        { summary_ids: ids },
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      setComparisonData(res.data)
-    } catch {
-      toast.error('Comparison failed')
+      setComparisonData(await batch.compare(ids))
+    } catch (error) {
+      toast.error(error.message || 'Comparison failed')
     } finally {
       setComparing(false)
     }
@@ -144,154 +148,186 @@ export default function BatchPage() {
   const pendingCount = queue.filter((q) => q.status === 'pending').length
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
-          Batch Processing
-        </h1>
-        <p className="mt-1 text-sm text-[#8F8F8F]">
-          Add up to 10 papers, process them in parallel, then compare results.
+    <div className="animate-rise mx-auto max-w-5xl space-y-8">
+      <header className="border-b border-line pb-6">
+        <Eyebrow className="block">Many at once</Eyebrow>
+        <h1 className="display mt-2 text-display-sm text-ink">Batch</h1>
+        <p className="mt-2 max-w-prose text-sm text-ink-muted">
+          Queue up to ten papers. They run one at a time, and once they are done
+          you can compare what each of them measured.
         </p>
+      </header>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader title="Search arXiv" />
+          <CardBody className="space-y-4">
+            <form onSubmit={handleSearch} className="flex gap-2">
+              <div className="relative flex-1">
+                <Search
+                  className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"
+                  aria-hidden="true"
+                />
+                <Input
+                  type="text"
+                  value={arxivQuery}
+                  onChange={(e) => setArxivQuery(e.target.value)}
+                  placeholder="attention, BERT, diffusion…"
+                  className="pl-10"
+                  aria-label="Search arXiv"
+                />
+              </div>
+              <Button type="submit" loading={searching}>
+                Search
+              </Button>
+            </form>
+
+            {searchResults.length > 0 && (
+              <ul className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                {searchResults.map((p) => {
+                  const added = queue.some((q) => q.arxivId === p.arxiv_id)
+                  return (
+                    <li
+                      key={p.arxiv_id}
+                      className="flex items-start justify-between gap-3 border-b border-line pb-2 last:border-b-0"
+                    >
+                      <div className="min-w-0">
+                        <p
+                          className="truncate font-serif text-sm text-ink"
+                          title={p.title}
+                        >
+                          {p.title}
+                        </p>
+                        <Identifier>{p.arxiv_id}</Identifier>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant={added ? 'secondary' : 'primary'}
+                        onClick={() => addToQueue(p)}
+                        disabled={added}
+                        className="shrink-0"
+                      >
+                        {added ? 'Added' : 'Add'}
+                      </Button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+
+        <label className="flex min-h-[180px] cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-line p-6 text-center transition-colors duration-fast ease-out hover:border-line-strong">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-surface-sunk">
+            <Upload className="h-5 w-5 text-ink-faint" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-ink">Or upload PDFs</p>
+            <p className="mt-1 text-caption text-ink-faint">Up to ten in the queue</p>
+          </div>
+          <span className="mt-1 inline-flex h-8 items-center rounded border border-line bg-surface px-3 text-caption font-medium text-ink">
+            Choose files
+          </span>
+          <input
+            type="file"
+            accept=".pdf"
+            multiple
+            onChange={handleFileUpload}
+            className="sr-only"
+          />
+        </label>
       </div>
 
-      {/* Search + Upload row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* arXiv search */}
-        <div className="card space-y-3">
-          <h2 className="font-semibold text-[#1B1B1B] dark:text-[#F5F5F5] flex items-center gap-2">
-            <Search className="w-4 h-4 text-[#00988F]" /> Search arXiv
-          </h2>
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <input
-              type="text"
-              value={arxivQuery}
-              onChange={(e) => setArxivQuery(e.target.value)}
-              placeholder="attention mechanism, BERT, diffusion…"
-              className="flex-1 px-3 py-2 text-sm bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] text-[#1B1B1B] dark:text-[#F5F5F5]"
-            />
-            <button type="submit" className="btn-primary px-4 text-sm" disabled={searching}>
-              {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
-            </button>
-          </form>
-          {searchResults.length > 0 && (
-            <ul className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {searchResults.map((p) => (
-                <li key={p.arxiv_id} className="flex items-start justify-between gap-2 text-sm">
-                  <div className="min-w-0">
-                    <p className="text-[#1B1B1B] dark:text-[#F5F5F5] font-medium truncate" title={p.title}>
-                      {p.title}
-                    </p>
-                    <p className="text-[#8F8F8F] text-xs">{p.arxiv_id}</p>
-                  </div>
-                  <button
-                    onClick={() => addToQueue(p)}
-                    className="shrink-0 text-xs btn-primary py-1 px-2"
-                    disabled={queue.some((q) => q.arxivId === p.arxiv_id)}
+      {queue.length > 0 && (
+        <Card>
+          <CardHeader
+            title={`Queue`}
+            description={`${queue.length} of 10 slots used`}
+            action={
+              <div className="flex shrink-0 gap-2">
+                {pendingCount > 0 && (
+                  <Button size="sm" onClick={processBatch}>
+                    Process {pendingCount}
+                  </Button>
+                )}
+                {doneCount >= 2 && (
+                  <Button
+                    size="sm"
+                    variant="contrast"
+                    onClick={compareAll}
+                    loading={comparing}
                   >
-                    {queue.some((q) => q.arxivId === p.arxiv_id) ? 'Added' : '+ Add'}
-                  </button>
+                    <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Compare {doneCount}
+                  </Button>
+                )}
+              </div>
+            }
+          />
+          <CardBody className="py-0">
+            <ul className="divide-y divide-line">
+              {queue.map((item) => (
+                <li key={item.id} className="flex items-center gap-3 py-3">
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                    {STATUS_ICON[item.status] || (
+                      <Circle className="h-3.5 w-3.5 text-ink-faint" aria-hidden="true" />
+                    )}
+                  </span>
+                  <span
+                    className="min-w-0 flex-1 truncate font-serif text-sm text-ink"
+                    title={item.title}
+                  >
+                    {item.title}
+                  </span>
+                  {item.status === 'error' && (
+                    <span className="shrink-0 text-caption text-danger">{item.error}</span>
+                  )}
+                  {item.status === 'done' && item.summaryId && (
+                    <a
+                      href={`/summary/${item.summaryId}`}
+                      className="shrink-0 text-caption text-accent hover:underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
+                  )}
+                  {item.status !== 'processing' && (
+                    <button
+                      type="button"
+                      onClick={() => removeFromQueue(item.id)}
+                      className="shrink-0 rounded-sm p-1 text-ink-faint transition-colors duration-fast ease-out hover:text-danger"
+                      aria-label={`Remove ${item.title}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
-          )}
-        </div>
-
-        {/* PDF upload */}
-        <div className="card flex flex-col items-center justify-center gap-3 border-dashed border-2 border-[#C4935F]/30 dark:border-[#D9A86C]/30 min-h-[140px]">
-          <Upload className="w-8 h-8 text-[#00988F]" />
-          <p className="text-sm text-[#8F8F8F] text-center">Upload PDFs (up to 10 total)</p>
-          <label className="btn-primary text-sm cursor-pointer">
-            Choose Files
-            <input
-              type="file"
-              accept=".pdf"
-              multiple
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Queue */}
-      {queue.length > 0 && (
-        <div className="card space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-[#1B1B1B] dark:text-[#F5F5F5] flex items-center gap-2">
-              <FileText className="w-4 h-4 text-[#00988F]" />
-              Queue ({queue.length}/10)
-            </h2>
-            <div className="flex gap-2">
-              {pendingCount > 0 && (
-                <button onClick={processBatch} className="btn-primary text-sm px-4">
-                  Process {pendingCount} Paper{pendingCount !== 1 ? 's' : ''}
-                </button>
-              )}
-              {doneCount >= 2 && (
-                <button
-                  onClick={compareAll}
-                  disabled={comparing}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-[#00988F] hover:bg-[#008F89] text-white transition-colors disabled:opacity-50"
-                >
-                  {comparing ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart2 className="w-4 h-4" />}
-                  Compare {doneCount} Papers
-                </button>
-              )}
-            </div>
-          </div>
-
-          <ul className="divide-y divide-[#C4935F]/10 dark:divide-[#D9A86C]/10">
-            {queue.map((item) => (
-              <li key={item.id} className="flex items-center gap-3 py-2.5">
-                <span className="shrink-0">{STATUS_ICON[item.status] || <div className="w-4 h-4 rounded-full border-2 border-[#C4935F]/30" />}</span>
-                <span className="flex-1 text-sm text-[#1B1B1B] dark:text-[#F5F5F5] truncate" title={item.title}>
-                  {item.title}
-                </span>
-                {item.status === 'error' && (
-                  <span className="text-xs text-red-500 shrink-0">{item.error}</span>
-                )}
-                {item.status === 'done' && item.summaryId && (
-                  <a
-                    href={`/summary/${item.summaryId}`}
-                    className="text-xs text-[#00988F] hover:underline shrink-0"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View
-                  </a>
-                )}
-                {item.status !== 'processing' && (
-                  <button
-                    onClick={() => removeFromQueue(item.id)}
-                    className="shrink-0 text-[#8F8F8F] hover:text-red-500 transition-colors"
-                    aria-label="Remove"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
+          </CardBody>
+        </Card>
       )}
 
-      {/* Comparison results */}
       {comparing && (
-        <div className="card flex items-center gap-3 text-[#8F8F8F]">
-          <Loader2 className="w-5 h-5 animate-spin text-[#00988F]" />
-          <span className="text-sm">Building comparison…</span>
-        </div>
+        <Card>
+          <CardBody className="flex items-center gap-3">
+            <Spinner size="sm" className="text-accent" />
+            <span className="text-sm text-ink-muted">Building the comparison…</span>
+          </CardBody>
+        </Card>
       )}
 
       {comparisonData && (
-        <div className="card space-y-4">
-          <h2 className="font-semibold text-[#1B1B1B] dark:text-[#F5F5F5] flex items-center gap-2">
-            <BarChart2 className="w-4 h-4 text-[#00988F]" />
-            Cross-Paper Comparison
-          </h2>
-          <ComparisonTable data={comparisonData} />
-        </div>
+        <Card>
+          <CardHeader
+            title="Cross-paper comparison"
+            action={<FileText className="h-4 w-4 text-ink-faint" aria-hidden="true" />}
+          />
+          <CardBody>
+            <ComparisonTable data={comparisonData} />
+          </CardBody>
+        </Card>
       )}
     </div>
   )

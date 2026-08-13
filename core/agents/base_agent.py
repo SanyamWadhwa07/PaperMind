@@ -12,7 +12,7 @@ import asyncio
 import structlog
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 
 from core.agents.message_bus import Message, MessageType, MessagePriority
@@ -152,7 +152,7 @@ class BaseAgent(ABC):
                 'execution_time_ms': execution_time_ms,
                 'items_extracted': items_count,
                 'avg_confidence': avg_confidence,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
             
             return result
@@ -220,6 +220,15 @@ class BaseAgent(ABC):
                     kwargs['metric'],
                     kwargs.get('model')
                 )
+            elif query_type == 'outlier':
+                # Returns (is_outlier, reason) — callers must unpack, since a
+                # two-tuple is truthy even when the answer is "not an outlier".
+                return await self.experience.is_outlier(
+                    kwargs['dataset'],
+                    kwargs['metric'],
+                    kwargs['value'],
+                    kwargs.get('model')
+                )
             elif query_type == 'related_entities':
                 return await self.experience.get_related_entities(
                     kwargs['entity_name'],
@@ -251,8 +260,11 @@ class BaseAgent(ABC):
                 return await self.experience.update_entity_knowledge(
                     kwargs['entity_name'],
                     kwargs['entity_type'],
-                    kwargs['confidence'],
-                    kwargs['context'],
+                    # Optional so that a caller with nothing better to say still
+                    # records the occurrence. Experience is a background signal:
+                    # losing a nuance is acceptable, losing the write is not.
+                    kwargs.get('confidence', 0.6),
+                    kwargs.get('context', ''),
                     self.name
                 )
             elif update_type == 'pattern':
@@ -262,7 +274,7 @@ class BaseAgent(ABC):
                     kwargs['success'],
                     kwargs.get('domain', 'general')
                 )
-            elif update_type == 'baseline':
+            elif update_type in ('baseline', 'result'):
                 return await self.experience.update_result_baseline(
                     kwargs['dataset'],
                     kwargs['metric'],

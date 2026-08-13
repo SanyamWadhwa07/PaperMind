@@ -1,26 +1,59 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import axios from 'axios';
+import { useTheme } from '../contexts/ThemeContext';
+import api from '../lib/api';
 import { Network } from 'vis-network';
 import { DataSet } from 'vis-data';
 import { Timeline } from 'vis-timeline';
+// vis-timeline builds its axis, rows and items out of DOM nodes that are
+// positioned entirely by this stylesheet. Without it the widget mounts, the
+// items exist, and the container renders as an empty box — which is exactly how
+// the timeline looked. (vis-network survived the same omission only because it
+// draws to a canvas.)
+import 'vis-timeline/styles/vis-timeline-graph2d.css';
 import { GitBranch, Calendar } from 'lucide-react';
+import {
+  Card,
+  CardBody,
+  EmptyState,
+  Eyebrow,
+  Skeleton,
+  Spinner,
+  cx,
+} from '../components/ui/primitives';
 
-const LINK_COLORS = {
-  cites: '#6b7280',
-  extends: '#3b82f6',
-  replicates: '#10b981',
-  contradicts: '#ef4444',
-  inspired_by: '#f59e0b',
+/** vis takes concrete colours, so tokens are resolved from the document. */
+function readToken(name) {
+  if (typeof window === 'undefined') return '#000';
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--${name}`)
+    .trim();
+  return raw ? `rgb(${raw})` : '#000';
+}
+
+const CATEGORY_STAGE = { cv: 1, nlp: 3, ml: 4, general: 5 };
+
+// Link types read as a set of relations, so they take the stage palette too.
+const LINK_STAGE = {
+  cites: 5,
+  extends: 3,
+  replicates: 2,
+  contradicts: 1,
+  inspired_by: 4,
 };
 
-const CAT_COLORS = {
-  cv: '#f59e0b', nlp: '#3b82f6', ml: '#8b5cf6', general: '#64748b',
+const STAGE_BG = {
+  1: 'bg-stage-1',
+  2: 'bg-stage-2',
+  3: 'bg-stage-3',
+  4: 'bg-stage-4',
+  5: 'bg-stage-5',
 };
 
 export default function TimelinePage() {
   const { token } = useAuth();
+  const { theme } = useTheme();
   const navigate = useNavigate();
   const timelineRef = useRef(null);
   const treeRef = useRef(null);
@@ -31,10 +64,27 @@ export default function TimelinePage() {
   const [ancestryData, setAncestryData] = useState(null);
   const [ancestryLoading, setAncestryLoading] = useState(false);
 
+  const palette = useMemo(
+    () => ({
+      stages: {
+        1: readToken('stage-1'),
+        2: readToken('stage-2'),
+        3: readToken('stage-3'),
+        4: readToken('stage-4'),
+        5: readToken('stage-5'),
+      },
+      ink: readToken('ink'),
+      line: readToken('border-strong'),
+      accent: readToken('accent'),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [theme]
+  );
+
   useEffect(() => {
     const fetchTimeline = async () => {
       try {
-        const res = await axios.get('/api/graph/timeline', {
+        const res = await api.get('/api/graph/timeline', {
           headers: { Authorization: `Bearer ${token}` },
         });
         setTimelineData(res.data);
@@ -54,13 +104,28 @@ export default function TimelinePage() {
     const papers = timelineData.papers.filter((p) => p.published_date);
     if (!papers.length) return;
 
+    // vis-timeline renders `content` as raw HTML rather than through React, so
+    // a title is built as a DOM node instead of a template string — paper
+    // titles come from arXiv metadata and uploaded PDFs, neither trustworthy
+    // enough to interpolate directly into markup.
+    const buildLabel = (title) => {
+      const span = document.createElement('span');
+      span.title = title || 'Untitled';
+      span.textContent = `${(title || 'Untitled').slice(0, 30)}…`;
+      return span;
+    };
+
     const items = new DataSet(
       papers.map((p) => ({
         id: p.id,
-        content: `<span title="${p.paper_title}">${(p.paper_title || 'Untitled').slice(0, 30)}…</span>`,
+        content: buildLabel(p.paper_title),
         start: p.published_date,
         className: `cat-${p.primary_category || 'general'}`,
-        style: `background:${CAT_COLORS[p.primary_category] || CAT_COLORS.general};border-color:#1e293b;color:#f8fafc;border-radius:4px;padding:2px 6px;font-size:11px;`,
+        style: `background:${
+          palette.stages[CATEGORY_STAGE[p.primary_category] || 5]
+        };border-color:${palette.line};color:${
+          palette.ink
+        };border-radius:4px;padding:2px 6px;font-size:11px;`,
       }))
     );
 
@@ -80,13 +145,13 @@ export default function TimelinePage() {
     });
 
     return () => tl.destroy();
-  }, [timelineData]);
+  }, [timelineData, palette]);
 
   const loadAncestry = async (paper) => {
     setSelectedPaper(paper);
     setAncestryLoading(true);
     try {
-      const res = await axios.get(`/api/graph/ancestry/${paper.id}`, {
+      const res = await api.get(`/api/graph/ancestry/${paper.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setAncestryData(res.data);
@@ -113,13 +178,20 @@ export default function TimelinePage() {
         title: n.title || '',
         level: n.depth,
         color: {
-          background: n.is_anchor ? '#f59e0b' : (CAT_COLORS[n.category] || CAT_COLORS.general),
-          border: '#1e293b',
-          highlight: { background: '#fbbf24', border: '#f59e0b' },
+          // The anchor is the one thing on this screen that earns the accent.
+          background: n.is_anchor
+            ? palette.accent
+            : palette.stages[CATEGORY_STAGE[n.category] || 5],
+          border: palette.line,
+          highlight: { background: palette.accent, border: palette.accent },
         },
-        font: { color: '#f8fafc', size: 11 },
-        shape: n.is_anchor ? 'star' : 'ellipse',
-        size: n.is_anchor ? 24 : 16,
+        font: {
+          color: palette.ink,
+          size: 11,
+          face: 'Inter Variable, Inter, system-ui, sans-serif',
+        },
+        shape: n.is_anchor ? 'star' : 'dot',
+        size: n.is_anchor ? 24 : 14,
       }))
     );
 
@@ -129,7 +201,7 @@ export default function TimelinePage() {
         from: e.from,
         to: e.to,
         title: e.link_type,
-        color: { color: LINK_COLORS[e.link_type] || '#94a3b8' },
+        color: { color: palette.stages[LINK_STAGE[e.link_type] || 5] },
         arrows: { to: { enabled: true, scaleFactor: 0.7 } },
         dashes: e.link_type === 'inspired_by',
       }))
@@ -152,70 +224,88 @@ export default function TimelinePage() {
 
     treeNetRef.current = net;
     return () => { net.destroy(); treeNetRef.current = null; };
-  }, [ancestryData, navigate]);
+  }, [ancestryData, navigate, palette]);
+
+  const hasDated = timelineData?.papers?.filter((p) => p.published_date).length
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Calendar size={22} className="text-indigo-400" />
-          Research Timeline
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Papers ordered by publication date. Click a paper to explore its lineage tree.
+    <div className="animate-rise mx-auto max-w-6xl space-y-8">
+      <header className="border-b border-line pb-6">
+        <Eyebrow className="block">Ordered by publication</Eyebrow>
+        <h1 className="display mt-2 text-display-sm text-ink">Timeline</h1>
+        <p className="mt-2 max-w-prose text-sm text-ink-muted">
+          Your library along its own history. Select a paper to trace what it
+          builds on and what came after.
         </p>
-      </div>
+      </header>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-4 text-xs text-slate-400">
-        {Object.entries(LINK_COLORS).map(([t, c]) => (
-          <span key={t} className="flex items-center gap-1">
-            <span className="w-4 h-0.5 inline-block" style={{ background: c }} />
-            {t}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Eyebrow>Relations</Eyebrow>
+        {Object.entries(LINK_STAGE).map(([type, stage]) => (
+          <span
+            key={type}
+            className="flex items-center gap-1.5 text-caption text-ink-muted"
+          >
+            <span
+              className={cx('inline-block h-0.5 w-4', STAGE_BG[stage])}
+              aria-hidden="true"
+            />
+            {type.replace(/_/g, ' ')}
           </span>
         ))}
       </div>
 
       {loading ? (
-        <div className="text-slate-400">Loading timeline…</div>
-      ) : !timelineData?.papers?.filter((p) => p.published_date).length ? (
-        <div className="text-slate-500 text-sm p-8 text-center bg-slate-800 rounded-lg">
-          No papers with publication dates yet. Process arXiv papers to populate the timeline.
-        </div>
+        <Skeleton className="h-56 w-full" />
+      ) : !hasDated ? (
+        <EmptyState
+          icon={Calendar}
+          title="No dated papers yet"
+          description="Process papers from arXiv and their publication dates will place them on this timeline."
+        />
       ) : (
         <>
-          {/* Timeline strip */}
           <div
             ref={timelineRef}
-            className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden"
+            className="overflow-hidden rounded-lg border border-line bg-surface"
           />
 
-          {/* Ancestry tree */}
           {selectedPaper && (
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
-                <GitBranch size={16} className="text-indigo-400" />
-                Lineage: {selectedPaper.paper_title?.slice(0, 60)}
-              </h2>
+            <Card className="animate-fade">
+              <div className="border-b border-line px-6 py-4">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+                  <GitBranch className="h-4 w-4 text-ink-faint" aria-hidden="true" />
+                  Lineage
+                </h2>
+                <p className="mt-1 truncate font-serif text-sm text-ink-muted">
+                  {selectedPaper.paper_title}
+                </p>
+              </div>
 
-              {ancestryLoading ? (
-                <div className="text-slate-400 text-sm">Loading ancestry…</div>
-              ) : !ancestryData?.nodes?.length ? (
-                <div className="text-slate-500 text-sm">
-                  No lineage connections found. More papers are needed to infer relationships.
-                </div>
-              ) : (
-                <>
-                  <div
-                    ref={treeRef}
-                    style={{ height: 320, background: '#0f172a', borderRadius: 8 }}
-                  />
-                  <p className="text-xs text-slate-500 mt-2">
-                    ★ = selected paper · Double-click a node to open its summary
+              <CardBody>
+                {ancestryLoading ? (
+                  <div className="flex h-40 items-center justify-center">
+                    <Spinner className="text-accent" />
+                  </div>
+                ) : !ancestryData?.nodes?.length ? (
+                  <p className="text-sm text-ink-faint">
+                    No lineage found yet. More papers are needed before
+                    relationships can be inferred.
                   </p>
-                </>
-              )}
-            </div>
+                ) : (
+                  <>
+                    <div
+                      ref={treeRef}
+                      className="overflow-hidden rounded border border-line bg-surface-sunk"
+                      style={{ height: 320 }}
+                    />
+                    <p className="mt-3 text-caption text-ink-faint">
+                      ★ marks the selected paper · double-click any node to open its summary
+                    </p>
+                  </>
+                )}
+              </CardBody>
+            </Card>
           )}
         </>
       )}

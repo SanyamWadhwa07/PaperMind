@@ -6,20 +6,19 @@ import structlog
 from pathlib import Path
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
-from supabase import create_client
+from db import supabase as _shared_supabase
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from core.knowledge.graph_service import get_knowledge_graph, get_paper_recommendations
 from core.knowledge.lineage_service import get_ancestry_tree, build_timeline_graph
 from core.knowledge.embedding_service import embed_text, find_similar_papers
 
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from auth.dependencies import CurrentUser
 from schemas import SemanticSearchRequest
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 
 @router.get('/graph/paper/{summary_id}')

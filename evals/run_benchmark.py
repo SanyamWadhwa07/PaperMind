@@ -67,6 +67,33 @@ def _find_section(sections, canonical):
     return ''
 
 
+# A run only counts as a success if it produced a real summary. Mirrors the
+# save gate in backend/routes/process_paper.py so the benchmark and the product
+# agree on what "worked" means.
+MIN_SUMMARY_WORDS = 60
+
+_PLACEHOLDER_PREFIXES = (
+    'summary generation in progress',
+    'summary unavailable',
+    'analysis complete. see extracted data for details.',
+    'this paper presents a novel approach to the problem.',
+)
+
+
+def _summary_is_usable(summary_text):
+    """Return (ok, failure_reason) for a generated summary."""
+    text = (summary_text or '').strip()
+    if not text:
+        return False, 'empty_summary'
+    normalised = text.lower().rstrip('.') + '.'
+    if any(normalised.startswith(p) for p in _PLACEHOLDER_PREFIXES):
+        return False, 'placeholder_summary'
+    words = len(text.split())
+    if words < MIN_SUMMARY_WORDS:
+        return False, f'summary_too_short ({words} words)'
+    return True, None
+
+
 def _keyword_coverage(summary, entities):
     """Fraction of extracted entity names that the summary mentions."""
     names = []
@@ -116,8 +143,16 @@ async def _run_one(pdf_path, patterns, config):
     sections_found = {c: bool(_find_section(sections, c)) for c in CANONICAL_SECTIONS}
     full_text = ' '.join(sections.values())
 
+    content_ok, failure_reason = _summary_is_usable(summary_text)
+
     record.update({
-        'success': bool(summary_text),
+        # A non-empty string is not success. Under `bool(summary_text)` the two
+        # two-word summaries in the committed 8-paper run both counted toward a
+        # headline "100% success rate", which is how a known degradation stayed
+        # invisible in the top-line number.
+        'success': content_ok,
+        'failure_reason': failure_reason,
+        'produced_output': bool(summary_text),
         'wall_time_s': round(wall, 2),
         'summary_time_s': round(summary_time_s, 2),
         'extraction_time_s': round(max(wall - summary_time_s, 0), 2),
@@ -163,10 +198,18 @@ def _pctl(values, p):
 
 def _aggregate(records):
     ok = [r for r in records if r['success']]
+    failures = {}
+    for r in records:
+        if not r['success']:
+            reason = (r.get('failure_reason') or 'unknown').split(' (')[0]
+            failures[reason] = failures.get(reason, 0) + 1
+
     agg = {
         'papers_total': len(records),
         'papers_succeeded': len(ok),
         'success_rate': round(len(ok) / len(records), 4) if records else None,
+        # Broken out so a degraded run can't hide inside the headline rate.
+        'failure_reasons': failures,
     }
 
     def stats_for(key):

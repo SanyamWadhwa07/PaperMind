@@ -1,84 +1,126 @@
 import { Database, Cpu, BarChart3, Wrench, FlaskConical } from 'lucide-react'
+import { Badge, Card, CardBody, EmptyState, Eyebrow } from './ui/primitives'
 
-// Domain-agnostic typed entities from the LangGraph engine.
+/**
+ * Domain-agnostic typed entities from the LangGraph engine. Each kind gets one
+ * of the system's stage pastels so the four categories stay distinguishable
+ * without four different action colours competing with the accent.
+ */
 const KIND_META = {
-  method:      { label: 'Methods',      icon: FlaskConical, color: 'purple' },
-  material:    { label: 'Materials / Data', icon: Database, color: 'blue' },
-  measurement: { label: 'Measurements', icon: BarChart3, color: 'green' },
-  tool:        { label: 'Tools',        icon: Wrench, color: 'amber' },
+  method: { label: 'Methods', icon: FlaskConical, stage: 4 },
+  material: { label: 'Materials & data', icon: Database, stage: 3 },
+  measurement: { label: 'Measurements', icon: BarChart3, stage: 2 },
+  tool: { label: 'Tools', icon: Wrench, stage: 1 },
 }
 
-const KIND_BADGE = {
-  method: 'badge-purple', material: 'badge-blue',
-  measurement: 'badge-green', tool: 'badge-amber',
+const STAGE_DOT = {
+  1: 'bg-stage-1',
+  2: 'bg-stage-2',
+  3: 'bg-stage-3',
+  4: 'bg-stage-4',
+}
+
+function EntityGroup({ label, icon: Icon, stage, items, emptyText }) {
+  return (
+    <Card>
+      <CardBody>
+        <div className="flex items-center gap-2">
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`}
+            aria-hidden="true"
+          />
+          <Icon className="h-4 w-4 text-ink-faint" aria-hidden="true" />
+          <h3 className="text-sm font-semibold text-ink">{label}</h3>
+          {items.length > 0 && (
+            <span className="ml-auto font-mono tabular text-code text-ink-faint">
+              {items.length}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {items.length > 0 ? (
+            items.map((item, idx) => (
+              <Badge
+                key={idx}
+                tone="outline"
+                mono
+                title={item.description || undefined}
+              >
+                {item.name ?? item}
+              </Badge>
+            ))
+          ) : (
+            <p className="text-sm text-ink-faint">{emptyText}</p>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  )
 }
 
 export default function EntityDisplay({ entities, typed }) {
   // Prefer the domain-agnostic typed entities (works for any field, not just ML).
   const typedList = typed?.entities || []
+
   if (typedList.length > 0) {
     const byKind = { method: [], material: [], measurement: [], tool: [] }
-    typedList.forEach(e => { (byKind[e.kind] || (byKind[e.kind] = [])).push(e) })
+    typedList.forEach((e) => {
+      if (!byKind[e.kind]) byKind[e.kind] = []
+      byKind[e.kind].push(e)
+    })
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {Object.entries(KIND_META).map(([kind, { label, icon: Icon }]) => (
-          <div key={kind} className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Icon className="w-5 h-5 text-[#1B1B1B] dark:text-[#F5F5F5]" />
-              <h3 className="text-lg font-semibold text-[#C4935F] dark:text-[#D9A86C]">{label}</h3>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {byKind[kind]?.length > 0 ? (
-                byKind[kind].map((e, idx) => (
-                  <span
-                    key={idx}
-                    className={`badge ${KIND_BADGE[kind]}`}
-                    title={e.description || ''}
-                  >
-                    {e.name}
-                  </span>
-                ))
-              ) : (
-                <p className="text-sm text-[#8F8F8F]">None detected</p>
-              )}
-            </div>
-          </div>
-        ))}
+      <div>
+        <Eyebrow className="block">Extracted from the paper</Eyebrow>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {Object.entries(KIND_META).map(([kind, { label, icon, stage }]) => (
+            <EntityGroup
+              key={kind}
+              label={label}
+              icon={icon}
+              stage={stage}
+              items={byKind[kind] || []}
+              emptyText="None detected"
+            />
+          ))}
+        </div>
       </div>
     )
   }
 
   // Legacy fallback: datasets / models / metrics buckets.
-  if (!entities) return null
-  const entityTypes = [
-    { key: 'datasets', label: 'Datasets', icon: Database, color: 'blue' },
-    { key: 'models', label: 'Models', icon: Cpu, color: 'purple' },
-    { key: 'metrics', label: 'Metrics', icon: BarChart3, color: 'green' },
+  if (!entities) {
+    return (
+      <EmptyState
+        icon={Database}
+        title="No entities extracted"
+        description="Either PaperMind processed this paper before it could extract entities, or it found none."
+      />
+    )
+  }
+
+  const legacyTypes = [
+    { key: 'datasets', label: 'Datasets', icon: Database, stage: 3 },
+    { key: 'models', label: 'Models', icon: Cpu, stage: 4 },
+    { key: 'metrics', label: 'Metrics', icon: BarChart3, stage: 2 },
   ]
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {entityTypes.map(({ key, label, icon: Icon, color }) => (
-        <div key={key} className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Icon className="w-5 h-5 text-[#1B1B1B] dark:text-[#F5F5F5]" />
-            <h3 className="text-lg font-semibold text-[#C4935F] dark:text-[#D9A86C]">{label}</h3>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {entities[key] && entities[key].length > 0 ? (
-              entities[key].map((entity, idx) => (
-                <span key={idx} className={`badge badge-${color}`}>
-                  {entity}
-                </span>
-              ))
-            ) : (
-              <p className="text-sm text-[#8F8F8F] dark:text-[#8F8F8F]">No {label.toLowerCase()} detected</p>
-            )}
-          </div>
-        </div>
-      ))}
+    <div>
+      <Eyebrow className="block">Extracted from the paper</Eyebrow>
+      <div className="mt-4 grid gap-4 md:grid-cols-3">
+        {legacyTypes.map(({ key, label, icon, stage }) => (
+          <EntityGroup
+            key={key}
+            label={label}
+            icon={icon}
+            stage={stage}
+            items={entities[key] || []}
+            emptyText={`No ${label.toLowerCase()} detected`}
+          />
+        ))}
+      </div>
     </div>
   )
 }

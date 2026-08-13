@@ -73,16 +73,12 @@ def test_quality_score_rewards_keyword_coverage(summary_agent, sample_sections):
     assert rich_score >= sparse_score
 
 
-def test_domain_system_prompt_cv(summary_agent):
-    prompt = summary_agent._get_system_prompt('cv')
-    assert 'vision' in prompt.lower() or 'image' in prompt.lower() or 'visual' in prompt.lower()
+def test_summary_agent_has_no_template_fallback():
+    """The legacy path assembled summaries from templates when the LLM was
+    unreachable ("The paper employs the following models: ..."), which is
+    indistinguishable from a real summary once persisted. The graph engine is
+    now the only path, and it raises instead."""
+    from core.agents.summary_agent import SummaryAgent
 
-
-def test_domain_system_prompt_nlp(summary_agent):
-    prompt = summary_agent._get_system_prompt('nlp')
-    assert 'language' in prompt.lower() or 'text' in prompt.lower() or 'nlp' in prompt.lower()
-
-
-def test_domain_system_prompt_general(summary_agent):
-    prompt = summary_agent._get_system_prompt('general')
-    assert len(prompt) > 20
+    for removed in ('_generate_all_in_one', '_fallback_summary', '_get_system_prompt'):
+        assert not hasattr(SummaryAgent, removed), f'{removed} should be gone'

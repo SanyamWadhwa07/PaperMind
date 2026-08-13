@@ -1,11 +1,12 @@
 """Slide deck generator — converts paper analysis to a 5-slide HTML presentation."""
 
 import json
-import logging
+import structlog
+from core.llm.json_parse import parse_json_object
 import re
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 SLIDE_SYSTEM = """You are a presentation designer. Convert the paper into exactly 5 slides.
 Return ONLY JSON (no markdown, no extra text):
@@ -62,20 +63,16 @@ async def generate_slides(
     )
 
     llm = get_llm(llm_config)
-    raw = await llm.generate(prompt, system_prompt=SLIDE_SYSTEM, max_tokens=1024)
+    raw = await llm.generate(prompt, system_prompt=SLIDE_SYSTEM, max_tokens=2048)
 
     slide_data = _parse_slides(raw, title, authors)
     return _render_html(slide_data, title, authors)
 
 
 def _parse_slides(raw: str, title: str, authors: str) -> list:
-    try:
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        if m:
-            data = json.loads(m.group())
-            return data.get("slides", [])
-    except Exception:
-        pass
+    slides = parse_json_object(raw).get("slides")
+    if slides:
+        return slides
     # Fallback: split on numbered sections
     return [
         {"title": title, "content": authors, "notes": ""},

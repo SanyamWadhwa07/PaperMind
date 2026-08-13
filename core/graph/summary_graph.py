@@ -1,36 +1,50 @@
 """LangGraph summarization engine.
 
-Replaces the old single-call, 4000-char-truncated SummaryAgent with a proper
-map-reduce graph that reads the *whole* paper and uses structured extraction
-instead of regex.
+Replaces the old single-call, 4000-char-truncated SummaryAgent with structured
+extraction over the whole paper.
 
-Pipeline (StateGraph):
+There are two reading strategies, chosen per paper by ``prepare``:
 
     START
-      → prepare          normalise + order sections, pick chunks to map over
-      → map_sections     summarize EVERY meaningful section (fast LLM, concurrent)
-      ├─ extract_entities   domain-agnostic typed entities   (fast LLM, structured)
-      └─ extract_results    quantitative results from prose+tables (fast LLM, structured)
-      → synthesize       final 300-450w summary + findings/limitations/... (smart LLM)
-      → grade            LLM-as-judge; if weak & retries left → back to synthesize
+      → prepare              clean sections, drop references, measure the paper
+      │
+      ├─ single pass (paper fits the provider's per-request budget)
+      │    → read_paper      ONE call: every section digest + entities + results
+      │
+      └─ map-reduce (paper too long)
+           → map_sections    digest each section concurrently (fast LLM)
+           ├─ extract_entities   typed entities        (fast LLM, structured)
+           └─ extract_results    quantitative results  (fast LLM, structured)
+
+      → synthesize           long-form summary + findings/limitations/… (smart LLM)
+      → grade                LLM-as-judge; if weak & retries left → synthesize
       → END
 
-Every LLM call is wrapped so a provider/parse failure degrades gracefully rather
-than crashing the pipeline. Providers come from core.llm.providers (Groq prod /
-Ollama dev), selected by env.
+Single pass exists because free tiers meter *requests* far more tightly than
+context, and because a model that sees the whole paper can match a number in a
+table to the method that produced it — something per-section calls structurally
+cannot do. It costs ~3 requests per paper against map-reduce's ~16. A failed
+single-pass read falls back to map-reduce rather than losing the paper.
+
+Every LLM call degrades explicitly rather than crashing: see the ``_structured``
+helper and the ``degraded`` flag on section digests. Providers come from
+core.llm.providers (Gemini → Groq → Ollama), selected by env.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import Any, Dict, List, Optional, TypedDict
 
 import structlog
 
-from core.llm.providers import get_model_chain
+from core.llm.providers import context_budget_chars, get_model_chain
+from core.llm.response import message_text
 from core.graph.schemas import (
     PaperEntities,
+    PaperReading,
     PaperResults,
     PaperSynthesis,
     SectionDigest,
@@ -40,18 +54,33 @@ from core.graph.schemas import (
 logger = structlog.get_logger(__name__)
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
-MAP_SECTION_CHAR_LIMIT = 6000     # per-section text sent to the map step
-MAX_MAP_SECTIONS = 12             # cap concurrent section calls
-EXTRACTION_CHAR_LIMIT = 12000     # digest text sent to entity/result extraction
+MAP_SECTION_CHAR_LIMIT = 12000    # per-section text sent to the map step
+MAX_MAP_SECTIONS = 24             # cap concurrent section calls
+EXTRACTION_CHAR_LIMIT = 60000     # digest text carried into synthesis
 MAX_SYNTH_ATTEMPTS = 2            # synthesize → grade → maybe one retry
 GRADE_PASS_SCORE = 0.6
 
-# Sections we never summarize (noise / handled elsewhere).
+# Below this the synthesis collapsed rather than summarised. Kept well under the
+# schema's 800-1200 word target so a merely terse summary isn't failed.
+MIN_SUMMARY_WORDS = 150
+
+# Sections we never summarize (noise / handled elsewhere). Dropping references is
+# also the single largest token saving available: a bibliography is routinely
+# 20-30% of a paper's characters and contributes nothing to a summary.
 _SKIP_SECTIONS = {
-    "references", "__references__", "bibliography",
+    "references", "__references__", "bibliography", "reference",
     "acknowledgment", "acknowledgments", "acknowledgements",
     "conflict_of_interest", "funding", "author_contributions",
+    "competing_interests", "supplementary_material", "appendix_references",
 }
+
+# A heading that starts the bibliography. Backends that don't split sections
+# cleanly leave the reference list glued to the tail of the last real section,
+# where the name-based skip above can't see it.
+_REFERENCES_HEADING_RE = re.compile(
+    r"^\s*(?:#+\s*)?(?:\d+\.?\s*)?(?:references|bibliography|works\s+cited|literature\s+cited)\s*:?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 # Ordering priority so truncation drops the least-important sections last.
 _SECTION_PRIORITY = [
@@ -70,7 +99,9 @@ class SummaryState(TypedDict, total=False):
     sections: Dict[str, str]
     tables_md: List[str]
     # intermediate
-    chunks: List[Dict[str, str]]          # [{name, text}]
+    chunks: List[Dict[str, str]]          # [{name, text}] — map-reduce path only
+    paper_text: str                       # whole cleaned paper — single-pass path only
+    single_pass: bool                     # which strategy prepare() chose
     digests: List[Dict[str, Any]]         # [{section, summary, facts}]
     digest_text: str
     entities: Dict[str, Any]              # PaperEntities.model_dump()
@@ -125,7 +156,9 @@ async def _text(tier: str, system: str, user: str, *, max_tokens: int = 2048) ->
             resp = await runnable.ainvoke(
                 [{"role": "system", "content": system}, {"role": "user", "content": user}]
             )
-        return (resp.content or "").strip() if hasattr(resp, "content") else str(resp).strip()
+        # `.content` is a list of blocks for some providers, where `.strip()`
+        # raises and the whole call silently degrades to an empty summary.
+        return message_text(resp).strip()
     except Exception as e:
         logger.warning("text_call_failed", error=str(e))
         return ""
@@ -139,24 +172,144 @@ def _section_rank(name: str) -> int:
     return len(_SECTION_PRIORITY)
 
 
-# ── Nodes ───────────────────────────────────────────────────────────────────────
+def strip_references(text: str) -> str:
+    """Cut a trailing bibliography off a section body.
 
-def prepare(state: SummaryState) -> Dict[str, Any]:
-    """Order/clean sections and select the chunks to summarize."""
-    sections = state.get("sections") or {}
-    chunks: List[Dict[str, str]] = []
+    Reference lists are pure cost: they are long, they contain no claims about
+    this paper, and their author names and years actively pollute entity
+    extraction.
+    """
+    match = _REFERENCES_HEADING_RE.search(text)
+    # Only trust a heading in the last part of the text — "References" can appear
+    # early as a cross-reference or subsection title.
+    if match and match.start() > len(text) * 0.4:
+        return text[:match.start()].rstrip()
+    return text
+
+
+def usable_sections(sections: Dict[str, str]) -> List[tuple]:
+    """Ordered (name, text) pairs worth sending to a model.
+
+    Drops boilerplate sections, strips trailing bibliographies, and skips stubs.
+    Ordering is by :data:`_SECTION_PRIORITY` so that when a budget forces a cut,
+    the least important sections go first.
+    """
+    out: List[tuple] = []
     for name, text in sorted(sections.items(), key=lambda kv: _section_rank(kv[0])):
         if not text or name.lower() in _SKIP_SECTIONS:
             continue
-        if len(text.strip()) < 120:  # skip stubs / headers
+        cleaned = strip_references(text).strip()
+        if len(cleaned) < 120:          # stubs, stray headings
             continue
-        chunks.append({"name": name, "text": text[:MAP_SECTION_CHAR_LIMIT]})
-        if len(chunks) >= MAX_MAP_SECTIONS:
-            break
+        out.append((name, cleaned))
+    return out
 
-    # Always include the abstract as context even if short.
-    abstract = state.get("abstract") or sections.get("abstract", "")
-    return {"chunks": chunks, "abstract": abstract[:1500], "attempts": 0}
+
+# ── Nodes ───────────────────────────────────────────────────────────────────────
+
+def prepare(state: SummaryState) -> Dict[str, Any]:
+    """Clean the paper, then choose how to read it.
+
+    Two strategies, picked by whether the whole paper fits the primary
+    provider's per-request budget:
+
+    * **single pass** — one call sees the entire paper. Better output (results in
+      a table can be matched to the method that produced them) and far fewer
+      requests, which is what free tiers actually meter.
+    * **map-reduce** — section-by-section, for papers too long to fit.
+    """
+    usable = usable_sections(state.get("sections") or {})
+
+    chunks = [
+        {"name": name, "text": text[:MAP_SECTION_CHAR_LIMIT]}
+        for name, text in usable[:MAX_MAP_SECTIONS]
+    ]
+
+    budget = context_budget_chars()
+    tables_text = "\n\n".join(state.get("tables_md") or [])
+    paper_text = "\n\n".join(
+        f"## {name.replace('_', ' ').title()}\n{text}" for name, text in usable
+    )
+    total_chars = len(paper_text) + len(tables_text)
+    single_pass = bool(paper_text) and total_chars <= budget
+
+    logger.info(
+        "summary_strategy_selected",
+        strategy="single_pass" if single_pass else "map_reduce",
+        paper_chars=total_chars,
+        budget_chars=budget,
+        sections=len(usable),
+    )
+
+    # The abstract is repeated into the synthesis prompt as framing, so it stays
+    # short deliberately even when the whole paper is available.
+    abstract = state.get("abstract") or dict(usable).get("abstract", "")
+    return {
+        "chunks": chunks,
+        "paper_text": paper_text,
+        "abstract": abstract[:2000],
+        "single_pass": single_pass,
+        "attempts": 0,
+    }
+
+
+def _route_after_prepare(state: SummaryState) -> str:
+    return "single_pass" if state.get("single_pass") else "map_reduce"
+
+
+async def read_paper(state: SummaryState) -> Dict[str, Any]:
+    """Read the entire paper in one structured call.
+
+    Replaces the map step plus both extraction steps — roughly a dozen requests
+    with one. Returns ``single_pass=False`` on failure so the graph falls back to
+    map-reduce rather than losing the paper.
+    """
+    tables = "\n\n".join(state.get("tables_md") or [])
+    system = (
+        "You are an expert research analyst. You will be given the full text of an "
+        "academic paper, and its tables. Produce: (1) a faithful digest of EVERY "
+        "substantive section, in order; (2) the salient named concepts, classified as "
+        "method, material, measurement, or tool; (3) every quantitative result, taken "
+        "from both the tables and the prose. Work for ANY field — medicine, physics, "
+        "social science, ML. Report names and numbers exactly as written. Never invent "
+        "a method, dataset, or number that is not in the text."
+    )
+    user = (
+        f"Paper title: {state.get('title', '')}\n\n"
+        + (f"Tables extracted from the paper:\n{tables}\n\n" if tables else "")
+        + f"Full paper text:\n{state.get('paper_text', '')}"
+    )
+
+    parsed = await _structured("smart", PaperReading, system, user, max_tokens=8192)
+    if parsed is None:
+        logger.warning("single_pass_read_failed", fallback="map_reduce")
+        return {"single_pass": False}
+
+    digests = [
+        {"section": s.section, "summary": s.summary, "facts": s.facts, "degraded": False}
+        for s in parsed.sections
+    ]
+    return {
+        "digests": digests,
+        "digest_text": _build_digest_text(digests),
+        "entities": {"entities": [e.model_dump() for e in parsed.entities]},
+        "results": [r.model_dump() for r in parsed.results],
+    }
+
+
+def _route_after_read(state: SummaryState) -> str:
+    """Fall through to map-reduce if the whole-paper read didn't produce digests."""
+    return "synthesize" if state.get("digests") else "map_reduce"
+
+
+def _build_digest_text(digests: List[Dict[str, Any]]) -> str:
+    """Flatten section digests into the text the synthesis and grader read."""
+    lines: List[str] = []
+    for d in digests:
+        header = d["section"].replace("_", " ").title()
+        lines.append(f"## {header}\n{d['summary']}")
+        lines.extend(f"- {f}" for f in d.get("facts", []))
+    return "\n".join(lines)[:EXTRACTION_CHAR_LIMIT]
 
 
 async def map_sections(state: SummaryState) -> Dict[str, Any]:
@@ -179,23 +332,23 @@ async def map_sections(state: SummaryState) -> Dict[str, Any]:
         )
         digest = await _structured("fast", SectionDigest, system, user, max_tokens=1024)
         if digest is None:
-            # Fallback: keep the raw head of the section so coverage isn't lost.
-            return {"section": chunk["name"], "summary": chunk["text"][:600], "facts": []}
-        return {"section": chunk["name"], "summary": digest.summary, "facts": digest.facts}
+            # Keep the raw head of the section so downstream coverage isn't lost,
+            # but flag it: this is unsummarised paper text, and labelling it as a
+            # section "summary" without saying so shows users verbatim PDF prose
+            # in a field that claims to be model output.
+            return {
+                "section": chunk["name"],
+                "summary": chunk["text"][:600],
+                "facts": [],
+                "degraded": True,
+            }
+        return {"section": chunk["name"], "summary": digest.summary,
+                "facts": digest.facts, "degraded": False}
 
     digests = await asyncio.gather(*[_one(c) for c in chunks]) if chunks else []
     digests = [d for d in digests if d]
 
-    # Build the compact combined digest reused by later steps.
-    lines: List[str] = []
-    for d in digests:
-        header = d["section"].replace("_", " ").title()
-        lines.append(f"## {header}\n{d['summary']}")
-        for f in d.get("facts", []):
-            lines.append(f"- {f}")
-    digest_text = "\n".join(lines)[:EXTRACTION_CHAR_LIMIT]
-
-    return {"digests": digests, "digest_text": digest_text}
+    return {"digests": digests, "digest_text": _build_digest_text(digests)}
 
 
 async def extract_entities(state: SummaryState) -> Dict[str, Any]:
@@ -246,13 +399,13 @@ def _entity_brief(entities: Dict[str, Any]) -> str:
     for e in (entities or {}).get("entities", []):
         by_kind.setdefault(e.get("kind", "other"), []).append(e.get("name", ""))
     return "\n".join(
-        f"{kind}s: {', '.join(v[:10])}" for kind, v in by_kind.items() if v
+        f"{kind}s: {', '.join(v[:25])}" for kind, v in by_kind.items() if v
     )
 
 
 def _results_brief(results: List[Dict[str, Any]]) -> str:
     out = []
-    for r in (results or [])[:10]:
+    for r in (results or [])[:40]:
         line = f"  • {r.get('measurement','')}: {r.get('value','')}"
         if r.get("method"):
             line += f" ({r['method']})"
@@ -275,9 +428,12 @@ async def synthesize(state: SummaryState) -> Dict[str, Any]:
 
     system = (
         f"You are an expert {domain if domain != 'general' else 'academic'} researcher writing a "
-        "rigorous summary of a paper for a knowledgeable reader. Base everything strictly on the "
-        "provided digests, entities, and results — do not introduce outside facts or fabricate "
-        "numbers. Write the summary as flowing prose (no bullets, no headers)."
+        "rigorous, self-contained account of a paper for a knowledgeable reader. Your summary "
+        "should be complete enough that they do not need to open the PDF: explain how the method "
+        "actually works, what was measured against what, and what the numbers were. Prefer "
+        "specific names and figures over general description. Base everything strictly on the "
+        "provided digests, entities, and results — never introduce outside facts or invent "
+        "numbers. Write prose (no bullets, no headers) for the prose fields."
     )
     user = (
         f"Paper title: {state.get('title', '')}\n\n"
@@ -287,7 +443,9 @@ async def synthesize(state: SummaryState) -> Dict[str, Any]:
         f"Section digests:\n{state.get('digest_text', '')}"
         f"{retry_note}"
     )
-    parsed = await _structured("smart", PaperSynthesis, system, user, max_tokens=3072)
+    # Generous ceiling: the schema asks for ~1200 words of summary plus method and
+    # setup sections, which does not fit in the old 3072.
+    parsed = await _structured("smart", PaperSynthesis, system, user, max_tokens=8192)
 
     if parsed is None:
         # Last-resort: plain-text summary so the user still gets something useful.
@@ -330,7 +488,7 @@ async def grade(state: SummaryState) -> Dict[str, Any]:
     """LLM-as-judge gate on the synthesis (drives the retry loop)."""
     synthesis = state.get("synthesis") or {}
     summary = synthesis.get("summary", "")
-    if not summary or len(summary.split()) < 40:
+    if not summary or len(summary.split()) < MIN_SUMMARY_WORDS:
         return {"grade": {"faithful": False, "specific": False, "score": 0.0,
                           "issues": ["Summary too short or empty."]}}
 
@@ -346,10 +504,16 @@ async def grade(state: SummaryState) -> Dict[str, Any]:
     )
     parsed = await _structured("smart", SummaryGrade, system, user, max_tokens=512)
     if parsed is None:
-        # If grading itself fails, accept the synthesis rather than loop.
-        return {"grade": {"faithful": True, "specific": True, "score": GRADE_PASS_SCORE, "issues": []}}
+        # Grading failed (rate limit, parse error). Accept the synthesis rather
+        # than loop, but record that it was never graded — previously this
+        # returned a synthetic score of exactly GRADE_PASS_SCORE, which was
+        # written to the summaries.quality_score column and shown to users as a
+        # real measurement, indistinguishable from a genuine 0.6.
+        return {"grade": {"graded": False, "faithful": None, "specific": None,
+                          "score": None, "issues": []}}
 
     graded = parsed.model_dump()
+    graded["graded"] = True
     # Normalise the score to 0–1: weaker models sometimes answer on a 0–5 or 0–10
     # scale despite the schema. Without this a "4.0" passes the gate by accident
     # and surfaces a nonsensical quality value to the user.
@@ -362,8 +526,14 @@ async def grade(state: SummaryState) -> Dict[str, Any]:
 
 def _route_after_grade(state: SummaryState) -> str:
     grade_obj = state.get("grade") or {}
-    score = float(grade_obj.get("score", 0.0))
-    if score >= GRADE_PASS_SCORE or state.get("attempts", 0) >= MAX_SYNTH_ATTEMPTS:
+    if state.get("attempts", 0) >= MAX_SYNTH_ATTEMPTS:
+        return "done"
+    # An ungraded synthesis (judge unavailable) can't be assessed, so retrying
+    # would burn quota without evidence it would help — accept and mark it.
+    if grade_obj.get("graded") is False:
+        return "done"
+    score = grade_obj.get("score")
+    if score is None or float(score) >= GRADE_PASS_SCORE:
         return "done"
     return "retry"
 
@@ -383,6 +553,7 @@ def get_summary_graph():
 
     g = StateGraph(SummaryState)
     g.add_node("prepare", prepare)
+    g.add_node("read_paper", read_paper)
     g.add_node("map_sections", map_sections)
     g.add_node("extract_entities", extract_entities)
     g.add_node("extract_results", extract_results)
@@ -390,11 +561,20 @@ def get_summary_graph():
     g.add_node("grade", grade)
 
     g.add_edge(START, "prepare")
-    g.add_edge("prepare", "map_sections")
-    # Fan-out: entities + results extracted in parallel after mapping.
+    # Whole-paper read when it fits, section-by-section when it doesn't.
+    g.add_conditional_edges(
+        "prepare", _route_after_prepare,
+        {"single_pass": "read_paper", "map_reduce": "map_sections"},
+    )
+    # A failed single-pass read falls back rather than losing the paper.
+    g.add_conditional_edges(
+        "read_paper", _route_after_read,
+        {"synthesize": "synthesize", "map_reduce": "map_sections"},
+    )
+    # Map-reduce path: entities + results extracted in parallel after mapping…
     g.add_edge("map_sections", "extract_entities")
     g.add_edge("map_sections", "extract_results")
-    # Fan-in: synthesize waits for both extraction branches.
+    # …and synthesis waits for both branches.
     g.add_edge("extract_entities", "synthesize")
     g.add_edge("extract_results", "synthesize")
     g.add_edge("synthesize", "grade")

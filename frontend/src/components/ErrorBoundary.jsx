@@ -1,50 +1,57 @@
 import { Component } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { Button } from './ui/primitives'
 
-class ErrorBoundary extends Component {
+/**
+ * Catches render-time crashes so one broken page does not blank the whole app.
+ * Errors during data fetching are handled by the API client instead.
+ */
+export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props)
-    this.state = { hasError: false, error: null }
+    this.state = { error: null }
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true, error }
+    return { error }
   }
 
-  componentDidCatch(error, errorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
+  componentDidCatch(error, info) {
+    console.error('Render error:', error, info)
+  }
+
+  handleReset = () => {
+    this.setState({ error: null })
   }
 
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-8">
-          <div className="text-center space-y-4">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full">
-              <AlertTriangle className="w-8 h-8 text-red-600" />
-            </div>
-            
-            <h3 className="text-xl font-bold text-red-900">
-              Something went wrong
-            </h3>
-            
-            <p className="text-red-700">
-              {this.state.error?.message || 'An unexpected error occurred'}
-            </p>
-            
-            <button
-              onClick={() => this.setState({ hasError: false, error: null })}
-              className="btn-primary"
-            >
-              Try Again
-            </button>
-          </div>
-        </div>
-      )
-    }
+    const { error } = this.state
+    if (!error) return this.props.children
 
-    return this.props.children
+    return (
+      <div className="mx-auto max-w-lg rounded-lg border border-line bg-surface p-8 text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-danger-soft">
+          <AlertTriangle className="h-6 w-6 text-danger" aria-hidden="true" />
+        </div>
+        <h2 className="text-lg font-semibold text-ink">This page stopped working</h2>
+        <p className="mt-2 text-sm text-ink-muted">
+          The error has been logged. Reloading usually clears it.
+        </p>
+
+        {/* The stack is for the developer running locally, not the end user. */}
+        {import.meta.env.DEV && (
+          <pre className="mt-4 max-h-48 overflow-auto rounded border border-line bg-surface-sunk p-3 text-left font-mono text-xs text-ink-muted">
+            {error.stack || String(error)}
+          </pre>
+        )}
+
+        <div className="mt-6 flex justify-center gap-2">
+          <Button onClick={() => window.location.reload()}>Reload page</Button>
+          <Button variant="secondary" onClick={this.handleReset}>
+            Dismiss
+          </Button>
+        </div>
+      </div>
+    )
   }
 }
-
-export default ErrorBoundary

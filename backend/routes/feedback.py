@@ -2,18 +2,17 @@
 
 import asyncio
 import structlog
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from supabase import create_client
+from db import supabase as _shared_supabase
 
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from auth.dependencies import CurrentUser
 from schemas import FeedbackRequest
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 VALID_TYPES = {'rating', 'error_report', 'flag_hallucination'}
 
@@ -30,7 +29,7 @@ async def submit_feedback(summary_id: str, data: FeedbackRequest, current_user: 
             'rating':        data.rating,
             'feedback_type': feedback_type,
             'comment':       data.comment,
-            'created_at':    datetime.utcnow().isoformat(),
+            'created_at':    datetime.now(timezone.utc).isoformat(),
         }
         await asyncio.to_thread(
             lambda: supabase.table('summary_feedback')

@@ -1,117 +1,115 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useToast } from '../contexts/ToastContext';
-import { Mail, ArrowLeft } from 'lucide-react';
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft, MailCheck } from 'lucide-react'
+import { auth } from '../lib/api'
+import { Button, Card, CardBody, Field, Input } from '../components/ui/primitives'
 
 export default function ForgotPasswordPage() {
-  const toast = useToast();
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [email, setEmail] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [devToken, setDevToken] = useState(null)
+  const [error, setError] = useState('')
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!email) {
-      toast.error('Email is required');
-      return;
-    }
-
-    setLoading(true);
-
+  const onSubmit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setSubmitting(true)
     try {
-      const response = await fetch('http://localhost:5000/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setSent(true);
-        toast.success('Password reset email sent! Check your inbox.');
-      } else {
-        toast.error(data.error || 'Failed to send reset email');
-      }
-    } catch (error) {
-      toast.error('Network error. Please try again.');
+      const data = await auth.forgotPassword(email)
+      setSent(true)
+      // Outside production the API returns the token directly, since no mail
+      // provider is wired up yet.
+      if (data.reset_token) setDevToken(data.reset_token)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSubmitting(false)
     }
+  }
 
-    setLoading(false);
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
-            Forgot Password?
-          </h2>
-          <p className="mt-2 text-sm sm:text-base text-[#1B1B1B] dark:text-[#F5F5F5]">
-            Enter your email to receive a password reset link
-          </p>
-        </div>
-
-        {sent ? (
-          <div className="card text-center space-y-4">
-            <div className="w-16 h-16 bg-teal-100 dark:bg-teal-900/30 rounded-full flex items-center justify-center mx-auto">
-              <Mail className="w-8 h-8 text-teal-600 dark:text-teal-400" />
+  if (sent) {
+    return (
+      <div className="mx-auto max-w-md py-12">
+        <Card>
+          <CardBody className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-accent-soft">
+              <MailCheck className="h-6 w-6 text-accent" aria-hidden="true" />
             </div>
-            <div>
-              <h3 className="text-xl font-semibold text-[#C4935F] dark:text-[#D9A86C] mb-2">
-                Check your email
-              </h3>
-              <p className="text-sm text-[#1B1B1B] dark:text-[#F5F5F5]">
-                We've sent a password reset link to <span className="font-medium">{email}</span>
-              </p>
-            </div>
+            <h1 className="text-lg font-semibold text-ink">Check your email</h1>
+            <p className="mt-2 text-sm text-ink-muted">
+              If an account exists for {email}, a reset link is on its way.
+            </p>
+
+            {devToken && (
+              <div className="mt-5 rounded border border-warning/30 bg-warning-soft p-3 text-left">
+                <p className="text-xs font-medium text-warning">
+                  Development mode: no mail provider is configured
+                </p>
+                <p className="mt-1 break-all font-mono text-xs text-ink-muted">
+                  {devToken}
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="mt-2"
+                  to={`/reset-password?token=${devToken}`}
+                >
+                  Continue to reset
+                </Button>
+              </div>
+            )}
+
             <Link
               to="/login"
-              className="inline-flex items-center gap-2 text-teal-600 dark:text-teal-400 hover:underline"
+              className="mt-6 inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
             >
-              <ArrowLeft className="w-4 h-4" />
-              Back to login
+              <ArrowLeft className="h-4 w-4" />
+              Back to sign in
             </Link>
-          </div>
-        ) : (
-          <form className="card space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5]"
-                  placeholder="you@example.com"
-                  required
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full btn-primary"
-            >
-              {loading ? 'Sending...' : 'Send Reset Link'}
-            </button>
-
-            <div className="text-center">
-              <Link
-                to="/login"
-                className="text-sm text-teal-600 dark:text-teal-400 hover:underline"
-              >
-                Remember your password? Log in
-              </Link>
-            </div>
-          </form>
-        )}
+          </CardBody>
+        </Card>
       </div>
+    )
+  }
+
+  return (
+    <div className="mx-auto max-w-md py-12">
+      <Card>
+        <CardBody>
+          <h1 className="text-lg font-semibold text-ink">Reset your password</h1>
+          <p className="mt-1.5 text-sm text-ink-muted">
+            Enter the address you signed up with and we&apos;ll send a reset link.
+          </p>
+
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+            <Field label="Email" htmlFor="email" error={error}>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@university.edu"
+                invalid={Boolean(error)}
+              />
+            </Field>
+
+            <Button type="submit" className="w-full" loading={submitting}>
+              Send reset link
+            </Button>
+          </form>
+
+          <Link
+            to="/login"
+            className="mt-5 inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to sign in
+          </Link>
+        </CardBody>
+      </Card>
     </div>
-  );
+  )
 }

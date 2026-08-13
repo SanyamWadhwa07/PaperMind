@@ -3,19 +3,18 @@
 import asyncio
 import structlog
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
 from werkzeug.utils import secure_filename
-from supabase import create_client
+from db import supabase as _shared_supabase
 
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from auth.dependencies import CurrentUser
 from schemas import ProfileUpdateRequest
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 ALLOWED_IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -52,7 +51,7 @@ async def update_profile(data: ProfileUpdateRequest, current_user: CurrentUser):
     if not update_data:
         return JSONResponse(status_code=400, content={'error': 'No data to update'})
 
-    update_data['updated_at'] = datetime.utcnow().isoformat()
+    update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
 
     try:
         result = await asyncio.to_thread(
@@ -95,7 +94,7 @@ async def upload_avatar(current_user: CurrentUser, avatar: UploadFile = File(...
         await asyncio.to_thread(
             lambda: supabase.table('users').update({
                 'avatar_url': public_url,
-                'updated_at': datetime.utcnow().isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat(),
             }).eq('id', user_id).execute()
         )
 
@@ -128,7 +127,7 @@ async def delete_avatar(current_user: CurrentUser):
         await asyncio.to_thread(
             lambda: supabase.table('users').update({
                 'avatar_url': None,
-                'updated_at': datetime.utcnow().isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat(),
             }).eq('id', user_id).execute()
         )
         return {'message': 'Avatar deleted successfully'}

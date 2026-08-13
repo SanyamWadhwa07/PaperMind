@@ -31,6 +31,8 @@ requests>=2.31.0
 # Configuration & logging
 pyyaml>=6.0.0
 structlog
+pydantic>=2.5.0
+pydantic-settings>=2.0,<3.0   # typed settings — backend/config/settings.py
 
 # LangGraph / LangChain — summarization graph engine (core/graph/).
 # Hybrid LLM: Groq free tier in production, Ollama for local/offline dev.

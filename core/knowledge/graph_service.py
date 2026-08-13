@@ -1,11 +1,26 @@
 """Knowledge graph service — similarity caching, graph queries, recommendations."""
 
 from __future__ import annotations
-import logging
+import json
+import structlog
 from typing import List, Dict, Any, Optional
 import numpy as np
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
+
+
+def _as_vector(embedding: Any) -> np.ndarray:
+    """Coerce a stored embedding into a float array.
+
+    PostgREST serialises a pgvector column as its text form — `"[0.1,-0.2,…]"` —
+    not as a JSON array, so the value arrives as a string on the read path even
+    though it was written as a list. Feeding that straight to numpy raised
+    `could not convert string to float`, which killed similarity caching for
+    every paper and left the recommendation table empty.
+    """
+    if isinstance(embedding, str):
+        embedding = json.loads(embedding)
+    return np.array(embedding, dtype=np.float32)
 
 
 def compute_and_cache_similarity(
@@ -31,7 +46,7 @@ def compute_and_cache_similarity(
             logger.warning("no_embedding_for_paper", summary_id=new_summary_id)
             return 0
 
-        new_embedding = np.array(row.data['embedding'], dtype=np.float32)
+        new_embedding = _as_vector(row.data['embedding'])
 
         # Find similar papers via pgvector
         result = supabase_client.rpc('match_papers', {
@@ -83,105 +98,197 @@ def get_paper_recommendations(
         return []
 
 
+# `summary_data.entities` buckets, mapped to the singular kind the UI colours by.
+ENTITY_KINDS = {
+    'models': 'model',
+    'datasets': 'dataset',
+    'metrics': 'metric',
+    'tasks': 'task',
+    'frameworks': 'framework',
+}
+
+# Per paper, so one over-extracted paper cannot bury the rest of the graph.
+MAX_ENTITIES_PER_PAPER = 10
+
+
+def _entity_id(name: str, kind: str) -> str:
+    return f'entity_{kind}_{name.strip().lower()}'
+
+
+def _authors_label(authors: Any) -> str:
+    """Cite-style author line: one name, two names, or 'First et al.'."""
+    if isinstance(authors, str):
+        authors = [a.strip() for a in authors.split(',') if a.strip()]
+    if not isinstance(authors, list) or not authors:
+        return ''
+    names = [str(a).strip() for a in authors if str(a).strip()]
+    if not names:
+        return ''
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f'{names[0]} & {names[1]}'
+    return f'{names[0]} et al.'
+
+
+def _paper_entities(row: Dict[str, Any]) -> List[tuple]:
+    """Yield (name, kind) for one paper's extracted entities, deduplicated."""
+    entities = row.get('entities')
+    if isinstance(entities, str):
+        try:
+            entities = json.loads(entities)
+        except ValueError:
+            entities = None
+    if not isinstance(entities, dict):
+        return []
+
+    out: List[tuple] = []
+    seen: set = set()
+    for bucket, kind in ENTITY_KINDS.items():
+        for name in (entities.get(bucket) or [])[:MAX_ENTITIES_PER_PAPER]:
+            if not isinstance(name, str):
+                continue
+            name = name.strip()
+            key = (name.lower(), kind)
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            out.append((name, kind))
+    return out
+
+
 def get_knowledge_graph(
     user_id: str,
     supabase_client,
     anchor_summary_id: Optional[str] = None,
-    depth: int = 2,
     max_nodes: int = 80
 ) -> Dict[str, Any]:
     """Build a graph dict (nodes + edges) for vis-network rendering.
 
-    If anchor_summary_id is given, returns the local neighbourhood.
-    Otherwise returns the full user library graph.
+    If `anchor_summary_id` is given the graph is that paper's neighbourhood: the
+    paper, the things it talks about, and the library papers that share them.
+    Otherwise it is the whole library.
+
+    Entities come from each paper's own `summary_data.entities`. They used to be
+    read from `entity_relationships`, which is the cross-paper *experience*
+    store — a global table with no user_id and no summary_id. Every graph
+    therefore showed up to 300 relationships belonging to whichever users had
+    processed papers most recently, connected to nothing on screen: a privacy
+    leak that also happened to be the reason the graph looked like noise.
+    `anchor_summary_id` was accepted and then ignored, so "this paper's graph"
+    and "the whole library" rendered identically.
     """
     nodes: List[Dict] = []
     edges: List[Dict] = []
-    seen_paper_ids: set = set()
-    seen_entity_ids: set = set()
 
     try:
-        # --- Paper nodes ---
-        query = supabase_client.table('summaries') \
-            .select('id, paper_title, arxiv_id, primary_category, published_date, quality_score') \
+        # `->` selects inside the JSONB blob so the whole summary payload does
+        # not cross the wire for every paper in the library.
+        columns = (
+            'id, paper_title, paper_authors, arxiv_id, primary_category, '
+            'published_date, quality_score, summary_data->entities'
+        )
+        papers = supabase_client.table('summaries') \
+            .select(columns) \
             .eq('user_id', user_id) \
-            .limit(max_nodes)
+            .order('created_at', desc=True) \
+            .limit(max_nodes) \
+            .execute().data or []
 
-        result = query.execute()
-        papers = result.data or []
+        by_id = {p['id']: p for p in papers}
 
-        for p in papers:
-            pid = p['id']
-            seen_paper_ids.add(pid)
-            nodes.append({
-                'id': f'paper_{pid}',
-                'label': (p['paper_title'] or 'Untitled')[:40],
-                'title': p['paper_title'],
-                'group': 'paper',
-                'category': p.get('primary_category', 'general'),
-                'published_date': p.get('published_date'),
-                'quality_score': p.get('quality_score'),
-                'summary_id': pid,
-            })
-
-        # --- Similarity edges ---
-        paper_ids = list(seen_paper_ids)
+        # --- Similarity edges, scoped to papers we actually hold ---------------
+        paper_ids = list(by_id)
+        similarity: List[Dict[str, Any]] = []
         if paper_ids:
-            sim_result = supabase_client.table('paper_similarity') \
+            similarity = supabase_client.table('paper_similarity') \
                 .select('paper_a_id, paper_b_id, similarity_score') \
                 .in_('paper_a_id', paper_ids) \
                 .gte('similarity_score', 0.5) \
                 .limit(200) \
-                .execute()
+                .execute().data or []
+            similarity = [r for r in similarity if r['paper_b_id'] in by_id]
 
-            for row in (sim_result.data or []):
-                if row['paper_b_id'] in seen_paper_ids:
-                    edges.append({
-                        'from': f"paper_{row['paper_a_id']}",
-                        'to': f"paper_{row['paper_b_id']}",
-                        'value': float(row['similarity_score']),
-                        'title': f"Similarity: {row['similarity_score']:.2f}",
-                        'group': 'similarity',
-                        'color': '#94a3b8',
-                    })
-
-        # --- Entity nodes (from entity_relationships) ---
-        if paper_ids:
-            ent_result = supabase_client.table('entity_relationships') \
-                .select('entity_1, entity_1_type, entity_2, entity_2_type, relationship_type, frequency_count, confidence_score') \
-                .limit(300) \
-                .execute()
-
-            entity_color = {
-                'model': '#8b5cf6', 'dataset': '#3b82f6',
-                'metric': '#10b981', 'framework': '#f59e0b',
+        # --- Decide which papers belong on screen ------------------------------
+        if anchor_summary_id and anchor_summary_id in by_id:
+            neighbours = {
+                r['paper_b_id'] if r['paper_a_id'] == anchor_summary_id else r['paper_a_id']
+                for r in similarity
+                if anchor_summary_id in (r['paper_a_id'], r['paper_b_id'])
             }
+            visible = {anchor_summary_id} | neighbours
+        else:
+            visible = set(by_id)
 
-            for row in (ent_result.data or []):
-                for ent, etype in [(row['entity_1'], row['entity_1_type']), (row['entity_2'], row['entity_2_type'])]:
-                    eid = f'entity_{ent}_{etype}'
-                    if eid not in seen_entity_ids:
-                        seen_entity_ids.add(eid)
-                        nodes.append({
-                            'id': eid,
-                            'label': ent[:30],
-                            'group': 'entity',
-                            'entity_type': etype,
-                            'color': entity_color.get(etype, '#64748b'),
-                            'shape': 'box',
-                        })
+        for pid in visible:
+            p = by_id[pid]
+            nodes.append({
+                'id': f'paper_{pid}',
+                'label': (p.get('paper_title') or 'Untitled')[:40],
+                'title': p.get('paper_title'),
+                # Rendered under the title, so a node says which paper it is
+                # and whose. "et al." after the first two, the way a citation
+                # would — the full list does not fit beside a 20px circle.
+                'authors': _authors_label(p.get('paper_authors')),
+                'arxiv_id': p.get('arxiv_id'),
+                'group': 'paper',
+                'category': p.get('primary_category') or 'general',
+                'published_date': p.get('published_date'),
+                'quality_score': p.get('quality_score'),
+                'summary_id': pid,
+                'is_anchor': pid == anchor_summary_id,
+            })
 
+        for row in similarity:
+            if row['paper_a_id'] in visible and row['paper_b_id'] in visible:
+                score = float(row['similarity_score'])
                 edges.append({
-                    'from': f"entity_{row['entity_1']}_{row['entity_1_type']}",
-                    'to': f"entity_{row['entity_2']}_{row['entity_2_type']}",
-                    'value': row.get('frequency_count', 1),
-                    'title': row.get('relationship_type', 'co-occurs'),
-                    'group': 'entity_rel',
-                    'color': '#cbd5e1',
+                    'from': f"paper_{row['paper_a_id']}",
+                    'to': f"paper_{row['paper_b_id']}",
+                    'value': score,
+                    'title': f'{score * 100:.0f}% similar',
+                    'group': 'similarity',
+                })
+
+        # --- Entity nodes, from the papers on screen ---------------------------
+        # An entity earns a node when it is the anchor's, or when it is shared by
+        # more than one paper. A term mentioned by exactly one non-anchor paper
+        # adds a leaf and no information.
+        mentions: Dict[str, Dict[str, Any]] = {}
+        for pid in visible:
+            for name, kind in _paper_entities(by_id[pid]):
+                eid = _entity_id(name, kind)
+                entry = mentions.setdefault(
+                    eid, {'name': name, 'kind': kind, 'papers': set()}
+                )
+                entry['papers'].add(pid)
+
+        for eid, entry in mentions.items():
+            shared = len(entry['papers']) > 1
+            anchored = anchor_summary_id in entry['papers']
+            if not (shared or anchored):
+                continue
+
+            nodes.append({
+                'id': eid,
+                'label': entry['name'][:30],
+                'title': f"{entry['name']} · {entry['kind']}",
+                'group': 'entity',
+                'entity_type': entry['kind'],
+                'shape': 'box',
+                'paper_count': len(entry['papers']),
+            })
+            for pid in entry['papers']:
+                edges.append({
+                    'from': f'paper_{pid}',
+                    'to': eid,
+                    'value': 1,
+                    'title': f"mentions {entry['name']}",
+                    'group': 'mentions',
                 })
 
     except Exception as e:
-        logger.error("knowledge_graph_build_failed", error=str(e))
+        logger.exception("knowledge_graph_build_failed", error=str(e))
 
     return {'nodes': nodes, 'edges': edges}
 

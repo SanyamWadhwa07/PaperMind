@@ -2,18 +2,17 @@
 
 import asyncio
 import structlog
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from supabase import create_client
+from db import supabase as _shared_supabase
 
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from auth.dependencies import CurrentUser
 from schemas import CollectionCreateRequest, AddPaperToCollectionRequest
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 
 @router.get('/collections')
@@ -28,7 +27,7 @@ async def list_collections(current_user: CurrentUser):
 @router.post('/collections', status_code=201)
 async def create_collection(data: CollectionCreateRequest, current_user: CurrentUser):
     user_id = current_user['user_id']
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     row = {
         'user_id':     user_id,
         'name':        data.name,
@@ -80,7 +79,7 @@ async def add_paper_to_collection(
         .upsert({
             'collection_id': collection_id,
             'summary_id':    data.summary_id,
-            'added_at':      datetime.utcnow().isoformat(),
+            'added_at':      datetime.now(timezone.utc).isoformat(),
         })
         .execute()
     )

@@ -3,12 +3,22 @@ import { Network, GitBranch, Users, AlertTriangle, RefreshCw } from 'lucide-reac
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import KnowledgeGraph from '../components/KnowledgeGraph'
-import axios from 'axios'
+import api from '../lib/api'
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Eyebrow,
+  Spinner,
+  Tabs,
+  cx,
+} from '../components/ui/primitives'
 
 const TABS = [
-  { id: 'topic-clusters', label: 'Topic Clusters', icon: Network },
-  { id: 'citation-network', label: 'Citation Network', icon: GitBranch },
-  { id: 'author-graph', label: 'Author Network', icon: Users },
+  { id: 'topic-clusters', label: 'Topics', icon: Network },
+  { id: 'citation-network', label: 'Citations', icon: GitBranch },
+  { id: 'author-graph', label: 'Authors', icon: Users },
   { id: 'contradiction-map', label: 'Contradictions', icon: AlertTriangle },
 ]
 
@@ -35,7 +45,7 @@ export default function ExplorePage() {
     if (graphData[tab]) return
     setLoading(true)
     try {
-      const res = await axios.get(ENDPOINT[tab], {
+      const res = await api.get(ENDPOINT[tab], {
         headers: { Authorization: `Bearer ${token}` },
       })
       setGraphData(prev => ({ ...prev, [tab]: res.data }))
@@ -50,7 +60,7 @@ export default function ExplorePage() {
   const handleRecompute = async () => {
     setRecomputing(true)
     try {
-      await axios.post('/api/corpus/recompute-clusters', {}, {
+      await api.post('/api/corpus/recompute-clusters', {}, {
         headers: { Authorization: `Bearer ${token}` },
       })
       toast.success('Cluster recomputation started (background task).')
@@ -65,7 +75,7 @@ export default function ExplorePage() {
   const handleMapRelations = async () => {
     setRecomputing(true)
     try {
-      await axios.post('/api/corpus/relate-papers', {}, {
+      await api.post('/api/corpus/relate-papers', {}, {
         headers: { Authorization: `Bearer ${token}` },
       })
       toast.success('Relation mapping started. Refresh the citation network in a minute.')
@@ -79,96 +89,95 @@ export default function ExplorePage() {
 
   const current = graphData[activeTab] || { nodes: [], edges: [] }
 
+  const action =
+    activeTab === 'topic-clusters'
+      ? { onClick: handleRecompute, label: 'Recompute clusters', busy: 'Running…' }
+      : activeTab === 'citation-network'
+        ? { onClick: handleMapRelations, label: 'Map relations', busy: 'Mapping…' }
+        : null
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="animate-rise mx-auto max-w-6xl space-y-8">
+      <header className="flex flex-col gap-4 border-b border-line pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
-            Explore Corpus
-          </h1>
-          <p className="mt-1 text-sm text-[#8F8F8F]">
-            Visualise your paper library as interactive graphs
+          <Eyebrow className="block">The whole library at once</Eyebrow>
+          <h1 className="display mt-2 text-display-sm text-ink">Explore</h1>
+          <p className="mt-2 max-w-prose text-sm text-ink-muted">
+            Your corpus drawn as a graph: what clusters together, and where the
+            papers disagree with each other.
           </p>
         </div>
-        {activeTab === 'topic-clusters' && (
-          <button
-            onClick={handleRecompute}
+
+        {action && (
+          <Button
+            variant="secondary"
+            onClick={action.onClick}
             disabled={recomputing}
-            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm disabled:opacity-50"
+            className="shrink-0"
           >
-            <RefreshCw className={`w-4 h-4 ${recomputing ? 'animate-spin' : ''}`} />
-            {recomputing ? 'Running...' : 'Recompute Clusters'}
-          </button>
+            <RefreshCw
+              className={cx('h-4 w-4', recomputing && 'animate-spin')}
+              aria-hidden="true"
+            />
+            {recomputing ? action.busy : action.label}
+          </Button>
         )}
-        {activeTab === 'citation-network' && (
-          <button
-            onClick={handleMapRelations}
-            disabled={recomputing}
-            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm disabled:opacity-50"
-            title="Use the RelationAgent to label how your papers relate (extends, replicates, shares method...)"
-          >
-            <RefreshCw className={`w-4 h-4 ${recomputing ? 'animate-spin' : ''}`} />
-            {recomputing ? 'Mapping...' : 'Map Relations (AI)'}
-          </button>
-        )}
-      </div>
+      </header>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === id
-                ? 'border-[#00988F] text-[#00988F]'
-                : 'border-transparent text-[#8F8F8F] hover:text-[#1B1B1B] dark:hover:text-[#F5F5F5]'
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={TABS.map(({ id, label }) => ({ id, label }))}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
 
-      {/* Graph area */}
-      <div className="card p-0 overflow-hidden rounded-xl">
-        {loading ? (
-          <div className="flex items-center justify-center h-96">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#00988F]" />
-          </div>
-        ) : current.nodes?.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-96 text-slate-400">
-            <Network className="w-12 h-12 mb-3 opacity-40" />
-            <p className="text-sm">No data yet. Process some papers first.</p>
-            {activeTab === 'topic-clusters' && (
-              <p className="text-xs mt-1 opacity-60">Then click "Recompute Clusters".</p>
-            )}
-          </div>
-        ) : (
-          <KnowledgeGraph
-            nodes={current.nodes}
-            edges={current.edges}
-            height={520}
-          />
-        )}
-      </div>
+      {loading ? (
+        <Card className="flex h-96 items-center justify-center">
+          <Spinner className="text-accent" />
+        </Card>
+      ) : current.nodes?.length === 0 ? (
+        <EmptyState
+          icon={Network}
+          title="Nothing to draw yet"
+          description={
+            activeTab === 'topic-clusters'
+              ? 'Process a few papers, then recompute clusters to see how they group.'
+              : 'Process a few papers and this graph fills in.'
+          }
+        />
+      ) : (
+        <KnowledgeGraph nodes={current.nodes} edges={current.edges} height={520} />
+      )}
 
-      {/* Legend */}
       {activeTab === 'topic-clusters' && current.nodes?.length > 0 && (
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Eyebrow>Clusters</Eyebrow>
           {(current.cluster_labels || []).slice(0, 8).map((lbl, i) => (
-            <span key={i} className="px-2 py-1 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            <Badge key={i} tone="outline">
               {lbl}
-            </span>
+            </Badge>
           ))}
         </div>
       )}
-      {activeTab === 'citation-network' && (
-        <div className="flex gap-4 text-xs text-slate-500">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500 inline-block" /> Foundational</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500 inline-block" /> Frontier</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-yellow-400 inline-block" /> Bridge</span>
+
+      {activeTab === 'citation-network' && current.nodes?.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Eyebrow>Role in the corpus</Eyebrow>
+          {[
+            ['Foundational', 'bg-stage-5'],
+            ['Frontier', 'bg-stage-2'],
+            ['Bridge', 'bg-stage-3'],
+          ].map(([label, fill]) => (
+            <span
+              key={label}
+              className="flex items-center gap-1.5 text-caption text-ink-muted"
+            >
+              <span
+                className={cx('inline-block h-2.5 w-2.5 rounded-full', fill)}
+                aria-hidden="true"
+              />
+              {label}
+            </span>
+          ))}
         </div>
       )}
     </div>

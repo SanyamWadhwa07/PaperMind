@@ -1,272 +1,278 @@
-import { Link, useNavigate } from 'react-router-dom'
-import { BookOpen, Github, Moon, Sun, Menu, X, User, LogOut, LayoutDashboard, Calendar } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import {
+  Compass,
+  FileText,
+  LayoutDashboard,
+  Layers,
+  LogOut,
+  Menu,
+  Moon,
+  Network,
+  Sun,
+  User,
+  X,
+} from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
+import { Button, cx } from './ui/primitives'
 import Logo from './Logo'
 
-export default function Layout({ children }) {
-  const { isAuthenticated, user, logout } = useAuth()
+/**
+ * Navigation is grouped by what the user is doing, not by which endpoint backs
+ * it: one paper at a time (Library, Add paper) vs. the whole corpus (Explore,
+ * Timeline, Discover).
+ */
+const NAV_SECTIONS = [
+  {
+    label: 'Papers',
+    items: [
+      { to: '/dashboard', label: 'Library', icon: LayoutDashboard, private: true },
+      { to: '/', label: 'Add paper', icon: FileText, private: false },
+      { to: '/batch', label: 'Batch', icon: Layers, private: false },
+    ],
+  },
+  {
+    label: 'Corpus',
+    items: [
+      { to: '/explore', label: 'Explore', icon: Network, private: true },
+      { to: '/timeline', label: 'Timeline', icon: Compass, private: true },
+      { to: '/discover', label: 'Discover', icon: Compass, private: true },
+    ],
+  },
+]
+
+function ThemeToggle() {
+  const { theme, toggle } = useTheme()
+  const isDark = theme === 'dark'
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={toggle}
+      aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+      title={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </Button>
+  )
+}
+
+function NavItems({ onNavigate }) {
+  const { isAuthenticated } = useAuth()
+
+  return (
+    <nav className="space-y-6">
+      {NAV_SECTIONS.map((section) => {
+        const items = section.items.filter((item) => !item.private || isAuthenticated)
+        if (!items.length) return null
+
+        return (
+          <div key={section.label}>
+            <p className="px-3 text-eyebrow font-medium uppercase text-ink-faint">
+              {section.label}
+            </p>
+            <ul className="mt-2 space-y-0.5">
+              {items.map(({ to, label, icon: Icon }) => (
+                <li key={to}>
+                  <NavLink
+                    to={to}
+                    end={to === '/'}
+                    onClick={onNavigate}
+                    className={({ isActive }) =>
+                      cx(
+                        'flex items-center gap-2.5 rounded px-3 py-2 text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-accent-soft text-accent'
+                          : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                      )
+                    }
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
+    </nav>
+  )
+}
+
+function AccountMenu() {
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode')
-    return saved ? JSON.parse(saved) : false
-  })
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef(null)
 
+  // Close on outside click and on Escape — a menu that traps the user is a bug.
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-    localStorage.setItem('darkMode', JSON.stringify(darkMode))
-  }, [darkMode])
+    if (!open) return
 
-  const handleLogout = () => {
-    logout()
-    setProfileMenuOpen(false)
+    const onPointerDown = (event) => {
+      if (!containerRef.current?.contains(event.target)) setOpen(false)
+    }
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const handleLogout = async () => {
+    setOpen(false)
+    await logout()
     navigate('/login')
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#F9FBFA] via-[#E8F0EF] to-[#F9FBFA] dark:from-[#111312] dark:via-[#161817] dark:to-[#111312] transition-colors duration-300">
-      {/* Header */}
-      <header className="bg-[#EEF4F3]/80 dark:bg-[#1E2020]/80 backdrop-blur-xl border-b border-[#C4935F]/20 dark:border-[#D9A86C]/20 shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <Link to="/" className="flex items-center gap-2 sm:gap-3 group">
-              <div className="text-[#00988F] dark:text-[#00A7A0] transition-all group-hover:scale-110">
-                <Logo className="w-10 h-12 sm:w-12 sm:h-14" type="icon" />
-              </div>
-              <div className="hidden sm:block">
-                <h1 className="text-xl sm:text-2xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
-                  PaperMind
-                </h1>
-                <p className="text-xs sm:text-sm text-[#1B1B1B] dark:text-[#F5F5F5]">
-                  AI-powered research paper intelligence
-                </p>
-              </div>
-              <div className="sm:hidden">
-                <h1 className="text-lg font-bold text-[#C4935F] dark:text-[#D9A86C]">
-                  PaperMind
-                </h1>
-              </div>
-            </Link>
-            
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-4">
-              <Link
-                to="/"
-                className="text-[#1B1B1B] dark:text-[#F5F5F5] hover:text-[#00988F] dark:hover:text-[#00A7A0] font-medium transition-colors"
-              >
-                Home
-              </Link>
-              {isAuthenticated && (
-                <Link
-                  to="/dashboard"
-                  className="text-[#1B1B1B] dark:text-[#F5F5F5] hover:text-[#00988F] dark:hover:text-[#00A7A0] font-medium transition-colors"
-                >
-                  Dashboard
-                </Link>
-              )}
-              <Link
-                to="/batch"
-                className="text-[#1B1B1B] dark:text-[#F5F5F5] hover:text-[#00988F] dark:hover:text-[#00A7A0] font-medium transition-colors"
-              >
-                Batch
-              </Link>
-              {isAuthenticated && (
-                <Link
-                  to="/timeline"
-                  className="text-[#1B1B1B] dark:text-[#F5F5F5] hover:text-[#00988F] dark:hover:text-[#00A7A0] font-medium transition-colors flex items-center gap-1"
-                >
-                  <Calendar className="w-4 h-4" />
-                  Timeline
-                </Link>
-              )}
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-surface-sunk text-sm font-semibold text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
+      >
+        {user?.full_name?.[0]?.toUpperCase() ||
+          user?.email?.[0]?.toUpperCase() || <User className="h-4 w-4" />}
+      </button>
 
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="p-2 rounded-lg bg-[#EEF4F3] dark:bg-[#1E2020] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] transition-all border border-[#C4935F]/20 dark:border-[#D9A86C]/20"
-                aria-label="Toggle dark mode"
-              >
-                {darkMode ? (
-                  <Sun className="w-5 h-5 text-[#D9A86C]" />
-                ) : (
-                  <Moon className="w-5 h-5 text-[#00988F]" />
-                )}
-              </button>
-              
-              <a
-                href="https://github.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#8F8F8F] dark:text-[#8F8F8F] hover:text-[#00988F] dark:hover:text-[#00A7A0] transition-colors"
-              >
-                <Github className="w-5 h-5" />
-              </a>
+      {open && (
+        <div
+          role="menu"
+          className="animate-fade absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
+        >
+          <div className="border-b border-line px-3 py-2.5">
+            <p className="truncate text-sm font-medium text-ink">
+              {user?.full_name || 'Signed in'}
+            </p>
+            <p className="truncate text-xs text-ink-muted">{user?.email}</p>
+          </div>
+          <Link
+            to="/profile"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+          >
+            <User className="h-4 w-4" />
+            Profile
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleLogout}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-danger"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
-              {/* Profile Menu */}
-              {isAuthenticated ? (
-                <div className="relative">
-                  <button
-                    onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                    className="p-2 rounded-lg bg-gradient-to-br from-[#00988F] to-[#00A7A0] dark:from-[#00A7A0] dark:to-[#008F89] hover:shadow-lg transition-all"
-                  >
-                    <User className="w-5 h-5 text-white" />
-                  </button>
-                  {profileMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-48 bg-[#EEF4F3] dark:bg-[#1E2020] rounded-lg shadow-lg border border-[#C4935F]/20 dark:border-[#D9A86C]/20 py-2 z-50">
-                      <div className="px-4 py-2 border-b border-[#C4935F]/20 dark:border-[#D9A86C]/20">
-                        <p className="text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5]">{user?.email}</p>
-                      </div>
-                      <Link
-                        to="/profile"
-                        onClick={() => setProfileMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] transition-colors"
-                      >
-                        <User className="w-4 h-4" />
-                        Profile
-                      </Link>
-                      <Link
-                        to="/dashboard"
-                        onClick={() => setProfileMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] transition-colors"
-                      >
-                        <LayoutDashboard className="w-4 h-4" />
-                        Dashboard
-                      </Link>
-                      <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-[#E0EBE9] dark:hover:bg-[#252727] transition-colors"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        Logout
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <Link to="/login" className="btn-primary">
-                  Login
-                </Link>
-              )}
-            </nav>
+export default function Layout({ children }) {
+  const { isAuthenticated } = useAuth()
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const location = useLocation()
 
-            {/* Mobile Navigation */}
-            <div className="md:hidden flex items-center gap-2">
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="p-2 rounded-lg bg-[#EEF4F3] dark:bg-[#1E2020] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] transition-all border border-[#C4935F]/20 dark:border-[#D9A86C]/20"
-                aria-label="Toggle dark mode"
-              >
-                {darkMode ? (
-                  <Sun className="w-4 h-4 text-[#D9A86C]" />
-                ) : (
-                  <Moon className="w-4 h-4 text-[#00988F]" />
-                )}
-              </button>
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded-lg bg-[#EEF4F3] dark:bg-[#1E2020] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] transition-all border border-[#C4935F]/20 dark:border-[#D9A86C]/20"
-                aria-label="Toggle menu"
-              >
-                {mobileMenuOpen ? (
-                  <X className="w-5 h-5 text-[#1B1B1B] dark:text-[#F5F5F5]" />
-                ) : (
-                  <Menu className="w-5 h-5 text-[#1B1B1B] dark:text-[#F5F5F5]" />
-                )}
-              </button>
-            </div>
+  // A route change must dismiss the mobile drawer, or it covers the new page.
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [location.pathname])
+
+  return (
+    // Column layout so the footer is pushed to the bottom of the viewport on
+    // short pages instead of floating halfway up with dead space beneath it.
+    <div className="flex min-h-screen flex-col bg-canvas">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-accent focus:px-4 focus:py-2 focus:text-accent-ink"
+      >
+        Skip to content
+      </a>
+
+      <header className="sticky top-0 z-50 border-b border-line bg-canvas/85 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-[1400px] 2xl:max-w-[1700px] items-center gap-3 px-4 sm:px-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileOpen}
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
+
+          <Link to="/" className="flex items-center gap-2">
+            <Logo className="h-7 w-6 text-accent" type="icon" />
+            <span className="text-base font-semibold tracking-tight text-ink">
+              PaperMind
+            </span>
+          </Link>
+
+          <div className="ml-auto flex items-center gap-1">
+            <ThemeToggle />
+            {isAuthenticated ? (
+              <AccountMenu />
+            ) : (
+              <Button to="/login" size="sm">
+                Sign in
+              </Button>
+            )}
           </div>
         </div>
-        
-        {/* Mobile Menu Dropdown */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-[#C4935F]/20 dark:border-[#D9A86C]/20 bg-[#EEF4F3] dark:bg-[#1E2020]">
-            <div className="px-4 py-3 space-y-2">
-              <Link
-                to="/"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block px-4 py-2 text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
-              >
-                Home
-              </Link>
-              {isAuthenticated && (
-                <Link
-                  to="/dashboard"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block px-4 py-2 text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
-                >
-                  Dashboard
-                </Link>
-              )}
-              <Link
-                to="/batch"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block px-4 py-2 text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
-              >
-                Batch Process
-              </Link>
-              {isAuthenticated && (
-                <Link
-                  to="/timeline"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block px-4 py-2 text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
-                >
-                  Timeline
-                </Link>
-              )}
-              {isAuthenticated ? (
-                <>
-                  <Link
-                    to="/profile"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-2 text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
-                  >
-                    Profile
-                  </Link>
-                  <button
-                    onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
-                    className="block w-full text-left px-4 py-2 text-red-600 dark:text-red-400 hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
-                  >
-                    Logout
-                  </button>
-                </>
-              ) : (
-                <Link
-                  to="/login"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block px-4 py-2 text-[#1B1B1B] dark:text-[#F5F5F5] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
-                >
-                  Login
-                </Link>
-              )}
-              <a
-                href="https://github.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block px-4 py-2 text-[#8F8F8F] dark:text-[#8F8F8F] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] rounded-lg font-medium transition-colors"
-              >
-                GitHub
-              </a>
-            </div>
-          </div>
-        )}
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 md:py-8">
-        {children}
-      </main>
+      {/* The 1400px cap left roughly a quarter of a 1920px display as empty
+          gutter. It still holds on a laptop, where a wider measure would hurt;
+          `2xl` (1536px and up) is where the extra width is real screen rather
+          than an over-long line. */}
+      <div className="mx-auto flex w-full max-w-[1400px] 2xl:max-w-[1700px] flex-1 gap-8 px-4 py-6 sm:px-6 lg:py-8">
+        {/* Desktop rail. Sticks below the header so navigation is always to hand. */}
+        <aside className="hidden w-52 shrink-0 lg:block">
+          <div className="sticky top-20">
+            <NavItems />
+          </div>
+        </aside>
 
-      {/* Footer */}
-      <footer className="bg-[#EEF4F3]/50 dark:bg-[#1E2020]/60 backdrop-blur-sm border-t border-[#C4935F]/20 dark:border-[#D9A86C]/20 mt-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <p className="text-center text-[#1B1B1B] dark:text-[#F5F5F5] text-sm">
-            Built with React, Flask, and LED Transformer 
-          </p>
+        {/* Mobile drawer */}
+        {mobileOpen && (
+          <>
+            <div
+              className="fixed inset-0 top-14 z-30 bg-ink/20 lg:hidden"
+              onClick={() => setMobileOpen(false)}
+              aria-hidden="true"
+            />
+            <aside className="animate-fade fixed inset-y-14 left-0 z-40 w-64 overflow-y-auto border-r border-line bg-surface p-4 lg:hidden">
+              <NavItems onNavigate={() => setMobileOpen(false)} />
+            </aside>
+          </>
+        )}
+
+        {/* `isolate` keeps page content in its own stacking context. Page roots
+            carry a filling `animate-rise`, which Chrome treats as a permanent
+            stacking context, and without this one of those could paint over the
+            account menu dropping out of the header. */}
+        <main id="main" className="isolate min-w-0 flex-1">
+          {children}
+        </main>
+      </div>
+
+      <footer className="border-t border-line py-6">
+        <div className="mx-auto flex max-w-[1400px] 2xl:max-w-[1700px] flex-wrap items-center justify-between gap-2 px-4 text-xs text-ink-faint sm:px-6">
+          <p>PaperMind. Structured reading for research papers.</p>
+          <p className="font-mono tabular">v2.0.0</p>
         </div>
       </footer>
     </div>

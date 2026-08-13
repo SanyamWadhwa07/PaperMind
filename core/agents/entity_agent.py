@@ -125,12 +125,18 @@ class EntityAgent(BaseAgent):
         # Update experience DB with validated entities
         for entity_type, entity_list in validated_entities.items():
             for entity in entity_list:
-                if confidence_scores.get(entity, 0) >= 0.6:
+                confidence = confidence_scores.get(entity, 0)
+                if confidence >= 0.6:
                     await self.update_experience(
                         'entity',
                         entity_name=entity,
                         entity_type=entity_type,
-                        occurrence_count=1
+                        # The score this run arrived at — what makes the running
+                        # cross-paper average move. Omitting it used to raise a
+                        # KeyError for every validated entity, so nothing the
+                        # agent learned was ever written back.
+                        confidence=confidence,
+                        context=entity_type,
                     )
 
         # Infer semantic relationships from section context

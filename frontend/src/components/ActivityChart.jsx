@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -10,8 +10,11 @@ import {
   Tooltip,
   Legend,
   ArcElement,
+  Filler,
 } from 'chart.js';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { useTheme } from '../contexts/ThemeContext';
+import { Card, cx } from './ui/primitives';
 
 ChartJS.register(
   CategoryScale,
@@ -22,181 +25,205 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  ArcElement
+  ArcElement,
+  Filler
 );
+
+/**
+ * Chart.js takes concrete colour strings, not CSS variables, so the tokens are
+ * resolved from the document at render time. Keyed on the active theme, the
+ * charts re-resolve when the palette swaps rather than baking in one theme.
+ */
+function readToken(name, alpha = 1) {
+  if (typeof window === 'undefined') return '#000';
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--${name}`)
+    .trim();
+  if (!raw) return '#000';
+  return alpha === 1 ? `rgb(${raw})` : `rgba(${raw.split(' ').join(', ')}, ${alpha})`;
+}
+
+const VIEWS = [
+  { id: 'line', label: 'Trend' },
+  { id: 'bar', label: 'Volume' },
+  { id: 'doughnut', label: 'Mix' },
+];
 
 export default function ActivityChart({ monthlySummaries = {}, recentActivity = [] }) {
   const [chartType, setChartType] = useState('line');
+  const { theme } = useTheme();
 
-  // Prepare monthly data
   const months = Object.keys(monthlySummaries).sort();
-  const counts = months.map(month => monthlySummaries[month]);
+  const counts = months.map((month) => monthlySummaries[month]);
+
+  const palette = useMemo(
+    () => ({
+      accent: readToken('accent'),
+      accentFill: readToken('accent', 0.12),
+      ink: readToken('ink'),
+      inkFaint: readToken('ink-faint'),
+      line: readToken('border'),
+      surface: readToken('surface'),
+      // The stage pastels are this system's categorical set — they exist to
+      // mark kinds of things, which is exactly what the mix chart shows.
+      stages: [1, 2, 3, 4, 5].map((n) => readToken(`stage-${n}`)),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [theme]
+  );
+
+  const monthLabel = (m, opts) => {
+    const [year, month] = m.split('-');
+    return new Date(year, month - 1).toLocaleDateString('en-US', opts);
+  };
 
   const lineChartData = {
-    labels: months.map(m => {
-      const [year, month] = m.split('-');
-      return new Date(year, month - 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    }),
+    labels: months.map((m) => monthLabel(m, { month: 'short', year: 'numeric' })),
     datasets: [
       {
-        label: 'Papers Summarized',
+        label: 'Papers summarised',
         data: counts,
-        borderColor: 'rgb(20, 184, 166)',
-        backgroundColor: 'rgba(20, 184, 166, 0.1)',
-        tension: 0.4,
+        borderColor: palette.accent,
+        backgroundColor: palette.accentFill,
+        pointBackgroundColor: palette.accent,
+        pointBorderColor: palette.surface,
+        pointBorderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        borderWidth: 2,
+        tension: 0.35,
         fill: true,
       },
     ],
   };
 
   const barChartData = {
-    labels: months.map(m => {
-      const [year, month] = m.split('-');
-      return new Date(year, month - 1).toLocaleDateString('en-US', { month: 'short' });
-    }),
+    labels: months.map((m) => monthLabel(m, { month: 'short' })),
     datasets: [
       {
-        label: 'Papers per Month',
+        label: 'Papers per month',
         data: counts,
-        backgroundColor: 'rgba(20, 184, 166, 0.8)',
-        borderColor: 'rgb(20, 184, 166)',
-        borderWidth: 1,
+        backgroundColor: palette.accent,
+        borderRadius: 4,
+        borderWidth: 0,
+        maxBarThickness: 28,
       },
     ],
   };
 
-  // Activity type distribution
   const activityTypes = {};
-  recentActivity.forEach(activity => {
+  recentActivity.forEach((activity) => {
     const type = activity.activity_type || 'other';
     activityTypes[type] = (activityTypes[type] || 0) + 1;
   });
 
   const doughnutData = {
-    labels: Object.keys(activityTypes).map(t => t.charAt(0).toUpperCase() + t.slice(1)),
+    labels: Object.keys(activityTypes).map(
+      (t) => t.charAt(0).toUpperCase() + t.slice(1)
+    ),
     datasets: [
       {
         data: Object.values(activityTypes),
-        backgroundColor: [
-          'rgba(20, 184, 166, 0.8)',
-          'rgba(217, 119, 6, 0.8)',
-          'rgba(239, 68, 68, 0.8)',
-          'rgba(59, 130, 246, 0.8)',
-          'rgba(168, 85, 247, 0.8)',
-        ],
-        borderColor: [
-          'rgb(20, 184, 166)',
-          'rgb(217, 119, 6)',
-          'rgb(239, 68, 68)',
-          'rgb(59, 130, 246)',
-          'rgb(168, 85, 247)',
-        ],
+        backgroundColor: palette.stages,
+        borderColor: palette.surface,
         borderWidth: 2,
       },
     ],
   };
 
+  const font = {
+    family: "'JetBrains Mono Variable', ui-monospace, monospace",
+    size: 11,
+  };
+
+  const tooltip = {
+    backgroundColor: palette.ink,
+    titleFont: { ...font, size: 12 },
+    bodyFont: font,
+    padding: 10,
+    cornerRadius: 8,
+    displayColors: false,
+  };
+
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    // Cursor's motion budget is tight; charts arrive quickly and settle.
+    animation: { duration: 200, easing: 'easeOutQuart' },
     plugins: {
-      legend: {
-        position: 'top',
-        labels: {
-          color: '#94a3b8',
-          font: {
-            family: "'Inter', sans-serif",
-          },
-        },
-      },
-      title: {
-        display: false,
-      },
+      legend: { display: false },
+      title: { display: false },
+      tooltip,
     },
-    scales: chartType !== 'doughnut' ? {
+    scales: {
       y: {
         beginAtZero: true,
-        ticks: {
-          color: '#94a3b8',
-          stepSize: 1,
-        },
-        grid: {
-          color: 'rgba(148, 163, 184, 0.1)',
-        },
+        border: { display: false },
+        ticks: { color: palette.inkFaint, font, stepSize: 1, padding: 8 },
+        grid: { color: palette.line, drawTicks: false },
       },
       x: {
-        ticks: {
-          color: '#94a3b8',
-        },
-        grid: {
-          display: false,
-        },
+        border: { color: palette.line },
+        ticks: { color: palette.inkFaint, font, padding: 8 },
+        grid: { display: false },
       },
-    } : {},
+    },
   };
 
   const doughnutOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    cutout: '62%',
+    animation: { duration: 200, easing: 'easeOutQuart' },
     plugins: {
       legend: {
         position: 'right',
         labels: {
-          color: '#94a3b8',
-          font: {
-            family: "'Inter', sans-serif",
-          },
-          padding: 15,
+          color: palette.inkFaint,
+          font,
+          padding: 14,
+          boxWidth: 8,
+          boxHeight: 8,
+          usePointStyle: true,
+          pointStyle: 'circle',
         },
       },
-      title: {
-        display: false,
-      },
+      title: { display: false },
+      tooltip,
     },
   };
 
+  const isEmpty = months.length === 0 && recentActivity.length === 0;
+
   return (
-    <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-white">Activity Over Time</h3>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setChartType('line')}
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              chartType === 'line'
-                ? 'bg-teal-500 text-white'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}
-          >
-            Line
-          </button>
-          <button
-            onClick={() => setChartType('bar')}
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              chartType === 'bar'
-                ? 'bg-teal-500 text-white'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}
-          >
-            Bar
-          </button>
-          <button
-            onClick={() => setChartType('doughnut')}
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              chartType === 'doughnut'
-                ? 'bg-teal-500 text-white'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}
-          >
-            Distribution
-          </button>
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-4">
+        <h3 className="text-base font-semibold text-ink">Activity</h3>
+        <div className="inline-flex rounded border border-line bg-surface-sunk p-0.5">
+          {VIEWS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setChartType(id)}
+              aria-pressed={chartType === id}
+              className={cx(
+                'rounded-sm px-3 py-1.5 text-caption font-medium',
+                'transition-colors duration-fast ease-out',
+                chartType === id
+                  ? 'bg-surface text-ink'
+                  : 'text-ink-faint hover:text-ink'
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="h-64 md:h-80">
-        {months.length === 0 && recentActivity.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-slate-400">
-            No activity data available yet
+      <div className="h-64 p-6 md:h-72">
+        {isEmpty ? (
+          <div className="flex h-full items-center justify-center text-sm text-ink-faint">
+            Nothing to plot yet. Summarise a paper to start the record.
           </div>
         ) : chartType === 'line' ? (
           <Line data={lineChartData} options={chartOptions} />
@@ -206,6 +233,6 @@ export default function ActivityChart({ monthlySummaries = {}, recentActivity = 
           <Doughnut data={doughnutData} options={doughnutOptions} />
         )}
       </div>
-    </div>
+    </Card>
   );
 }

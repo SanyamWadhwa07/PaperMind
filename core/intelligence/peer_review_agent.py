@@ -1,11 +1,12 @@
 """PeerReviewSimulator — critiques a paper as a reviewer would."""
 
 import json
-import logging
+import structlog
+from core.llm.json_parse import parse_json_object
 import re
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 PEER_REVIEW_SYSTEM = """You are an expert peer reviewer for top AI/ML conferences (NeurIPS, ICML, ICLR).
 Evaluate the paper rigorously and objectively. Score each dimension 1-10.
@@ -72,8 +73,9 @@ async def simulate_peer_review(
     )
 
     llm = get_llm(llm_config)
-    raw = await llm.generate(prompt, system_prompt=PEER_REVIEW_SYSTEM, max_tokens=1024)
+    raw = await llm.generate(prompt, system_prompt=PEER_REVIEW_SYSTEM, max_tokens=2048)
 
+    # Raises PeerReviewUnavailableError rather than persisting a fabricated review.
     result = _parse_review(raw)
 
     # Persist
@@ -91,20 +93,39 @@ async def simulate_peer_review(
     return result
 
 
+class PeerReviewUnavailableError(RuntimeError):
+    """The model did not return a parseable review."""
+
+
+#: The score card is built entirely from these. A review missing any of them
+#: renders as a card of blank bars, which is worse than no card at all.
+REQUIRED_SCORES = ("novelty", "soundness", "clarity", "significance")
+
+
 def _parse_review(raw: str) -> Dict:
-    try:
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        if m:
-            return json.loads(m.group())
-    except Exception:
-        pass
-    return {
-        "novelty": 5,
-        "soundness": 5,
-        "clarity": 5,
-        "significance": 5,
-        "recommendation": "major_revision",
-        "major_concerns": ["Unable to parse structured review"],
-        "minor_concerns": [],
-        "summary": raw[:300],
-    }
+    """Parse the model's JSON review, or raise.
+
+    This used to return straight 5s on every axis with a
+    "major_revision" recommendation. That fabricated review was then written to
+    paper_intelligence and served from cache forever, so a single parse failure
+    permanently became the paper's review — with the only hint buried in
+    major_concerns where a score card would never show it.
+
+    The scores are checked rather than merely the parse, because the parser will
+    now recover a partial object from a reply that was cut off at the token
+    ceiling. Recovering half a review is right for research gaps, where every
+    item found is worth keeping; it is wrong here, where the missing half is
+    the score card itself.
+    """
+    parsed = parse_json_object(raw)
+    if not parsed:
+        raise PeerReviewUnavailableError(
+            "model returned no parseable JSON object; cannot produce a review"
+        )
+
+    missing = [k for k in REQUIRED_SCORES if not isinstance(parsed.get(k), (int, float))]
+    if missing:
+        raise PeerReviewUnavailableError(
+            f"review is missing required scores: {', '.join(missing)}"
+        )
+    return parsed

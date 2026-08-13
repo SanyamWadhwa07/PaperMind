@@ -2,10 +2,10 @@
 
 import difflib
 import json
-import logging
+import structlog
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 DIFFABLE_KEYS = [
     "summaries.simple",

@@ -1,133 +1,133 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useToast } from '../contexts/ToastContext';
-import { Lock, CheckCircle } from 'lucide-react';
+import { useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { CheckCircle2 } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { auth } from '../lib/api'
+import { Button, Card, CardBody, Field, Input } from '../components/ui/primitives'
+
+/** Mirrors the server-side policy so the user sees problems before submitting. */
+const RULES = [
+  { test: (v) => v.length >= 8, label: 'At least 8 characters' },
+  { test: (v) => /[A-Z]/.test(v), label: 'One uppercase letter' },
+  { test: (v) => /[a-z]/.test(v), label: 'One lowercase letter' },
+  { test: (v) => /\d/.test(v), label: 'One number' },
+]
 
 export default function ResetPasswordPage() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const toast = useToast();
-  
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [accessToken, setAccessToken] = useState('');
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const token = params.get('token') || ''
 
-  useEffect(() => {
-    // Extract access_token from URL hash (Supabase redirects with #access_token=...)
-    const hash = window.location.hash;
-    const params = new URLSearchParams(hash.substring(1));
-    const token = params.get('access_token');
-    
-    if (token) {
-      setAccessToken(token);
-    } else {
-      toast.error('Invalid reset link');
-      setTimeout(() => navigate('/forgot-password'), 2000);
-    }
-  }, []);
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const unmet = RULES.filter((rule) => !rule.test(password))
+  const mismatch = confirm.length > 0 && confirm !== password
+  const canSubmit = token && !unmet.length && !mismatch && confirm.length > 0
 
-    if (!password || !confirmPassword) {
-      toast.error('Please fill in all fields');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
-    if (password.length < 8) {
-      toast.error('Password must be at least 8 characters');
-      return;
-    }
-
-    setLoading(true);
-
+  const onSubmit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setSubmitting(true)
     try {
-      const response = await fetch('http://localhost:5000/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          access_token: accessToken,
-          new_password: password
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast.success('Password reset successfully!');
-        setTimeout(() => navigate('/login'), 2000);
-      } else {
-        toast.error(data.error || 'Failed to reset password');
-      }
-    } catch (error) {
-      toast.error('Network error. Please try again.');
+      await auth.resetPassword(token, password)
+      toast.success('Password updated. Sign in with your new password.')
+      navigate('/login', { replace: true })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSubmitting(false)
     }
+  }
 
-    setLoading(false);
-  };
+  if (!token) {
+    return (
+      <div className="mx-auto max-w-md py-12">
+        <Card>
+          <CardBody className="text-center">
+            <h1 className="text-lg font-semibold text-ink">This link is incomplete</h1>
+            <p className="mt-2 text-sm text-ink-muted">
+              The reset link is missing its token. Request a new one to continue.
+            </p>
+            <Button to="/forgot-password" className="mt-5">
+              Request a new link
+            </Button>
+          </CardBody>
+        </Card>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
-            Reset Password
-          </h2>
-          <p className="mt-2 text-sm sm:text-base text-[#1B1B1B] dark:text-[#F5F5F5]">
-            Enter your new password below
-          </p>
-        </div>
+    <div className="mx-auto max-w-md py-12">
+      <Card>
+        <CardBody>
+          <h1 className="text-lg font-semibold text-ink">Choose a new password</h1>
 
-        <form className="card space-y-6" onSubmit={handleSubmit}>
-          <div>
-            <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-              New Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-              <input
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+            <Field label="New password" htmlFor="password">
+              <Input
+                id="password"
                 type="password"
+                autoComplete="new-password"
+                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5]"
-                placeholder="At least 8 characters"
-                required
               />
-            </div>
-          </div>
+            </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-              Confirm Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-              <input
+            {password.length > 0 && (
+              <ul className="space-y-1">
+                {RULES.map((rule) => {
+                  const met = rule.test(password)
+                  return (
+                    <li
+                      key={rule.label}
+                      className={`flex items-center gap-1.5 text-xs ${
+                        met ? 'text-success' : 'text-ink-faint'
+                      }`}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      {rule.label}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            <Field
+              label="Confirm password"
+              htmlFor="confirm"
+              error={mismatch ? 'Passwords do not match' : error}
+            >
+              <Input
+                id="confirm"
                 type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5]"
-                placeholder="Confirm your password"
+                autoComplete="new-password"
                 required
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                invalid={mismatch}
               />
-            </div>
-          </div>
+            </Field>
 
-          <button
-            type="submit"
-            disabled={loading || !accessToken}
-            className="w-full btn-primary"
-          >
-            {loading ? 'Resetting...' : 'Reset Password'}
-          </button>
-        </form>
-      </div>
+            <Button
+              type="submit"
+              className="w-full"
+              loading={submitting}
+              disabled={!canSubmit}
+            >
+              Update password
+            </Button>
+          </form>
+
+          <Link to="/login" className="mt-5 inline-block text-sm text-accent hover:underline">
+            Back to sign in
+          </Link>
+        </CardBody>
+      </Card>
     </div>
-  );
+  )
 }

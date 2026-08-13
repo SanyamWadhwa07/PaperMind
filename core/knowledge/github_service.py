@@ -1,13 +1,13 @@
 """GitHub link enrichment service."""
 
-import logging
+import structlog
 import re
 import time
 from typing import List, Dict
 
 import httpx
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 GITHUB_API = "https://api.github.com"
 _last_request_time = 0.0

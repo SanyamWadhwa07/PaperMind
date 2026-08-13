@@ -61,7 +61,10 @@ class ParallelAgentOrchestrator:
         self.patterns = patterns or {}
         self.config = config or {}
         self.experience_store = experience_store
-        
+
+        # Per-agent outcome for the most recent run — see the parallel phase.
+        self.stage_status: Dict[str, Dict[str, Any]] = {}
+
         # Initialize message bus
         self.message_bus = AgentMessageBus()
         
@@ -162,7 +165,13 @@ class ParallelAgentOrchestrator:
             parallel_tasks = [
                 self.entity_agent.execute({'sections': sections, 'domain': domain}),
                 self.results_agent.execute({'sections': sections, 'domain': domain}),
-                self.figure_agent.execute({'pdf_path': pdf_path, 'sections': sections}),
+                # Reuse the figures MinerU/pymupdf4llm already extracted in phase 1
+                # instead of re-extracting them with the weaker legacy extractor.
+                self.figure_agent.execute({
+                    'pdf_path': pdf_path,
+                    'sections': sections,
+                    'pre_extracted_figures': structure_result.get('pre_extracted_figures') or [],
+                }),
                 self.reasoning_agent.execute({'sections': sections}),
                 self.research_gap_agent.execute({'sections': sections, 'domain': domain}),
                 self.ablation_agent.execute({'sections': sections}),
@@ -172,21 +181,35 @@ class ParallelAgentOrchestrator:
             # Wait for all parallel tasks
             parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
 
-            # Unpack results (handle exceptions)
+            # Unpack results, recording *why* each agent produced nothing. These
+            # failures used to be logged and then dropped, so a paper whose agents
+            # all crashed was indistinguishable from one that genuinely had no
+            # entities/figures/ablations. stage_status travels with the result.
             _agent_names = ['entity', 'results', 'figure', 'reasoning', 'research_gap', 'ablation', 'reproducibility']
-            for _i, (_name, _res) in enumerate(zip(_agent_names, parallel_results)):
+            stage_status: Dict[str, Dict[str, Any]] = {}
+            unpacked: List[Dict] = []
+            for _name, _res in zip(_agent_names, parallel_results):
                 if isinstance(_res, Exception):
-                    logger.error("parallel_agent_exception", agent=_name, error=str(_res), error_type=type(_res).__name__)
-                elif isinstance(_res, dict) and 'error' in _res:
+                    logger.error("parallel_agent_exception", agent=_name,
+                                 error=str(_res), error_type=type(_res).__name__)
+                    stage_status[_name] = {
+                        'status': 'failed',
+                        'error': f"{type(_res).__name__}: {_res}",
+                    }
+                    unpacked.append({})
+                elif isinstance(_res, dict) and _res.get('error'):
                     logger.warning("parallel_agent_error", agent=_name, error=_res['error'])
+                    stage_status[_name] = {'status': 'failed', 'error': str(_res['error'])}
+                    unpacked.append(_res)
+                else:
+                    stage_status[_name] = {'status': 'ok', 'error': None}
+                    unpacked.append(_res if isinstance(_res, dict) else {})
 
-            entity_result = parallel_results[0] if not isinstance(parallel_results[0], Exception) else {}
-            results_result = parallel_results[1] if not isinstance(parallel_results[1], Exception) else {}
-            figure_result = parallel_results[2] if not isinstance(parallel_results[2], Exception) else {}
-            reasoning_result = parallel_results[3] if not isinstance(parallel_results[3], Exception) else {}
-            gap_result = parallel_results[4] if not isinstance(parallel_results[4], Exception) else {}
-            ablation_result = parallel_results[5] if not isinstance(parallel_results[5], Exception) else {}
-            repro_result = parallel_results[6] if not isinstance(parallel_results[6], Exception) else {}
+            stage_status['structure'] = {'status': 'ok', 'error': None}
+            self.stage_status = stage_status
+
+            (entity_result, results_result, figure_result, reasoning_result,
+             gap_result, ablation_result, repro_result) = unpacked
             
             # Phase 3: Cross-validation and consensus
             logger.info("phase_3_started", phase="cross_validation")
@@ -245,13 +268,20 @@ class ParallelAgentOrchestrator:
                 'research_gaps': gap_result,
                 'ablation_studies': ablation_result,
                 'reproducibility': repro_result,
+                # Per-agent outcome, so callers can tell "no ablations in this
+                # paper" apart from "the ablation agent crashed".
+                'stage_status': self.stage_status,
                 'metadata': {
                     'total_time_ms': total_time,
                     'agent_times': self._get_agent_times(),
                     'consensus_votes': self.execution_metrics['consensus_votes'],
                     'conflicts_resolved': self.execution_metrics['conflicts_resolved'],
                     'agent_count': len(self.all_agents),
-                    'parallel_speedup': self._calculate_speedup()
+                    'parallel_speedup': self._calculate_speedup(),
+                    'failed_agents': [
+                        name for name, s in self.stage_status.items()
+                        if s.get('status') == 'failed'
+                    ],
                 }
             }
             

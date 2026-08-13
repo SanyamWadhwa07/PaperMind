@@ -1,5 +1,5 @@
-import React, { createContext, useState, useContext, useEffect } from 'react'
-import api from '../lib/api'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { auth as authApi, tokenStore } from '../lib/api'
 
 const AuthContext = createContext(null)
 
@@ -9,7 +9,7 @@ export const useAuth = () => {
   return context
 }
 
-/** Return true if a JWT token string is expired (checks exp claim). */
+/** True when a JWT is absent, malformed, or past its `exp` claim. */
 function isTokenExpired(token) {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]))
@@ -19,101 +19,107 @@ function isTokenExpired(token) {
   }
 }
 
-export const AuthProvider = ({ children }) => {
+export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [token, setToken] = useState(() => localStorage.getItem('token'))
+  const [token, setToken] = useState(() => tokenStore.get())
   const [loading, setLoading] = useState(true)
 
+  const clearAuth = useCallback(() => {
+    tokenStore.clear()
+    setToken(null)
+    setUser(null)
+  }, [])
+
   useEffect(() => {
-    const savedToken = localStorage.getItem('token')
-    if (savedToken) {
-      if (isTokenExpired(savedToken)) {
-        _clearAuth()
-        setLoading(false)
-      } else {
-        fetchCurrentUser(savedToken)
-      }
-    } else {
+    const saved = tokenStore.get()
+
+    // Check expiry locally first: a known-dead token should not cost a request.
+    if (!saved || isTokenExpired(saved)) {
+      clearAuth()
       setLoading(false)
+      return
+    }
+
+    let cancelled = false
+    authApi
+      .me()
+      .then((data) => {
+        if (!cancelled) setUser(data.user)
+      })
+      .catch(() => {
+        if (!cancelled) clearAuth()
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [clearAuth])
+
+  const applySession = useCallback((data) => {
+    tokenStore.set(data.token)
+    setToken(data.token)
+    setUser(data.user)
+  }, [])
+
+  const login = useCallback(
+    async (email, password) => {
+      try {
+        applySession(await authApi.login(email, password))
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error.message }
+      }
+    },
+    [applySession],
+  )
+
+  const signup = useCallback(
+    async (email, password, fullName) => {
+      try {
+        applySession(await authApi.signup(email, password, fullName))
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error.message }
+      }
+    },
+    [applySession],
+  )
+
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout()
+    } catch {
+      // The server-side cookie may already be gone; local state clears regardless.
+    }
+    clearAuth()
+  }, [clearAuth])
+
+  const updateProfile = useCallback(async (updates) => {
+    try {
+      const data = await authApi.updateProfile(updates)
+      setUser(data.user)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
     }
   }, [])
 
-  function _clearAuth() {
-    localStorage.removeItem('token')
-    setToken(null)
-    setUser(null)
-  }
-
-  const fetchCurrentUser = async (authToken) => {
-    try {
-      const { data } = await api.get('/api/auth/me', {
-        headers: { Authorization: `Bearer ${authToken || token}` },
-      })
-      setUser(data.user)
-    } catch {
-      _clearAuth()
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const login = async (email, password) => {
-    try {
-      const { data } = await api.post('/api/auth/login', { email, password })
-      localStorage.setItem('token', data.token)
-      setToken(data.token)
-      setUser(data.user)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: error.response?.data?.error || error.message }
-    }
-  }
-
-  const signup = async (email, password, fullName) => {
-    try {
-      const { data } = await api.post('/api/auth/signup', {
-        email,
-        password,
-        full_name: fullName,
-      })
-      localStorage.setItem('token', data.token)
-      setToken(data.token)
-      setUser(data.user)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: error.response?.data?.error || error.message }
-    }
-  }
-
-  const logout = async () => {
-    try {
-      await api.post('/api/auth/logout')
-    } catch {
-      // ignore — clear local state regardless
-    }
-    _clearAuth()
-  }
-
-  const updateProfile = async (updates) => {
-    try {
-      const { data } = await api.put('/api/auth/me', updates)
-      setUser(data.user)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: error.response?.data?.error || error.message }
-    }
-  }
-
-  const value = {
-    user,
-    token,
-    loading,
-    login,
-    signup,
-    logout,
-    updateProfile,
-    isAuthenticated: !!user,
-  }
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      loading,
+      login,
+      signup,
+      logout,
+      updateProfile,
+      isAuthenticated: Boolean(user),
+    }),
+    [user, token, loading, login, signup, logout, updateProfile],
+  )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -1,41 +1,72 @@
 import { useEffect, useRef, useState } from 'react'
 import mermaid from 'mermaid'
-import { ExternalLink, AlertCircle, GitBranch } from 'lucide-react'
+import { ExternalLink, GitBranch } from 'lucide-react'
+import { useTheme } from '../contexts/ThemeContext'
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Eyebrow,
+  Skeleton,
+} from './ui/primitives'
+
+/** Resolve a token to a concrete colour for mermaid's theme variables. */
+function readToken(name) {
+  if (typeof window === 'undefined') return '#000'
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--${name}`)
+    .trim()
+  return raw ? `rgb(${raw})` : '#000'
+}
 
 export default function FlowchartViewer({ flowchart }) {
   const chartRef = useRef(null)
   const [renderError, setRenderError] = useState(null)
   const [isRendering, setIsRendering] = useState(false)
+  const { theme } = useTheme()
 
   useEffect(() => {
     if (!flowchart || !chartRef.current) return
-    
+
     const renderChart = async () => {
       try {
         setIsRendering(true)
         setRenderError(null)
-        
+
         // Clear previous content
         const container = chartRef.current
         container.innerHTML = ''
-        
-        // Initialize mermaid with safe settings
-        mermaid.initialize({ 
+
+        // Mermaid draws with its own palette unless told otherwise, so the
+        // theme variables are wired to the same tokens as the rest of the app.
+        mermaid.initialize({
           startOnLoad: false,
-          theme: 'default',
+          theme: 'base',
           securityLevel: 'loose',
+          fontFamily: 'Inter Variable, Inter, system-ui, sans-serif',
+          themeVariables: {
+            background: readToken('surface'),
+            primaryColor: readToken('surface-sunk'),
+            primaryTextColor: readToken('ink'),
+            primaryBorderColor: readToken('border-strong'),
+            lineColor: readToken('border-strong'),
+            secondaryColor: readToken('stage-3'),
+            tertiaryColor: readToken('stage-2'),
+            fontSize: '13px',
+          },
           flowchart: {
             useMaxWidth: true,
             htmlLabels: true,
-          }
+          },
         })
-        
+
         // Generate unique ID
         const chartId = `mermaid-chart-${Date.now()}`
-        
+
         // Render the chart - mermaid.render returns the SVG string
         const { svg } = await mermaid.render(chartId, flowchart)
-        
+
         // Insert the SVG into the container
         if (container && svg) {
           container.innerHTML = svg
@@ -47,107 +78,60 @@ export default function FlowchartViewer({ flowchart }) {
         setIsRendering(false)
       }
     }
-    
+
     renderChart()
-  }, [flowchart])
+  }, [flowchart, theme])
 
   if (!flowchart) {
     return (
-      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-dashed border-blue-300 rounded-lg p-12">
-        <div className="text-center space-y-4 max-w-2xl mx-auto">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-2">
-            <GitBranch className="w-8 h-8 text-blue-600" />
-          </div>
-          
-          <h3 className="text-xl font-bold text-gray-900">
-            No Methodology Flowchart Available
-          </h3>
-          
-          <p className="text-gray-700">
-            A flowchart could not be generated from this paper's methodology section.
-          </p>
-          
-          <div className="bg-white rounded-lg p-4 text-left">
-            <p className="text-sm font-medium text-gray-700 mb-2">
-              <AlertCircle className="w-4 h-4 inline mr-1" />
-              Flowcharts are generated when the methodology contains:
-            </p>
-            <ul className="text-sm text-gray-600 space-y-1 ml-5">
-              <li>• Process verbs (train, test, evaluate, implement, etc.)</li>
-              <li>• Step-by-step procedures or algorithms</li>
-              <li>• Sequential methodology descriptions</li>
-              <li>• At least 2-3 distinct process steps</li>
-            </ul>
-          </div>
-          
-          <p className="text-xs text-gray-500">
-            This paper may use a different writing style or the methodology section may be brief.
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        icon={GitBranch}
+        title="No methodology flowchart"
+        description="PaperMind draws a flowchart when the methodology describes steps in sequence, such as an algorithm or a numbered procedure. This paper's methodology is either very short or written as continuous prose."
+      />
     )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Mermaid Chart */}
+    <div className="space-y-4">
       {isRendering ? (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
-          <div className="animate-pulse space-y-3">
-            <GitBranch className="w-12 h-12 text-blue-500 mx-auto animate-bounce" />
-            <p className="text-blue-700 font-medium">Rendering flowchart...</p>
-          </div>
-        </div>
+        <Skeleton className="h-72 w-full" />
       ) : renderError ? (
-        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-red-800 font-semibold mb-1">Flowchart Rendering Error</p>
-              <p className="text-red-700 text-sm">{renderError}</p>
-              <p className="text-red-600 text-xs mt-2">
-                Try viewing the code below or opening in the Mermaid Live Editor.
-              </p>
-            </div>
-          </div>
-        </div>
+        <ErrorState
+          title="Could not render the flowchart"
+          message={`${renderError}. The Mermaid source is below, and the live editor will point at the exact parse error.`}
+        />
       ) : (
-        <div className="bg-gradient-to-br from-white to-gray-50 rounded-lg border-2 border-gray-200 shadow-sm">
-          <div className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-t-lg">
-            <p className="text-sm font-medium flex items-center gap-2">
-              <GitBranch className="w-4 h-4" />
-              Methodology Flowchart
-            </p>
+        <Card>
+          <div className="flex items-center gap-2 border-b border-line px-6 py-3.5">
+            <GitBranch className="h-4 w-4 text-ink-faint" aria-hidden="true" />
+            <Eyebrow>Methodology</Eyebrow>
           </div>
-          <div 
-            ref={chartRef} 
-            className="p-8 overflow-x-auto min-h-[300px]"
-          />
-        </div>
+          <div ref={chartRef} className="min-h-[300px] overflow-x-auto p-8" />
+        </Card>
       )}
 
-      {/* Code View */}
-      <details className="bg-gray-50 rounded-lg">
-        <summary className="px-4 py-3 cursor-pointer font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
-          View Mermaid Code
+      <details className="group rounded-lg border border-line bg-surface">
+        <summary className="cursor-pointer list-none px-5 py-3 text-sm font-medium text-ink-muted transition-colors duration-fast ease-out hover:text-ink">
+          Mermaid source
         </summary>
-        <div className="px-4 pb-4 pt-2">
-          <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
+        <div className="border-t border-line p-4">
+          <pre className="overflow-x-auto rounded bg-surface-sunk p-4 font-mono text-code text-ink-muted">
             <code>{flowchart}</code>
           </pre>
         </div>
       </details>
 
-      {/* External Link */}
-      <a
+      <Button
+        variant="secondary"
+        size="sm"
         href={`https://mermaid.live/edit#pako:${encodeURIComponent(flowchart || '')}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="btn-secondary inline-flex"
       >
-        <ExternalLink className="w-4 h-4" />
-        Open in Mermaid Live Editor
-      </a>
+        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+        Open in Mermaid Live
+      </Button>
     </div>
   )
 }

@@ -5,11 +5,11 @@ older papers (ancestors) to newer ones (descendants).
 """
 
 from __future__ import annotations
-import logging
+import structlog
 from typing import Dict, List, Any, Optional
 from collections import deque
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def infer_lineage_from_citations(

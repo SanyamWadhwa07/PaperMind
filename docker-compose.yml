@@ -1,0 +1,121 @@
+# PaperMind local/production stack.
+#
+#   docker compose up --build          → http://localhost:8080
+#
+# Secrets come from a .env file next to this one; nothing is baked into an image.
+
+name: papermind
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: "true"
+
+      SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:?SUPABASE_SERVICE_KEY is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+
+      # nginx is the only public origin; the API is reached through it.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+
+      REDIS_URL: redis://redis:6379/0
+
+      PAPERMIND_USE_GRAPH: ${PAPERMIND_USE_GRAPH:-1}
+      PAPERMIND_LLM_PROVIDER: ${PAPERMIND_LLM_PROVIDER:-auto}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    volumes:
+      # Uploads survive a container replacement.
+      - paper_uploads:/app/uploads
+      - paper_arxiv:/app/arxiv_papers
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Empty → the SPA calls /api on its own origin, which nginx proxies.
+        VITE_API_URL: ""
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Rate-limit buckets and the processing cache are both regenerable, so cap
+    # memory and evict rather than letting Redis grow without bound.
+    command: >
+      redis-server
+      --save ""
+      --appendonly no
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    command: celery -A tasks.paper_tasks worker --loglevel=info --concurrency=2
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:?SUPABASE_SERVICE_KEY is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      REDIS_URL: redis://redis:6379/0
+      PAPERMIND_USE_GRAPH: ${PAPERMIND_USE_GRAPH:-1}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    volumes:
+      - paper_uploads:/app/uploads
+      - paper_arxiv:/app/arxiv_papers
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      # Opt-in: `docker compose --profile workers up`. The API processes
+      # synchronously when no worker is running.
+      - workers
+
+volumes:
+  paper_uploads:
+  paper_arxiv:

@@ -109,13 +109,15 @@ class ResultsAgent(BaseAgent):
             
             if baseline:
                 # Check if result is an outlier
-                is_outlier_result = await self.query_experience(
+                # (is_outlier, reason) — unpacked, because the tuple itself is
+                # truthy even for `(False, None)`, which would flag every result.
+                is_outlier_result, _outlier_reason = await self.query_experience(
                     'outlier',
                     value=value,
                     metric=metric,
                     dataset=dataset
-                )
-                
+                ) or (False, None)
+
                 if is_outlier_result:
                     confidence_scores[result_id] = 0.4  # Low confidence for outliers
                     self.outlier_results.append({
@@ -134,10 +136,10 @@ class ResultsAgent(BaseAgent):
             # Update experience DB with this result
             if confidence_scores.get(result_id, 0) >= 0.6:
                 await self.update_experience(
-                    'result',
+                    'baseline',
                     metric=metric,
                     dataset=dataset,
-                    task=domain,
+                    model=result.get('model'),
                     value=value
                 )
         

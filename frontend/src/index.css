@@ -1,97 +1,326 @@
+/* Self-hosted so the app has no CDN dependency and works under a strict CSP.
+   Inter is the open-source substitute the Cursor system names for CursorGothic;
+   JetBrains Mono is its mandated face for every technical surface. */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   Design tokens — DesignMD `cursor`
+   ----------------------------------------------------------------------------
+   Palette, type scale, radii, and motion are taken verbatim from the Cursor
+   DESIGN.md/MOTION.md via the DesignMD MCP server. Values are stored as RGB
+   triples so Tailwind's `<alpha-value>` opacity modifiers keep working.
+
+   The system in one line: warm cream canvas, warm near-black ink, hairline-only
+   depth, display weight fixed at 400, and a single scarce orange voltage.
+
+   Cursor documents no dark mode; the `.dark` block below is DesignMD's derived
+   dark counterpart, which keeps the warm hue relationships intact.
+   ========================================================================= */
+
 @layer base {
-  body {
-    @apply bg-[#F9FBFA] dark:bg-[#111312] text-[#1B1B1B] dark:text-[#F5F5F5] transition-colors duration-300;
+  :root {
+    /* Surfaces, back to front */
+    --canvas:        247 247 244;   /* #f7f7f4 — warm cream page floor */
+    --surface:       255 255 255;   /* #ffffff — card, white on cream */
+    --surface-sunk:  240 240 237;   /* #f0f0ed */
+    --surface-hover: 230 229 224;   /* #e6e5e0 — badges, tag pills, hover */
+
+    /* Ink */
+    --ink:           38 37 30;      /* #26251e — warm near-black */
+    --ink-muted:     90 88 82;      /* #5a5852 — running text */
+    --ink-faint:     128 125 114;   /* #807d72 — sub-titles */
+
+    /* Hairlines. The only depth this system has. */
+    --border:        230 229 224;   /* #e6e5e0 */
+    --border-strong: 207 205 196;   /* #cfcdc4 */
+
+    /* The single brand voltage. Used scarcely — CTAs and the wordmark. */
+    --accent:        245 78 0;      /* #f54e00 — Cursor Orange */
+    --accent-hover:  208 66 0;      /* #d04200 — press state */
+    --accent-soft:   252 220 207;   /* #fcdccf */
+    --accent-ink:    255 255 255;
+
+    /* Annotation — the reader's own marks. Warm gold from the stage palette. */
+    --annotate:      192 133 50;    /* #c08532 */
+    --annotate-soft: 245 232 212;
+
+    /* Status */
+    --success:       31 138 101;    /* #1f8a65 */
+    --success-soft:  219 240 232;
+    --warning:       192 133 50;    /* #c08532 */
+    --warning-soft:  245 232 212;
+    --danger:        207 45 86;     /* #cf2d56 */
+    --danger-soft:   252 226 232;
+
+    --focus:         245 78 0;
+
+    /* The AI-timeline pastels — this system's strongest signature. Cursor
+       reserves them for marking stages inside product UI, never as action
+       colours. Here they mark pipeline stages and the four summary levels. */
+    --stage-1:       223 168 143;   /* #dfa88f peach   — simple    */
+    --stage-2:       159 201 162;   /* #9fc9a2 mint    — detailed  */
+    --stage-3:       159 187 224;   /* #9fbbe0 blue    — ELI5      */
+    --stage-4:       192 168 221;   /* #c0a8dd lavender— technical */
+    --stage-5:       192 133 50;    /* #c08532 gold    — done      */
+
+    /* Hairline-only depth: no card shadows. Kept for overlays alone. */
+    --shadow-sm: 0 0 0 0 transparent;
+    --shadow-md: 0 2px 8px rgb(38 37 30 / 0.08);
+    --shadow-lg: 0 12px 40px rgb(38 37 30 / 0.14);
+
+    /* Radius — Cursor's compact developer dialect. */
+    --radius:    8px;
+    --radius-sm: 4px;
+    --radius-lg: 12px;
+
+    /* Motion — Cursor MOTION.md. Budgeted tightly; chrome moves, content
+       does not. Durations are deliberately shorter than a marketing site's. */
+    --duration-micro:   60ms;
+    --duration-fast:    80ms;
+    --duration-default: 100ms;
+    --duration-medium:  140ms;
+    --duration-slow:    200ms;
+    --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in:     cubic-bezier(0.7, 0, 0.84, 0);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   }
-  
-  html {
-    @apply scroll-smooth;
-  }
-  
-  /* Improve text readability in dark mode */
+
   .dark {
+    --canvas:        23 23 21;      /* #171715 */
+    --surface:       35 35 33;      /* #232321 */
+    --surface-sunk:  29 29 27;      /* #1d1d1b */
+    --surface-hover: 46 46 43;      /* #2e2e2b */
+
+    --ink:           245 245 244;   /* #f5f5f4 */
+    --ink-muted:     181 180 176;   /* #b5b4b0 */
+    --ink-faint:     147 147 146;   /* #939392 */
+
+    --border:        60 60 58;      /* #3c3c3a */
+    --border-strong: 82 82 79;      /* #52524f */
+
+    --accent:        255 139 103;   /* #ff8b67 */
+    --accent-hover:  255 169 142;   /* #ffa98e */
+    --accent-soft:   71 54 47;      /* #47362f */
+    --accent-ink:    10 10 10;      /* #0a0a0a */
+
+    --annotate:      223 181 106;
+    --annotate-soft: 62 49 26;
+
+    --success:       76 199 155;
+    --success-soft:  18 48 39;
+    --warning:       223 181 106;
+    --warning-soft:  62 49 26;
+    --danger:        239 68 68;     /* #ef4444 */
+    --danger-soft:   61 26 26;
+
+    --focus:         255 169 142;
+
+    /* The stage pastels are mid-tone pill fills carrying dark ink, so they
+       hold on either canvas and stay recognisable across the theme switch. */
+    --stage-1:       223 168 143;
+    --stage-2:       159 201 162;
+    --stage-3:       159 187 224;
+    --stage-4:       192 168 221;
+    --stage-5:       192 133 50;
+
+    --shadow-sm: 0 0 0 0 transparent;
+    --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.6);
+  }
+
+  * {
+    border-color: rgb(var(--border));
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* Anchored sections must clear the sticky header. */
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    background-color: rgb(var(--canvas));
+    color: rgb(var(--ink));
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Extracted content routinely carries long unbroken tokens — model
+       identifiers, dataset names, arXiv URLs. On a phone one of them is wider
+       than the viewport, and without this the entire page scrolls sideways to
+       accommodate it. */
+    overflow-wrap: break-word;
   }
+
+  /* Display keeps weight 400 with negative tracking — the magazine voice the
+     system is built on. Bold display would read as a different brand. */
+  .display {
+    font-weight: 400;
+    letter-spacing: -0.022em;
+  }
+
+  /* Identifiers, metrics, and section numbers are always tabular so digits
+     align down a column without a table layout. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  ::selection {
+    background-color: rgb(var(--accent) / 0.18);
+  }
+
+  /* Scrollbars styled to the surface rather than the OS default. */
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--border-strong));
+    border: 3px solid rgb(var(--canvas));
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--ink-faint)); }
 }
 
 @layer components {
-  .btn-primary {
-    @apply bg-[#00988F] dark:bg-[#00A7A0] hover:bg-[#007770] dark:hover:bg-[#008F89] text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg;
-  }
-  
-  .btn-secondary {
-    @apply bg-[#EEF4F3] dark:bg-[#1E2020] hover:bg-[#E0EBE9] dark:hover:bg-[#252727] text-[#1B1B1B] dark:text-[#F5F5F5] font-medium py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 border border-[#C4935F]/30 dark:border-[#D9A86C]/30 shadow-sm hover:shadow-md;
-  }
-  
-  .card {
-    @apply bg-[#EEF4F3] dark:bg-[#1E2020] rounded-lg shadow-md dark:shadow-2xl border border-[#C4935F]/20 dark:border-[#D9A86C]/20 p-6 transition-all duration-300 text-[#1B1B1B] dark:text-[#F5F5F5];
-  }
-  
-  .badge {
-    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium backdrop-blur-sm;
-  }
-  
-  .badge-blue {
-    @apply bg-[#00988F]/10 dark:bg-[#00A7A0]/20 text-[#00988F] dark:text-[#00A7A0] border border-[#00988F]/30 dark:border-[#00A7A0]/40;
-  }
-  
-  .badge-green {
-    @apply bg-[#00988F]/10 dark:bg-[#00A7A0]/20 text-[#00988F] dark:text-[#00A7A0] border border-[#00988F]/30 dark:border-[#00A7A0]/40;
-  }
-  
-  .badge-yellow {
-    @apply bg-[#C4935F]/10 dark:bg-[#D9A86C]/20 text-[#C4935F] dark:text-[#D9A86C] border border-[#C4935F]/30 dark:border-[#D9A86C]/40;
-  }
-  
-  .badge-purple {
-    @apply bg-[#C4935F]/10 dark:bg-[#D9A86C]/20 text-[#C4935F] dark:text-[#D9A86C] border border-[#C4935F]/30 dark:border-[#D9A86C]/40;
+  /* The section spine: a hairline rail with §-numbered markers, borrowed from
+     the sectioning apparatus of the papers themselves. */
+  .spine {
+    position: relative;
+    padding-left: 1.5rem;
   }
 
-  .badge-amber {
-    @apply bg-amber-500/10 dark:bg-amber-400/20 text-amber-600 dark:text-amber-300 border border-amber-500/30 dark:border-amber-400/40;
+  .spine::before {
+    content: '';
+    position: absolute;
+    left: 0.3125rem;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    width: 1px;
+    background: rgb(var(--border-strong));
   }
 
-  /* Glassmorphism animations */
-  .animate-fade-in {
-    animation: fadeIn 0.5s ease-in;
+  .spine-node {
+    position: relative;
   }
-  
-  .animate-slide-up {
-    animation: slideUp 0.5s ease-out;
-  }
-}
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
+  .spine-node::before {
+    content: '';
+    position: absolute;
+    left: -1.5rem;
+    top: 0.6875rem;
+    width: 0.6875rem;
+    height: 0.6875rem;
+    border-radius: 999px;
+    background: rgb(var(--canvas));
+    border: 1px solid rgb(var(--border-strong));
+    transition:
+      border-color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out);
   }
-  to {
-    opacity: 1;
-  }
-}
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
+  .spine-node[data-active='true']::before {
+    background: rgb(var(--accent));
+    border-color: rgb(var(--accent));
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
-/* Custom scrollbar hide for mobile tabs */
-@layer utilities {
-  .scrollbar-hide {
-    -ms-overflow-style: none;
+  /* A strip that scrolls sideways on its own — tab rows, chip rails. The bar
+     would otherwise sit under the content and read as a page-level scroller. */
+  .no-scrollbar {
     scrollbar-width: none;
+    -ms-overflow-style: none;
   }
-  .scrollbar-hide::-webkit-scrollbar {
+
+  .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Stage pill — the timeline signature. Pastel fill, ink label, tracked caps. */
+  .stage-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(38 37 30);
+  }
+}
+
+@layer utilities {
+  /* Enter patterns from MOTION.md. Elements arrive toward their resting
+     position and leave in the opposite direction — never the same way twice. */
+  .animate-rise {
+    animation: rise var(--duration-medium) var(--ease-out) both;
+  }
+
+  .animate-fade {
+    animation: fade var(--duration-micro) var(--ease-out) both;
+  }
+
+  .animate-scale-fade {
+    animation: scale-fade var(--duration-default) var(--ease-out) both;
+  }
+
+  /* Loading placeholders: a slow sweep, not a pulsing block. */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--surface-sunk)) 0%,
+      rgb(var(--surface-hover)) 50%,
+      rgb(var(--surface-sunk)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  /* Lists stagger on first render only, 12ms apart per MOTION.md. */
+  .stagger > * {
+    animation: rise var(--duration-medium) var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 12ms);
+  }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scale-fade {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* Respect the OS setting: disable motion rather than merely shortening it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

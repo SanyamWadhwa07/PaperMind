@@ -4,26 +4,27 @@ import asyncio
 import sys
 import time
 import structlog
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
+from uuid import uuid4
 
 from fastapi import APIRouter, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from werkzeug.utils import secure_filename
-from supabase import create_client
+from db import supabase as _shared_supabase
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from database.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+from api.errors import UnprocessableError
 from auth.dependencies import CurrentUser
 from core.agent_integration import AgentPaperProcessor
-from backend.main import load_config, load_patterns
+from backend.main import load_config
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = _shared_supabase
 
 ALLOWED_EXTENSIONS = {'pdf'}
 MAX_PDF_PAGES = 200
@@ -54,12 +55,65 @@ async def _validate_pdf_page_count(path: str) -> bool:
 async def _run_agent_pipeline(pdf_path: str) -> dict:
     """Run the 7-agent orchestrator on a PDF, returning the structured result."""
     config = load_config(None)
-    patterns = load_patterns('patterns.json')
-    processor = AgentPaperProcessor(patterns=patterns, config=config)
+    processor = AgentPaperProcessor(config=config)
     try:
         return await processor.process_paper(pdf_path)
     finally:
         await processor.cleanup()
+
+
+async def _process_pdf_cached(pdf_bytes: bytes, pdf_path: str) -> dict:
+    """Run the pipeline, reusing a cached result for a byte-identical PDF.
+
+    Processing a paper costs minutes of wall time and a chunk of a free-tier
+    daily request quota, so re-uploading the same file — a re-run, a second user
+    with the same paper, a batch retry — should not pay for it twice. Keyed on
+    the PDF's SHA-256, so a different file can never hit the same entry.
+
+    Cache unavailability is not an error: without Redis this is exactly the
+    previous behaviour.
+    """
+    from core.pipeline.processing_cache import cache_result, get_cached_result
+
+    cached = await asyncio.to_thread(get_cached_result, pdf_bytes)
+    if cached:
+        logger.info('processing_cache_hit', pdf_path=pdf_path)
+        return cached
+
+    result = await _run_agent_pipeline(pdf_path)
+
+    # Only cache results worth replaying. Caching a failed run would pin the
+    # failure for the full TTL, and the save gate would reject it every time.
+    try:
+        _reject_degenerate_summary(result)
+    except UnprocessableError:
+        return result
+
+    await asyncio.to_thread(cache_result, pdf_bytes, result)
+    return result
+
+
+async def _store_figures(summary_result: dict) -> None:
+    """Upload extracted figure images and swap temp paths for public URLs.
+
+    Done before the row is written so the persisted record never contains a
+    path into a temp directory that is about to be deleted. Keyed by a fresh
+    UUID rather than the summary id, which does not exist until after insert.
+    """
+    figures = summary_result.get('figures') or []
+    if not figures:
+        return
+    try:
+        from services.figure_storage import FigureStorage
+        storage = FigureStorage(supabase)
+        summary_result['figures'] = await storage.attach_urls(str(uuid4()), figures)
+    except Exception as e:
+        # Figures are an enhancement, not the paper. Losing the images should
+        # not lose the summary — but strip the dead temp paths regardless.
+        logger.warning('figure_storage_failed', error=str(e))
+        summary_result['figures'] = [
+            {k: v for k, v in f.items() if k != 'path'} for f in figures
+        ]
 
 
 async def _persist_entities(summary_id: str, user_id: str, summary_result: dict) -> None:
@@ -215,12 +269,67 @@ async def _enrich_github_links(summary_id: str, summary_result: dict) -> None:
         logger.warning('github_enrich_failed', error=str(e), summary_id=summary_id)
 
 
+# Sentinel strings earlier versions of the pipeline persisted as real summaries.
+_PLACEHOLDER_SUMMARIES = (
+    'summary generation in progress',
+    'summary unavailable',
+    'analysis complete. see extracted data for details.',
+    'this paper presents a novel approach to the problem.',
+)
+
+# Below this, a "summary" is a failure wearing a summary's clothes. The graph
+# engine targets 300-450 words; the legacy path ~350.
+_MIN_SUMMARY_WORDS = 60
+
+
+def _reject_degenerate_summary(summary_result: dict) -> None:
+    """Refuse to persist a summary that records a failure as a success.
+
+    The pipeline degrades toward plausible-looking output on almost every error
+    path, so without this check a rate-limited or crashed run is saved as a
+    normal paper and returned as 201 Created. Raising here surfaces the failure
+    to the user instead of storing it.
+    """
+    summaries = summary_result.get('summaries') or {}
+    main = ''
+    if isinstance(summaries, dict):
+        main = next((v for v in summaries.values() if isinstance(v, str) and v.strip()), '')
+    elif isinstance(summaries, str):
+        main = summaries
+
+    main = main.strip()
+    if not main:
+        raise UnprocessableError(
+            'The summarisation pipeline produced no summary for this paper.',
+            details={'reason': 'empty_summary',
+                     'pipeline_status': summary_result.get('pipeline_status', {})},
+        )
+
+    normalised = main.lower().rstrip('.') + '.'
+    if any(normalised.startswith(p) for p in _PLACEHOLDER_SUMMARIES):
+        raise UnprocessableError(
+            'The summarisation pipeline failed and produced placeholder text.',
+            details={'reason': 'placeholder_summary',
+                     'pipeline_status': summary_result.get('pipeline_status', {})},
+        )
+
+    word_count = len(main.split())
+    if word_count < _MIN_SUMMARY_WORDS:
+        raise UnprocessableError(
+            f'The summarisation pipeline produced only {word_count} words, which '
+            'indicates a failed or rate-limited run rather than a real summary.',
+            details={'reason': 'summary_too_short', 'word_count': word_count,
+                     'pipeline_status': summary_result.get('pipeline_status', {})},
+        )
+
+
 def _build_summary_record(user_id: str, summary_result: dict,
                            paper_title: str, paper_authors: list,
                            paper_url: str | None, arxiv_id: str | None,
                            processing_time: float,
                            extra: dict | None = None) -> dict:
     """Assemble the DB row for the summaries table."""
+    _reject_degenerate_summary(summary_result)
     quality_score = summary_result.get('agent_metadata', {}).get('summary_quality')
     record = {
         'user_id':                  user_id,
@@ -244,10 +353,13 @@ def _build_summary_record(user_id: str, summary_result: dict,
                 'tasks':    summary_result.get('tasks', []),
             },
             'figures':          summary_result.get('figures', []),
+            'tables':           summary_result.get('tables', []),
             'sections_found':   summary_result.get('sections_found', []),
             'section_count':    summary_result.get('section_count', 0),
             'section_summaries': summary_result.get('section_summaries', {}),
             'contributions':    summary_result.get('contributions', []),
+            'methods_detail':   summary_result.get('methods_detail', ''),
+            'experimental_setup': summary_result.get('experimental_setup', ''),
             'typed_entities':   summary_result.get('typed_entities', {}),
             'limitations':      summary_result.get('limitations', []),
             'future_work':      summary_result.get('future_work', []),
@@ -256,12 +368,15 @@ def _build_summary_record(user_id: str, summary_result: dict,
             'research_gaps':    summary_result.get('research_gaps', {}),
             'ablation_studies': summary_result.get('ablation_studies', []),
             'reproducibility':  summary_result.get('reproducibility', {}),
+            # Per-stage outcome so the UI can distinguish "nothing found" from
+            # "this stage failed".
+            'pipeline_status':  summary_result.get('pipeline_status', {}),
         },
         'model_used':               summary_result.get('agent_metadata', {}).get('llm_backend', 'ollama'),
         'processing_time_seconds':  round(processing_time, 2),
         'word_count':               len(next(iter(summary_result.get('summaries', {}).values()), '').split()),
         'quality_score':            quality_score,
-        'created_at':               datetime.utcnow().isoformat(),
+        'created_at':               datetime.now(timezone.utc).isoformat(),
     }
     if extra:
         record.update(extra)
@@ -296,7 +411,7 @@ async def upload_and_process(current_user: CurrentUser, file: UploadFile = File(
             )
 
         start = time.time()
-        summary_result = await _run_agent_pipeline(str(temp_path))
+        summary_result = await _process_pdf_cached(content, str(temp_path))
         processing_time = time.time() - start
 
         # Duplicate detection via pgvector
@@ -328,11 +443,17 @@ async def upload_and_process(current_user: CurrentUser, file: UploadFile = File(
         except Exception as e:
             logger.warning('embedding_failed', error=str(e), filename=filename)
 
+        # The extractor leaves title empty when page-1 layout was inconclusive;
+        # the uploaded filename is then the most honest label available.
+        # (`.get('title', filename)` would not do this — the key is always present.)
+        extracted_title = (summary_result.get('title') or '').strip()
+        await _store_figures(summary_result)
+
         record = _build_summary_record(
             user_id=user_id,
             summary_result=summary_result,
-            paper_title=summary_result.get('title', filename),
-            paper_authors=summary_result.get('authors', []),
+            paper_title=extracted_title or Path(filename).stem or filename,
+            paper_authors=summary_result.get('authors', []) or [],
             paper_url=None,
             arxiv_id=summary_result.get('arxiv_id'),
             processing_time=processing_time,
@@ -358,7 +479,7 @@ async def upload_and_process(current_user: CurrentUser, file: UploadFile = File(
                         'paper_title':     record['paper_title'],
                         'processing_time': processing_time,
                     },
-                    'created_at': datetime.utcnow().isoformat(),
+                    'created_at': datetime.now(timezone.utc).isoformat(),
                 }).execute()
             )
         except Exception as e:
@@ -400,7 +521,16 @@ async def process_from_arxiv(current_user: CurrentUser, request: Request):
     import arxiv as arxiv_lib
     search = arxiv_lib.Search(id_list=[arxiv_id])
     client = arxiv_lib.Client()
-    paper = await asyncio.to_thread(lambda: next(client.results(search), None))
+    try:
+        paper = await asyncio.to_thread(lambda: next(client.results(search), None))
+    except arxiv_lib.HTTPError as e:
+        # arXiv's own API rate-limits aggressively; without this the client
+        # library's exception propagated as a bare, unexplained 500.
+        logger.warning('arxiv_lookup_failed', arxiv_id=arxiv_id, error=str(e))
+        return JSONResponse(
+            status_code=502,
+            content={'error': 'arXiv is temporarily unavailable or rate-limiting requests. Try again shortly.'},
+        )
 
     if not paper:
         return JSONResponse(status_code=404, content={'error': 'Paper not found on arXiv'})
@@ -449,6 +579,8 @@ async def process_from_arxiv(current_user: CurrentUser, request: Request):
         except Exception as e:
             logger.warning('embedding_failed', error=str(e), arxiv_id=arxiv_id)
 
+        await _store_figures(summary_result)
+
         record = _build_summary_record(
             user_id=user_id,
             summary_result=summary_result,
@@ -484,7 +616,7 @@ async def process_from_arxiv(current_user: CurrentUser, request: Request):
                         'arxiv_id':        arxiv_id,
                         'processing_time': processing_time,
                     },
-                    'created_at': datetime.utcnow().isoformat(),
+                    'created_at': datetime.now(timezone.utc).isoformat(),
                 }).execute()
             )
         except Exception as e:

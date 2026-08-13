@@ -3,15 +3,16 @@
 import sys
 import re
 import json
-import logging
+import structlog
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from core.agents.base_agent import BaseAgent
+from core.llm.json_parse import parse_json_object
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Patterns that indicate ablation column/row headers
 ABLATION_COL_PATTERNS = [
@@ -95,9 +96,7 @@ class AblationParserAgent(BaseAgent):
             fast_config['model_name'] = 'llama-3.1-8b-instant'
             llm = get_llm(fast_config)
             raw = await llm.generate(text[:2000], system_prompt=ABLATION_SYSTEM, max_tokens=512)
-            m = re.search(r"\{.*\}", raw, re.DOTALL)
-            if m:
-                return json.loads(m.group())
+            return parse_json_object(raw)
         except Exception as e:
             logger.warning("ablation_llm_error", error=str(e))
         return {}

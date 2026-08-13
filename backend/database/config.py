@@ -1,40 +1,33 @@
-"""Database and secrets configuration loaded from .env."""
+"""Legacy configuration shim.
 
-import os
-import structlog
-from pathlib import Path
-from dotenv import load_dotenv
+Configuration now lives in `backend/config/settings.py` as a validated
+`Settings` object. This module re-exports the handful of values that older
+modules import by name so existing imports keep working.
 
-env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+New code should depend on `config.get_settings()` instead.
+"""
 
-logger = structlog.get_logger(__name__)
+from __future__ import annotations
 
-# Supabase
-SUPABASE_URL = os.getenv('SUPABASE_URL', '')
-SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', '')
-SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY', '')
+from config import get_settings
 
-# PostgreSQL direct (optional, for SQLAlchemy)
-DATABASE_URL = os.getenv('DATABASE_URL', '')
+_settings = get_settings()
 
-# JWT
-_DEFAULT_SECRET = 'your-secret-key-change-in-production'
-JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', _DEFAULT_SECRET)
-JWT_ALGORITHM = 'HS256'
-JWT_ACCESS_TOKEN_EXPIRES = 24 * 60 * 60  # 24 hours
+SUPABASE_URL = _settings.supabase_url
+SUPABASE_KEY = _settings.supabase_anon_key
+SUPABASE_SERVICE_KEY = _settings.supabase_service_key
+DATABASE_URL = ''
 
-if JWT_SECRET_KEY == _DEFAULT_SECRET:
-    _app_env = os.getenv('APP_ENV', 'development')
-    if _app_env == 'production':
-        raise RuntimeError(
-            'JWT_SECRET_KEY is the default placeholder — '
-            'set a strong secret in .env before running in production.'
-        )
-    logger.warning('jwt_secret_is_default_placeholder', env=_app_env)
+JWT_SECRET_KEY = _settings.jwt_secret_key
+JWT_ALGORITHM = _settings.jwt_algorithm
+JWT_ACCESS_TOKEN_EXPIRES = _settings.jwt_access_token_expires
 
-# Connection pool (used if SQLAlchemy is added later)
-DB_POOL_SIZE = 10
-DB_MAX_OVERFLOW = 20
-DB_POOL_TIMEOUT = 30
-DB_POOL_RECYCLE = 3600
+__all__ = [
+    'SUPABASE_URL',
+    'SUPABASE_KEY',
+    'SUPABASE_SERVICE_KEY',
+    'DATABASE_URL',
+    'JWT_SECRET_KEY',
+    'JWT_ALGORITHM',
+    'JWT_ACCESS_TOKEN_EXPIRES',
+]

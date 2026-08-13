@@ -20,6 +20,36 @@ from core.memory.experience_db import ExperienceStore
 logger = structlog.get_logger(__name__)
 
 
+def _comparisons_from_results(result_rows: list) -> list:
+    """Describe how the paper's headline results compare to the alternatives.
+
+    Built from structured result rows — each of which already knows its method,
+    measurement and subject — rather than by scanning claim text for words like
+    "outperform". Keyword matching produced comparisons with nothing to compare.
+    """
+    by_measure: Dict[str, list] = {}
+    for row in result_rows or []:
+        measure = (row.get('metric') or '').strip()
+        value = (row.get('value') or '').strip()
+        if measure and value:
+            by_measure.setdefault(measure, []).append(row)
+
+    comparisons = []
+    for measure, rows in by_measure.items():
+        best = next((r for r in rows if r.get('is_best')), None)
+        others = [r for r in rows if r is not best and r.get('model')]
+        if not best or not others:
+            continue
+        rival = others[0]
+        comparisons.append(
+            f"{best.get('model') or 'The proposed method'} reaches {best['value']} "
+            f"{measure}"
+            + (f" on {best['dataset']}" if best.get('dataset') else "")
+            + f", against {rival['value']} for {rival['model']}."
+        )
+    return comparisons[:3]
+
+
 class AgentPaperProcessor:
     """
     Wrapper that processes papers using the parallel agent system.
@@ -134,8 +164,18 @@ class AgentPaperProcessor:
         regex_entities = entities.get('entities', {})
 
         def _pick_entities(key: str):
-            g = graph_entities_legacy.get(key) or []
-            return g if (graph_engine and g) else regex_entities.get(key, [])
+            """Graph extraction is authoritative; regex is only a last resort.
+
+            The regex extractor matches a fixed ML vocabulary (BERT, ImageNet,
+            GLUE…), so on a clinical or physics paper it returns nothing. It used
+            to fill in whenever the graph returned an empty bucket, which meant a
+            paper that genuinely has no datasets and a paper the extractor simply
+            can't read were presented identically. With the graph engine running
+            it now supplies nothing.
+            """
+            if graph_engine:
+                return graph_entities_legacy.get(key) or []
+            return regex_entities.get(key, [])
 
         out_models = _pick_entities('models')
         out_datasets = _pick_entities('datasets')
@@ -162,23 +202,32 @@ class AgentPaperProcessor:
             out_results_metrics = legacy_results_metrics
 
         # Build compatible output
+        # Title/authors recovered from page-1 layout by the PDF extractor. Left
+        # empty when they couldn't be determined, so the caller can fall back to
+        # the filename — a placeholder here would be indistinguishable from a
+        # real title once persisted. The arXiv route overrides both with API data.
+        structure_meta = structure.get('metadata', {}) or {}
+
         output = {
-            # Metadata (would come from arxiv API in real usage)
-            'arxiv_id': 'unknown',
-            'title': 'Research Paper',
-            'authors': [],
+            # Metadata — populated by the arXiv route when the paper came from arXiv.
+            'arxiv_id': None,
+            'title': structure_meta.get('title', '') or '',
+            'authors': structure_meta.get('authors', []) or [],
             'abstract': sections.get('abstract', ''),
             'published': '',
             'updated': '',
             
-            # Single comprehensive summary (new) with backward-compat keys
-            'summaries': summary.get('summaries', {'main': 'Summary generation in progress'}),
+            # Single comprehensive summary (new) with backward-compat keys.
+            # Left empty when SummaryAgent failed — the save gate in
+            # routes/process_paper.py rejects that rather than storing a
+            # placeholder that reads as a pending job long after the request ended.
+            'summaries': summary.get('summaries', {}),
 
-            # Key findings — prefer LLM-extracted from SummaryAgent, fall back to ReasoningAgent claims
-            'key_findings': (
-                summary.get('key_findings')
-                or [claim.get('text', '') for claim in reasoning.get('reasoning', {}).get('claims', [])[:5]]
-            ),
+            # Key findings come from the summariser's structured output. The old
+            # fallback pasted raw ReasoningAgent regex spans here — sentence
+            # fragments like "we propose a novel architecture that" presented to
+            # the user as findings.
+            'key_findings': summary.get('key_findings', []),
             
             # Methodology (NO TRUNCATION - let SummaryAgent handle length)
             'methodology': {
@@ -191,9 +240,10 @@ class AgentPaperProcessor:
             'results': {
                 'summary': sections.get('results', ''),
                 'metrics': out_results_metrics,
-                'comparison': self._extract_comparisons(
-                    reasoning.get('reasoning', {}).get('claims', [])
-                )
+                # Comparisons are drawn from the extracted result rows, which
+                # carry the method each number belongs to, rather than from
+                # keyword-matching claim text for "outperform"/"better than".
+                'comparison': _comparisons_from_results(out_results_metrics)
             },
 
             # Entities
@@ -204,38 +254,50 @@ class AgentPaperProcessor:
 
             # Contributions + per-section summaries (graph engine fills these)
             'contributions': summary.get('contributions', []),
+            # Long-form technical detail — the parts a reader would otherwise
+            # have to open the PDF for.
+            'methods_detail': summary.get('methods_detail', ''),
+            'experimental_setup': summary.get('experimental_setup', ''),
             'section_summaries': summary.get('section_summaries', {}),
             # Domain-agnostic typed entities (method/material/measurement/tool)
             'typed_entities': summary.get('graph_entities', {}),
             
-            # Figures
+            # Figures. `path` is kept so the route can upload the PNG to storage
+            # and attach a URL — previously this projection dropped it, so the
+            # extracted image never crossed the API boundary and the UI could
+            # only ever show captions.
             'figures': [
                 {
-                    'figure_number': i + 1,
+                    # The paper's own figure number when the caption gives one,
+                    # not this list's rank order.
+                    'figure_number': fig.get('figure_number') or f'Figure {i + 1}',
                     'id': fig.get('id', f'figure_{i+1}'),
                     'caption': fig.get('caption', ''),
-                    'page': fig.get('page', 0),
+                    # Producer emits `page_number`; reading `page` always gave 0.
+                    'page': fig.get('page_number', 0),
                     'relevance': fig.get('relevance_score', 0),
-                    'section': fig.get('section', 'unknown')
+                    'figure_type': fig.get('figure_type', 'unknown'),
+                    # Classifier/VLM output that was computed and then discarded.
+                    'insight': fig.get('insight', ''),
+                    'structured_data': fig.get('structured_data'),
+                    'path': fig.get('path', ''),
                 }
-                for i, fig in enumerate(figures.get('figures', [])[:10])
+                for i, fig in enumerate(figures.get('figures', [])[:12])
             ],
             
+            # Tables lifted from the PDF, with captions — rendered directly in the
+            # UI so a reader doesn't have to open the paper to see the numbers.
+            'tables': structure.get('tables', []),
+
             # Sections found (for frontend display)
             'sections_found': sections_found,
             'section_count': len(sections_found),
             
-            # Limitations — prefer LLM-extracted from SummaryAgent, fall back to regex
-            'limitations': (
-                summary.get('limitations')
-                or self._extract_limitations(sections)
-            ),
+            # Limitations as the paper states them. The removed fallback turned
+            # every sentence containing "however" into a user-visible limitation.
+            'limitations': summary.get('limitations', []),
 
-            # Future work — prefer LLM-extracted from SummaryAgent, fall back to regex
-            'future_work': (
-                summary.get('future_work')
-                or self._extract_future_work(sections)
-            ),
+            'future_work': summary.get('future_work', []),
             
             # Agent-specific metadata (extension to schema)
             'agent_metadata': {
@@ -251,8 +313,13 @@ class AgentPaperProcessor:
                 'experience_applied': self.experience_store is not None,
                 'agent_timeline': self._build_agent_timeline(agent_result),
                 'consensus_votes': agent_result.get('metadata', {}).get('consensus_votes', 0),
-                'conflicts_resolved': agent_result.get('metadata', {}).get('conflicts_resolved', 0)
+                'conflicts_resolved': agent_result.get('metadata', {}).get('conflicts_resolved', 0),
+                'failed_agents': agent_result.get('metadata', {}).get('failed_agents', []),
             },
+
+            # Per-stage outcome. An empty section here means "this agent failed",
+            # which is a different thing from the paper genuinely having nothing.
+            'pipeline_status': agent_result.get('stage_status', {}),
             
             # Flagged uncertainties (extension to schema)
             'flagged_uncertainties': {
@@ -271,66 +338,6 @@ class AgentPaperProcessor:
         }
 
         return output
-    
-    def _extract_comparisons(self, claims: list) -> list:
-        """Extract comparison statements from claims."""
-        comparisons = []
-        
-        comparison_keywords = ['outperform', 'exceed', 'surpass', 'better than', 'improve over']
-        
-        for claim in claims:
-            claim_text = claim.get('text', '').lower()
-            if any(kw in claim_text for kw in comparison_keywords):
-                comparisons.append(claim.get('text', ''))
-        
-        return comparisons[:3]
-    
-    def _extract_limitations(self, sections: Dict[str, str]) -> list:
-        """Extract limitations from conclusion/discussion using fuzzy section matching."""
-        limitations = []
-
-        keywords = ('conclusion', 'conclud', 'discussion', 'limitation', 'future')
-        parts = [v for k, v in sections.items() if any(kw in k.lower() for kw in keywords)]
-        combined = ' '.join(parts)
-        if not combined:
-            combined = ' '.join(sections.values())
-
-        # Simple pattern matching
-        import re
-        limitation_patterns = [
-            r'limitation[s]?[:\s]+([^.]+)',
-            r'however[,\s]+([^.]+)',
-            r'(?:one|a)\s+drawback[:\s]+([^.]+)'
-        ]
-        
-        for pattern in limitation_patterns:
-            matches = re.finditer(pattern, combined, re.IGNORECASE)
-            for match in matches:
-                limitations.append(match.group(1).strip())
-        
-        return limitations[:3]
-    
-    def _extract_future_work(self, sections: Dict[str, str]) -> list:
-        """Extract future work from conclusion/discussion using fuzzy section matching."""
-        future_work = []
-
-        keywords = ('conclusion', 'conclud', 'future', 'discussion')
-        parts = [v for k, v in sections.items() if any(kw in k.lower() for kw in keywords)]
-        conclusion = ' '.join(parts) if parts else ' '.join(sections.values())
-
-        import re
-        future_patterns = [
-            r'future work[:\s]+([^.]+)',
-            r'plan to[:\s]+([^.]+)',
-            r'will[:\s]+(?:explore|investigate|study)[:\s]+([^.]+)'
-        ]
-        
-        for pattern in future_patterns:
-            matches = re.finditer(pattern, conclusion, re.IGNORECASE)
-            for match in matches:
-                future_work.append(match.group(1).strip())
-        
-        return future_work[:3]
     
     def _build_agent_timeline(self, agent_result: Dict[str, Any]) -> list:
         """Build execution timeline for agents."""

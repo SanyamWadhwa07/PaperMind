@@ -1,182 +1,77 @@
-export default function Logo({ className = "w-8 h-8", type = "icon" }) {
-  if (type === "full") {
-    // Full logo with text
+/**
+ * The mark: a page with its section spine — the same rail that structures the
+ * app, reduced to a glyph. Monoline, drawn in `currentColor`, so it inherits
+ * the accent in the header and the ink anywhere else.
+ *
+ * No gradients and no looping animation: this system builds depth from
+ * hairlines alone, and a mark that never stops moving is not a quiet one.
+ */
+export default function Logo({ className = 'w-8 h-8', type = 'icon' }) {
+  const glyph = (
+    <g
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* The sheet, with a turned corner. */}
+      <path d="M9 3.5h13.5L30 11v21.5a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-27a2 2 0 0 1 2-2Z" />
+      <path d="M22 3.5V11h7.5" />
+      {/* The spine rail and its nodes — §-numbered sections, abstracted. */}
+      <path d="M13 16.5v12" strokeOpacity="0.45" />
+      <path d="M17 16.5h8M17 22h8M17 27.5h5" />
+    </g>
+  )
+
+  const nodes = (
+    <g fill="currentColor">
+      <circle cx="13" cy="16.5" r="1.6" />
+      <circle cx="13" cy="22" r="1.6" fillOpacity="0.5" />
+      <circle cx="13" cy="27.5" r="1.6" fillOpacity="0.5" />
+    </g>
+  )
+
+  if (type === 'full') {
     return (
-      <svg 
-        className={className} 
-        viewBox="0 0 200 60" 
-        fill="none" 
+      <svg
+        className={className}
+        viewBox="0 0 190 40"
+        fill="none"
         xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="PaperMind"
       >
-        {/* Icon part */}
-        <g>
-          {/* Brain outline */}
-          <path 
-            d="M24 10 C18 10 14 14 14 20 C14 22 14.5 23.5 15 25 C13 26 12 28 12 30 C12 33 14 35 16 36 C16 38 17 40 19 41 C19 43 20 45 22 46 C23 48 25 49 28 49 C30 49 32 48 33 47 C35 47 36 46 37 45 C38 44 39 42 39 40 C40 39 41 37 41 35 C42 34 43 32 43 30 C43 28 42 26 41 25 C42 23 43 21 43 19 C43 15 40 12 36 11 C34 10 30 9 24 10 Z" 
-            fill="url(#gradient1)" 
-            stroke="url(#gradient2)" 
-            strokeWidth="1.5"
-          />
-          
-          {/* Brain details - left hemisphere */}
-          <path 
-            d="M18 22 Q20 24 18 26 Q16 28 18 30 Q20 32 18 34" 
-            stroke="white" 
-            strokeWidth="1.5" 
-            strokeLinecap="round" 
-            fill="none" 
-            opacity="0.6"
-          />
-          
-          {/* Brain details - right hemisphere */}
-          <path 
-            d="M30 22 Q28 24 30 26 Q32 28 30 30 Q28 32 30 34" 
-            stroke="white" 
-            strokeWidth="1.5" 
-            strokeLinecap="round" 
-            fill="none" 
-            opacity="0.6"
-          />
-          
-          {/* Center line */}
-          <line x1="24" y1="15" x2="24" y2="42" stroke="white" strokeWidth="1" opacity="0.3" strokeDasharray="2,2" />
-          
-          {/* AI Sparkles */}
-          <path d="M12 15 L13 17 L12 19 L11 17 Z" fill="#D9A86C" opacity="0.9">
-            <animateTransform
-              attributeName="transform"
-              type="scale"
-              values="1;1.2;1"
-              dur="2s"
-              repeatCount="indefinite"
-            />
-          </path>
-          <path d="M38 12 L39.5 14 L38 16 L36.5 14 Z" fill="#D9A86C" opacity="0.9">
-            <animateTransform
-              attributeName="transform"
-              type="scale"
-              values="1;1.3;1"
-              dur="2.5s"
-              repeatCount="indefinite"
-            />
-          </path>
-          <path d="M36 44 L37 45.5 L36 47 L35 45.5 Z" fill="#D9A86C" opacity="0.8">
-            <animateTransform
-              attributeName="transform"
-              type="scale"
-              values="1;1.15;1"
-              dur="3s"
-              repeatCount="indefinite"
-            />
-          </path>
+        <g transform="translate(0, 2)">
+          {glyph}
+          {nodes}
         </g>
-        
-        {/* Text part */}
-        <text x="55" y="32" fontFamily="Arial, sans-serif" fontSize="24" fontWeight="bold" fill="url(#textGradient)">
+        <text
+          x="44"
+          y="26"
+          fontFamily="Inter Variable, Inter, system-ui, sans-serif"
+          fontSize="20"
+          fontWeight="500"
+          letterSpacing="-0.5"
+          fill="currentColor"
+        >
           PaperMind
         </text>
-        <text x="55" y="48" fontFamily="Arial, sans-serif" fontSize="11" fontWeight="500" fill="currentColor" opacity="0.7">
-          AI Research Assistant
-        </text>
-        
-        {/* Gradients */}
-        <defs>
-          <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#00988F" />
-            <stop offset="100%" stopColor="#00C4B8" />
-          </linearGradient>
-          <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#00A7A0" />
-            <stop offset="100%" stopColor="#00E5D6" />
-          </linearGradient>
-          <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#00988F" />
-            <stop offset="100%" stopColor="#C4935F" />
-          </linearGradient>
-        </defs>
       </svg>
     )
   }
-  
-  // Icon only (default)
+
   return (
-    <svg 
-      className={className} 
-      viewBox="0 0 48 60" 
-      fill="none" 
+    <svg
+      className={className}
+      viewBox="0 0 37 38"
+      fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="PaperMind"
     >
-      {/* Brain outline */}
-      <path 
-        d="M24 10 C18 10 14 14 14 20 C14 22 14.5 23.5 15 25 C13 26 12 28 12 30 C12 33 14 35 16 36 C16 38 17 40 19 41 C19 43 20 45 22 46 C23 48 25 49 28 49 C30 49 32 48 33 47 C35 47 36 46 37 45 C38 44 39 42 39 40 C40 39 41 37 41 35 C42 34 43 32 43 30 C43 28 42 26 41 25 C42 23 43 21 43 19 C43 15 40 12 36 11 C34 10 30 9 24 10 Z" 
-        fill="url(#gradient1)" 
-        stroke="url(#gradient2)" 
-        strokeWidth="1.5"
-      />
-      
-      {/* Brain details - left hemisphere */}
-      <path 
-        d="M18 22 Q20 24 18 26 Q16 28 18 30 Q20 32 18 34" 
-        stroke="white" 
-        strokeWidth="1.5" 
-        strokeLinecap="round" 
-        fill="none" 
-        opacity="0.6"
-      />
-      
-      {/* Brain details - right hemisphere */}
-      <path 
-        d="M30 22 Q28 24 30 26 Q32 28 30 30 Q28 32 30 34" 
-        stroke="white" 
-        strokeWidth="1.5" 
-        strokeLinecap="round" 
-        fill="none" 
-        opacity="0.6"
-      />
-      
-      {/* Center line */}
-      <line x1="24" y1="15" x2="24" y2="42" stroke="white" strokeWidth="1" opacity="0.3" strokeDasharray="2,2" />
-      
-      {/* AI Sparkles with animation */}
-      <path d="M12 15 L13 17 L12 19 L11 17 Z" fill="white" opacity="0.9">
-        <animateTransform
-          attributeName="transform"
-          type="scale"
-          values="1;1.2;1"
-          dur="2s"
-          repeatCount="indefinite"
-        />
-      </path>
-      <path d="M38 12 L39.5 14 L38 16 L36.5 14 Z" fill="white" opacity="0.9">
-        <animateTransform
-          attributeName="transform"
-          type="scale"
-          values="1;1.3;1"
-          dur="2.5s"
-          repeatCount="indefinite"
-        />
-      </path>
-      <path d="M36 44 L37 45.5 L36 47 L35 45.5 Z" fill="white" opacity="0.8">
-        <animateTransform
-          attributeName="transform"
-          type="scale"
-          values="1;1.15;1"
-          dur="3s"
-          repeatCount="indefinite"
-        />
-      </path>
-      
-      {/* Gradients */}
-      <defs>
-        <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#00988F" />
-          <stop offset="100%" stopColor="#00C4B8" />
-        </linearGradient>
-        <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#00A7A0" />
-          <stop offset="100%" stopColor="#00E5D6" />
-        </linearGradient>
-      </defs>
+      {glyph}
+      {nodes}
     </svg>
   )
 }

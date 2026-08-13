@@ -141,6 +141,19 @@ class StructureAgent(BaseAgent):
             # Structured artifacts from the layered extractor — consumed by the
             # LangGraph summarizer (results tables) and downstream agents.
             'tables_md': getattr(extraction, 'tables_md', []) or [],
+            # Structured tables (caption, page, markdown) for display — tables_md
+            # above is the flattened form the summariser reads.
+            'tables': [
+                {
+                    'markdown': t.markdown,
+                    'caption': t.caption,
+                    'label': t.label,
+                    'page': t.page_number,
+                    'n_rows': t.n_rows,
+                    'n_cols': t.n_cols,
+                }
+                for t in (getattr(extraction, 'tables', []) or [])
+            ],
             'equations': getattr(extraction, 'equations', []) or [],
             'metadata': {
                 'section_count': len(sections),
@@ -151,6 +164,11 @@ class StructureAgent(BaseAgent):
                 'figures_pre_extracted': len(self._pre_extracted_figures),
                 'extraction_backend': getattr(extraction, 'backend', 'unknown'),
                 'table_count': len(getattr(extraction, 'tables_md', []) or []),
+                # Recovered from page-1 layout by the extractor. Empty when it
+                # couldn't be determined — callers fall back to the filename
+                # rather than inventing a placeholder.
+                'title': (extraction.metadata or {}).get('title', ''),
+                'authors': (extraction.metadata or {}).get('authors', []) or [],
             }
         }
     

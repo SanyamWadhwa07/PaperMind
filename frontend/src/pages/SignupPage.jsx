@@ -2,13 +2,22 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
-import { Mail, Lock, User, AlertCircle } from 'lucide-react'
+import { Mail, Lock, User } from 'lucide-react'
+import {
+  Button,
+  Card,
+  CardBody,
+  ErrorState,
+  Eyebrow,
+  Field,
+  Input,
+} from '../components/ui/primitives'
 
 export default function SignupPage() {
   const navigate = useNavigate()
   const { signup } = useAuth()
   const toast = useToast()
-  
+
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -65,132 +74,121 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        {/* Header */}
-        <div className="text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-[#C4935F] dark:text-[#D9A86C]">
-            Join PaperMind
-          </h2>
-          <p className="mt-2 text-sm sm:text-base text-[#1B1B1B] dark:text-[#F5F5F5]">
-            Start unlocking research insights with AI
+    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center py-12">
+      <div className="animate-rise">
+        <header className="text-center">
+          <Eyebrow>Create account</Eyebrow>
+          <h1 className="mt-2 font-serif text-display-sm text-ink">
+            Start reading faster
+          </h1>
+          <p className="mt-2 text-sm text-ink-muted">
+            Four levels of summary for every paper you add.
           </p>
-        </div>
+        </header>
 
-        {/* Signup Form */}
-        <form className="card mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-            </div>
-          )}
+        <Card className="mt-8">
+          <CardBody>
+            <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+              {error && <ErrorState title="Could not create account" message={error} />}
 
-          <div className="space-y-4">
-            {/* Full Name */}
-            <div>
-              <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-                Full Name
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-                <input
-                  type="text"
-                  name="fullName"
-                  value={formData.fullName}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5]"
-                  placeholder="John Doe"
-                  required
-                />
-              </div>
-            </div>
+              <Field label="Full name" htmlFor="fullName">
+                <div className="relative">
+                  <User
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="fullName"
+                    type="text"
+                    name="fullName"
+                    autoComplete="name"
+                    value={formData.fullName}
+                    onChange={handleChange}
+                    className="pl-9"
+                    placeholder="Ada Lovelace"
+                    required
+                    autoFocus
+                  />
+                </div>
+              </Field>
 
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5]"
-                  placeholder="you@example.com"
-                  required
-                />
-              </div>
-            </div>
+              <Field label="Email address" htmlFor="email">
+                <div className="relative">
+                  <Mail
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="email"
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    className="pl-9"
+                    placeholder="you@university.edu"
+                    required
+                  />
+                </div>
+              </Field>
 
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5]"
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-              <p className="mt-1 text-xs text-[#8F8F8F]">
-                Must be at least 8 characters with uppercase, lowercase, and number
-              </p>
-            </div>
+              <Field
+                label="Password"
+                htmlFor="password"
+                hint="At least 8 characters, with an uppercase letter, a lowercase letter, and a number."
+              >
+                <div className="relative">
+                  <Lock
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="password"
+                    type="password"
+                    name="password"
+                    autoComplete="new-password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    className="pl-9"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              </Field>
 
-            {/* Confirm Password */}
-            <div>
-              <label className="block text-sm font-medium text-[#1B1B1B] dark:text-[#F5F5F5] mb-2">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#8F8F8F]" />
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-2 bg-[#F9FBFA] dark:bg-[#111312] border border-[#C4935F]/30 dark:border-[#D9A86C]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00988F] dark:focus:ring-[#00A7A0] text-[#1B1B1B] dark:text-[#F5F5F5]"
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-            </div>
-          </div>
+              <Field label="Confirm password" htmlFor="confirmPassword">
+                <div className="relative">
+                  <Lock
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    name="confirmPassword"
+                    autoComplete="new-password"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    className="pl-9"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              </Field>
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-primary w-full justify-center py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                Creating Account...
-              </>
-            ) : (
-              'Sign Up'
-            )}
-          </button>
+              <Button type="submit" size="lg" className="w-full" loading={loading}>
+                {loading ? 'Creating account…' : 'Create account'}
+              </Button>
+            </form>
+          </CardBody>
+        </Card>
 
-          {/* Login Link */}
-          <p className="text-center text-sm text-[#1B1B1B] dark:text-[#F5F5F5]">
-            Already have an account?{' '}
-            <Link to="/login" className="font-medium text-[#00988F] dark:text-[#00A7A0] hover:underline">
-              Log in
-            </Link>
-          </p>
-        </form>
+        <p className="mt-6 text-center text-sm text-ink-muted">
+          Already have an account?{' '}
+          <Link to="/login" className="font-medium text-accent hover:underline">
+            Sign in
+          </Link>
+        </p>
       </div>
     </div>
   )

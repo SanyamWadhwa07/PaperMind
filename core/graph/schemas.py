@@ -61,14 +61,48 @@ class SectionDigest(BaseModel):
     facts: List[str] = Field(default_factory=list, description="Up to 5 atomic factual claims or numbers from this section, each a standalone sentence.")
 
 
-class PaperSynthesis(BaseModel):
-    """Final synthesis of the whole paper (reduce step)."""
+class SectionSummary(BaseModel):
+    """A digest of one named section, produced during a whole-paper read."""
 
-    summary: str = Field(description="A 300-450 word flowing-prose analysis: the problem, the approach, the key results with concrete numbers, and why it matters. No bullet points, no markdown headers.")
-    contributions: List[str] = Field(default_factory=list, description="2-4 primary contributions, each a concrete standalone sentence.")
-    key_findings: List[str] = Field(default_factory=list, description="3-5 specific findings, each including a number or concrete detail from the paper.")
-    limitations: List[str] = Field(default_factory=list, description="1-3 limitations actually stated or clearly implied by the paper. Empty list if none.")
-    future_work: List[str] = Field(default_factory=list, description="1-3 future directions the paper suggests. Empty list if none.")
+    section: str = Field(description="The section's name as it appears in the paper, e.g. 'Introduction', '3.2 Attention'.")
+    summary: str = Field(description="A faithful 3-6 sentence digest of this section. No fabrication; only what the text states.")
+    facts: List[str] = Field(default_factory=list, description="Up to 5 atomic factual claims or numbers from this section, each a standalone sentence.")
+
+
+class PaperReading(BaseModel):
+    """Everything extracted from one whole-paper read.
+
+    Combines what the map-reduce path spreads across a dozen section calls plus
+    separate entity and results calls. One request that sees the entire paper
+    beats many that each see a fragment — the model can resolve a result in the
+    tables against the method that produced it, which per-section calls cannot.
+    """
+
+    # Field order is load-bearing. Models emit structured output in declaration
+    # order and stop at max_tokens, so a long `sections` list declared first
+    # consumes the whole budget and leaves entities and results empty. The
+    # compact, high-value fields come first for that reason.
+    entities: List[Entity] = Field(default_factory=list, description="Up to ~25 of the most important named concepts across all four kinds. Prefer specific named things over generic words.")
+    results: List[ResultRow] = Field(default_factory=list, description="Every concrete quantitative result in the paper. Pull numbers from tables AND prose. Empty list if the paper reports none.")
+    sections: List[SectionSummary] = Field(default_factory=list, description="One entry per substantive section of the paper, in the order they appear. Cover the whole paper.")
+
+
+class PaperSynthesis(BaseModel):
+    """Final synthesis of the whole paper (reduce step).
+
+    Written to replace reading the paper, not to advertise it. The length
+    targets are deliberately generous: a reader who wants the short version can
+    stop after the first paragraph, but a reader who wants the method cannot
+    recover detail that was never generated.
+    """
+
+    summary: str = Field(description="A thorough 800-1200 word analysis in flowing prose, organised as several paragraphs: (1) the problem and why it matters, (2) the approach in enough technical detail that a knowledgeable reader could describe how it works, (3) the experimental setup — data, baselines, metrics, (4) the results with concrete numbers, (5) what it means and where it falls short. No bullet points, no markdown headers.")
+    methods_detail: str = Field(default="", description="A 150-300 word technical account of how the method actually works: components, inputs and outputs, training or analysis procedure, key hyperparameters or design choices. Empty only if the paper genuinely describes no method.")
+    experimental_setup: str = Field(default="", description="A 100-200 word account of what was tested against what: datasets or cohorts, baselines compared, metrics used, and any ablations. Empty if the paper reports no experiments.")
+    contributions: List[str] = Field(default_factory=list, description="2-5 primary contributions, each a concrete standalone sentence naming what is new.")
+    key_findings: List[str] = Field(default_factory=list, description="5-8 specific findings. Each MUST include a number or a concrete named detail from the paper — 'improves accuracy' is not a finding, 'improves BLEU from 25.16 to 28.4 on WMT14 EN-DE' is.")
+    limitations: List[str] = Field(default_factory=list, description="2-4 limitations stated by the paper or clearly implied by its design. Empty list only if none can be identified.")
+    future_work: List[str] = Field(default_factory=list, description="2-4 future directions the paper suggests. Empty list if none.")
 
 
 RelationType = Literal[

@@ -31,10 +31,21 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={showToast}>
       {children}
+      {/* Toasts follow the theme: react-hot-toast takes concrete CSS values, so
+          these read the same custom properties every component does. */}
       <Toaster
         position="top-right"
         toastOptions={{
-          style: { fontSize: '14px', background: '#1e293b', color: '#f1f5f9' },
+          style: {
+            fontSize: '14px',
+            background: 'rgb(var(--surface))',
+            color: 'rgb(var(--ink))',
+            border: '1px solid rgb(var(--border))',
+            borderRadius: 'var(--radius)',
+            boxShadow: 'var(--shadow-md)',
+          },
+          success: { iconTheme: { primary: 'rgb(var(--success))', secondary: 'rgb(var(--surface))' } },
+          error: { iconTheme: { primary: 'rgb(var(--danger))', secondary: 'rgb(var(--surface))' } },
         }}
       />
     </ToastContext.Provider>

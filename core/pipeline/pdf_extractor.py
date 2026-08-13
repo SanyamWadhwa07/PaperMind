@@ -1,25 +1,35 @@
 """Layered PDF extraction pipeline.
 
-Priority order:
-1. MinerU (magic-pdf)  — best for academic papers: figures, equations, tables, OCR
-2. pymupdf4llm         — fast, native PDFs, clean Markdown
+Backends are tried in order and the first to produce a usable result wins:
+
+1. MinerU (magic-pdf)  — layout model: figures, equations, tables, OCR
+2. pymupdf4llm         — fast, born-digital PDFs, clean Markdown
 3. PyMuPDF fitz        — always available, basic text fallback
 
-All backends return a consistent ExtractionResult so agents never need to
-know which extractor ran.
+They share the :class:`PdfBackend` protocol and all return an
+:class:`ExtractionResult`, so callers never learn which one ran, and adding a
+backend does not touch the selection logic.
+
+Concerns that are the same for every backend live in their own modules and are
+applied once, in :func:`_enrich_result`:
+:mod:`core.pipeline.metadata_extractor` (title/authors),
+:mod:`core.pipeline.table_extractor` (tables),
+:mod:`core.pipeline.text_cleaner` (section cleanup).
 """
 
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional, Protocol, Sequence
 
 import structlog
+
+from core.pipeline.metadata_extractor import extract_title_authors
+from core.pipeline.table_extractor import TableInfo, extract_tables, tables_to_markdown
 
 logger = structlog.get_logger(__name__)
 
@@ -44,7 +54,8 @@ class ExtractionResult:
     sections: Dict[str, str] = field(default_factory=dict)
     figures: List[FigureInfo] = field(default_factory=list)
     equations: List[str] = field(default_factory=list)    # raw LaTeX strings
-    tables_md: List[str] = field(default_factory=list)    # Markdown tables
+    tables: List[TableInfo] = field(default_factory=list)  # structured, with captions
+    tables_md: List[str] = field(default_factory=list)    # rendered Markdown, for prompts
     backend: str = "unknown"
     figures_dir: Optional[str] = None   # temp dir holding PNG files
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -62,28 +73,87 @@ def _pdf_hash(pdf_path: str) -> str:
     return h.hexdigest()[:16]
 
 
+_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(\S.*?)[ \t]*$", re.MULTILINE)
+
+# A heading level has to appear at least this many times to be treated as the
+# document's section level (papers have intro/method/results/conclusion at minimum).
+_MIN_HEADINGS_FOR_LEVEL = 3
+
+# Leading section numbering: "3", "3.1", "IV.", "A." — stripped from section keys
+# so downstream substring matching (summary_graph._section_rank, _SKIP_SECTIONS)
+# sees "method" rather than "3_method".
+_LEADING_NUMBER_RE = re.compile(r"^(?:\d+(?:\.\d+)*|[IVXLC]+|[A-Z])[.)]?\s+", re.IGNORECASE)
+
+
+def _pick_heading_level(md_text: str) -> int:
+    """Choose which Markdown heading level delimits sections in this document.
+
+    Extractors disagree on depth: MinerU emits level-1 ``#`` for every heading,
+    while pymupdf4llm assigns depth by font-size rank, so sections may land on
+    ``##`` or ``###`` depending on how many distinct sizes exceed the body text.
+    Hardcoding one level silently discards the other extractors' output.
+
+    Returns the shallowest level that occurs often enough to be a section level,
+    or 0 when the text has no Markdown headings at all.
+    """
+    counts: Dict[int, int] = {}
+    for m in _HEADING_RE.finditer(md_text):
+        level = len(m.group(1))
+        counts[level] = counts.get(level, 0) + 1
+
+    if not counts:
+        return 0
+
+    for level in sorted(counts):
+        if counts[level] >= _MIN_HEADINGS_FOR_LEVEL:
+            return level
+
+    # No level clears the bar (very short or oddly formatted paper) — use whichever
+    # is most common, preferring shallower on a tie.
+    return max(counts, key=lambda lvl: (counts[lvl], -lvl))
+
+
+def _section_key(heading: str) -> str:
+    """Normalise a heading into a section key: '## **3.1 Model Architecture**' → 'model_architecture'."""
+    # pymupdf4llm wraps headings in Markdown emphasis ('## **1 Introduction**'),
+    # which would otherwise block the section-number strip below.
+    heading = heading.strip().strip("*_`~ \t")
+    heading = _LEADING_NUMBER_RE.sub("", heading)
+    return re.sub(r"[^a-z0-9]+", "_", heading.lower()).strip("_")
+
+
 def _split_markdown_sections(md_text: str) -> Dict[str, str]:
     """Split pymupdf4llm / MinerU Markdown output into named sections."""
-    parts = re.split(r"\n(?=##\s)", md_text)
+    level = _pick_heading_level(md_text)
     sections: Dict[str, str] = {}
 
-    if parts and not parts[0].strip().startswith("##"):
-        preamble = parts[0].strip()
-        if preamble:
-            if re.search(r"\babstract\b", preamble[:400], re.IGNORECASE):
-                sections["abstract"] = preamble
-            else:
-                sections["preamble"] = preamble
-        parts = parts[1:]
+    if not level:
+        text = md_text.strip()
+        if text:
+            key = "abstract" if re.search(r"\babstract\b", text[:400], re.IGNORECASE) else "preamble"
+            sections[key] = text
+        return sections
 
-    for part in parts:
-        lines = part.strip().splitlines()
-        if not lines:
+    # Split on the chosen level and anything shallower — a shallower heading is
+    # also a section boundary (e.g. the paper title above ## sections).
+    split_re = re.compile(rf"^#{{1,{level}}}[ \t]+\S.*$", re.MULTILINE)
+    matches = list(split_re.finditer(md_text))
+
+    preamble = md_text[: matches[0].start()].strip() if matches else md_text.strip()
+    if preamble:
+        if re.search(r"\babstract\b", preamble[:400], re.IGNORECASE):
+            sections["abstract"] = preamble
+        else:
+            sections["preamble"] = preamble
+
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(md_text)
+        key = _section_key(m.group(0).lstrip("#"))
+        body = md_text[m.end():end].strip()
+        if not key or not body:
             continue
-        key = re.sub(r"[^a-z0-9]+", "_", lines[0].lstrip("#").strip().lower()).strip("_")
-        body = "\n".join(lines[1:]).strip()
-        if key and body:
-            sections[key] = body
+        # Papers repeat headings (e.g. per-experiment "Results") — keep both.
+        sections[key] = f"{sections[key]}\n\n{body}" if key in sections else body
 
     return sections
 
@@ -131,17 +201,21 @@ def _extract_mineru(pdf_path: str, output_dir: Path) -> Optional[ExtractionResul
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(pdf_path).stem
 
+    stderr = ""
     try:
         result = subprocess.run(
             [exe, "-p", pdf_path, "-o", str(output_dir), "-m", "auto"],
             capture_output=True, text=True, timeout=300,
         )
+        stderr = result.stderr or ""
+        # NOTE: magic-pdf exits 0 even on a fatal error (e.g. missing model
+        # weights), so the return code alone cannot be trusted — the real check
+        # is whether it produced Markdown, below.
         if result.returncode != 0:
-            logger.warning("mineru_subprocess_failed",
-                           stderr=result.stderr[-500:] if result.stderr else "")
+            logger.warning("mineru_subprocess_failed", stderr=stderr[-500:])
             return None
     except subprocess.TimeoutExpired:
-        logger.warning("mineru_timeout")
+        logger.warning("mineru_timeout", seconds=300)
         return None
     except Exception as exc:
         logger.warning("mineru_subprocess_error", error=str(exc))
@@ -160,7 +234,16 @@ def _extract_mineru(pdf_path: str, output_dir: Path) -> Optional[ExtractionResul
             break
 
     if not work_dir:
-        logger.warning("mineru_output_not_found", output_dir=str(output_dir))
+        # magic-pdf exited 0 but wrote nothing — almost always missing or
+        # version-mismatched model weights. Surface the cause, not just the symptom.
+        missing_weights = re.search(r"No such file or directory: '([^']*\.(?:pth|pt|bin))'", stderr)
+        logger.warning(
+            "mineru_produced_no_output",
+            output_dir=str(output_dir),
+            missing_model=missing_weights.group(1) if missing_weights else None,
+            hint="run 'python -m magic_pdf.tools.common download_models' to repair model weights",
+            stderr=stderr[-300:],
+        )
         return None
 
     # --- Markdown → sections ---
@@ -353,43 +436,169 @@ def _extract_fitz(pdf_path: str) -> ExtractionResult:
 
 
 # ---------------------------------------------------------------------------
+# Backend protocol and registry
+#
+# Backends are ordered, interchangeable strategies behind one interface, so
+# adding one (Docling, GROBID, a hosted parser) means writing a class and
+# registering it — not editing the selection logic below.
+# ---------------------------------------------------------------------------
+
+# A backend has to find at least this many sections to be considered usable;
+# below it, the next backend gets a turn.
+MIN_USABLE_SECTIONS = 3
+
+
+class PdfBackend(Protocol):
+    """One strategy for turning a PDF into an :class:`ExtractionResult`."""
+
+    name: str
+
+    def is_available(self) -> bool:
+        """True if this backend's dependencies are present on this machine."""
+
+    def extract(self, pdf_path: str, workdir: Path) -> Optional[ExtractionResult]:
+        """Extract, or return None if this backend cannot handle the document."""
+
+
+class MinerUBackend:
+    """Tier 1 — layout-model extraction: figures, equations, tables, OCR."""
+
+    name = "mineru"
+
+    def is_available(self) -> bool:
+        return _find_mineru_exe() is not None
+
+    def extract(self, pdf_path: str, workdir: Path) -> Optional[ExtractionResult]:
+        return _extract_mineru(pdf_path, workdir / self.name)
+
+
+class PyMuPdf4LlmBackend:
+    """Tier 2 — fast Markdown extraction for born-digital PDFs."""
+
+    name = "pymupdf4llm"
+
+    def is_available(self) -> bool:
+        try:
+            import pymupdf4llm  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def extract(self, pdf_path: str, workdir: Path) -> Optional[ExtractionResult]:
+        return _extract_pymupdf4llm(pdf_path, workdir / self.name)
+
+
+class FitzBackend:
+    """Tier 3 — always available, and always returns something."""
+
+    name = "fitz"
+
+    def is_available(self) -> bool:
+        return True
+
+    def extract(self, pdf_path: str, workdir: Path) -> Optional[ExtractionResult]:
+        return _extract_fitz(pdf_path)
+
+
+#: Tried in order; the first to return enough sections wins.
+DEFAULT_BACKENDS: List[PdfBackend] = [
+    MinerUBackend(),
+    PyMuPdf4LlmBackend(),
+    FitzBackend(),
+]
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def extract_pdf(pdf_path: str, prefer_mineru: bool = True) -> ExtractionResult:
-    """
-    Extract text sections and figures from an academic PDF.
-
-    Tries backends in order: MinerU → pymupdf4llm → fitz.
-    Falls through to the next backend if one fails or returns too few sections.
+def extract_pdf(
+    pdf_path: str,
+    prefer_mineru: bool = True,
+    backends: Optional[Sequence[PdfBackend]] = None,
+) -> ExtractionResult:
+    """Extract sections, figures, tables and metadata from an academic PDF.
 
     Args:
-        pdf_path: Absolute path to the PDF file.
-        prefer_mineru: If False, skip MinerU even if installed (e.g. for speed).
+        pdf_path: Absolute path to the PDF.
+        prefer_mineru: If False, skip the (slow, model-backed) MinerU tier.
+        backends: Override the backend chain. Mainly for tests — production
+            callers should use the default registry.
 
     Returns:
-        ExtractionResult with sections, figures, equations, tables_md, backend.
+        An :class:`ExtractionResult`. Always returns a result; the final backend
+        is a fallback that cannot decline.
     """
-    pdf_hash = _pdf_hash(pdf_path)
-    tmp_root = Path(tempfile.gettempdir()) / "papermind_extract" / pdf_hash
-    tmp_root.mkdir(parents=True, exist_ok=True)
+    chain = list(backends if backends is not None else DEFAULT_BACKENDS)
+    if not prefer_mineru:
+        chain = [b for b in chain if b.name != "mineru"]
 
-    # --- MinerU ---
-    if prefer_mineru:
-        result = _extract_mineru(pdf_path, tmp_root / "mineru")
-        if result and len(result.sections) >= 3:
-            logger.info("pdf_extraction_backend", backend="mineru",
-                        sections=len(result.sections), figures=len(result.figures))
-            return result
+    workdir = Path(tempfile.gettempdir()) / "papermind_extract" / _pdf_hash(pdf_path)
+    workdir.mkdir(parents=True, exist_ok=True)
 
-    # --- pymupdf4llm ---
-    result = _extract_pymupdf4llm(pdf_path, tmp_root / "pymupdf4llm")
-    if result and len(result.sections) >= 3:
-        logger.info("pdf_extraction_backend", backend="pymupdf4llm",
-                    sections=len(result.sections), figures=len(result.figures))
-        return result
+    result: Optional[ExtractionResult] = None
+    for backend in chain:
+        if not backend.is_available():
+            logger.debug("pdf_backend_unavailable", backend=backend.name)
+            continue
+        try:
+            candidate = backend.extract(pdf_path, workdir)
+        except Exception as exc:
+            logger.warning("pdf_backend_raised", backend=backend.name, error=str(exc))
+            continue
 
-    # --- fitz fallback ---
-    logger.warning("pdf_extraction_backend", backend="fitz_fallback",
-                   reason="all primary extractors insufficient")
-    return _extract_fitz(pdf_path)
+        if candidate and len(candidate.sections) >= MIN_USABLE_SECTIONS:
+            result = candidate
+            break
+        logger.debug("pdf_backend_insufficient", backend=backend.name,
+                     sections=len(candidate.sections) if candidate else 0)
+
+    if result is None:
+        # Every backend declined — fall back to the one that never can.
+        logger.warning("pdf_extraction_all_backends_insufficient")
+        result = FitzBackend().extract(pdf_path, workdir)
+
+    _enrich_result(result, pdf_path)
+
+    logger.info("pdf_extraction_backend",
+                backend=result.backend,
+                sections=len(result.sections),
+                figures=len(result.figures),
+                tables=len(result.tables_md),
+                has_title=bool(result.metadata.get("title")))
+    return result
+
+
+def _enrich_result(result: ExtractionResult, pdf_path: str) -> None:
+    """Fill in what the winning backend didn't provide, in place.
+
+    Applied uniformly so downstream agents see the same shape regardless of
+    which extractor won.
+    """
+    # Title / authors — layout-derived, so identical across backends.
+    if not result.metadata.get("title"):
+        title, authors = extract_title_authors(pdf_path)
+        if title:
+            result.metadata["title"] = title
+        if authors:
+            result.metadata["authors"] = authors
+
+    # Tables. MinerU emits its own; every other backend needs these detected
+    # separately, and without them the summariser's results extraction has no
+    # tabular input and falls back to scraping prose.
+    if not result.tables:
+        result.tables = extract_tables(pdf_path)
+    if not result.tables_md:
+        result.tables_md = tables_to_markdown(result.tables)
+
+    # Text cleaning previously ran only inside the legacy AdvancedSectionExtractor,
+    # so MinerU/pymupdf4llm/fitz sections kept hyphenation breaks and running headers.
+    if result.sections:
+        try:
+            from core.pipeline.text_cleaner import clean_all_sections
+            result.sections = clean_all_sections(result.sections)
+        except Exception as exc:
+            logger.debug("section_cleaning_failed", error=str(exc))
+
+    result.metadata["section_count"] = len(result.sections)
+    result.metadata["table_count"] = len(result.tables)

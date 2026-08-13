@@ -1,12 +1,13 @@
 """LiteratureReviewDrafter — writes a structured lit review from the corpus."""
 
 import json
-import logging
+import structlog
+from core.llm.json_parse import parse_json_object
 from typing import Any, Dict, List, Optional
 
 from core.intelligence.base_intelligence_agent import BackendAwareReActAgent
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 LIT_REVIEW_SYSTEM = """You are an expert academic writer. Write a structured literature review
 in the style of a survey paper. Be precise, cite specific papers by title, and organize
@@ -46,12 +47,9 @@ class LiteratureReviewDrafter(BackendAwareReActAgent):
         )
 
     def parse_result(self, final_answer: str, input_data: Dict) -> Dict:
-        try:
-            m = __import__("re").search(r"\{.*\}", final_answer, __import__("re").DOTALL)
-            if m:
-                return json.loads(m.group())
-        except Exception:
-            pass
+        parsed = parse_json_object(final_answer)
+        if parsed:
+            return parsed
         return {
             "title": f"Literature Review: {input_data.get('topic', '')}",
             "sections": [{"heading": "Overview", "content": final_answer[:2000], "papers_cited": []}],

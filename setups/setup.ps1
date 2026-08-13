@@ -29,7 +29,7 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
 
 # Setup Backend
 Write-Host "[3/4] Setting up Backend..." -ForegroundColor Yellow
-Write-Host "  Installing Flask dependencies..." -ForegroundColor Cyan
+Write-Host "  Installing backend dependencies..." -ForegroundColor Cyan
 Set-Location backend
 pip install -r requirements.txt --quiet
 if ($LASTEXITCODE -eq 0) {
@@ -60,19 +60,18 @@ Write-Host "="*60 -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Next Steps:" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "1. Start Backend (Terminal 1):" -ForegroundColor Cyan
-Write-Host "   cd backend" -ForegroundColor White
-Write-Host "   python app.py" -ForegroundColor White
+Write-Host "1. Copy backend/.env.example to backend/.env and fill in Supabase + LLM keys" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "2. Start Frontend (Terminal 2):" -ForegroundColor Cyan
+Write-Host "2. Start Backend (Terminal 1):" -ForegroundColor Cyan
+Write-Host "   cd backend" -ForegroundColor White
+Write-Host "   python -m uvicorn main_app:app --reload --port 8000" -ForegroundColor White
+Write-Host ""
+Write-Host "3. Start Frontend (Terminal 2):" -ForegroundColor Cyan
 Write-Host "   cd frontend" -ForegroundColor White
 Write-Host "   npm run dev" -ForegroundColor White
 Write-Host ""
-Write-Host "3. Open Browser:" -ForegroundColor Cyan
+Write-Host "4. Open Browser:" -ForegroundColor Cyan
 Write-Host "   http://localhost:3000" -ForegroundColor White
 Write-Host ""
-Write-Host "For detailed documentation, see:" -ForegroundColor Yellow
-Write-Host "  - QUICKSTART.md" -ForegroundColor White
-Write-Host "  - FULLSTACK_README.md" -ForegroundColor White
-Write-Host "  - API_DOCUMENTATION.md" -ForegroundColor White
+Write-Host "For detailed documentation, see README.md and CLAUDE.md." -ForegroundColor Yellow
 Write-Host ""

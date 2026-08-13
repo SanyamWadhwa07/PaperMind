@@ -2,40 +2,55 @@
 
 ## Project Overview
 
-PaperMind is an AI-powered research paper summarization platform that transforms academic PDFs into structured, multi-level summaries using a 7-agent parallel processing pipeline. It extracts entities, quantitative results, figures, and citations, then generates four distinct summary types (Simple, Detailed, ELI5, Technical).
+PaperMind is an AI-powered research paper platform that turns academic PDFs
+into structured, multi-level summaries. Upload a PDF or paste an arXiv ID and
+a multi-agent pipeline extracts sections, entities, quantitative results, and
+figures, then a LangGraph-based engine writes a full-paper summary plus
+findings, contributions, limitations, and future work. A separate
+`intelligence` layer adds on-demand features: simulated peer review,
+reproducibility scoring, research-gap detection, and slide generation.
 
 ```
 User uploads PDF / arXiv ID
         │
         ▼
-┌─────────────────────────────────────────────────┐
-│              Flask Backend (port 5000)           │
-│                                                 │
-│  auth/   routes/   database/   tasks/           │
-└────────────────────┬────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────┐
-│        ParallelAgentOrchestrator                │
-│                                                 │
-│  Phase 1 (sequential):                         │
-│    StructureAgent → extract PDF sections        │
-│                                                 │
-│  Phase 2 (parallel):                           │
-│    EntityAgent   ResultsAgent                   │
-│    FigureAgent   ReasoningAgent                 │
-│                                                 │
-│  Phase 3 (sequential):                         │
-│    SummaryAgent → LLM (Ollama qwen2.5:3b)       │
-│    ComparisonAgent → SOTA benchmarking          │
-└─────────────────────────────────────────────────┘
-                     │
-                     ▼
-        Supabase PostgreSQL + pgvector
-                     │
-                     ▼
-        React Frontend (port 5173)
+┌───────────────────────────────────────────────────┐
+│           FastAPI backend (port 8000)              │
+│                                                     │
+│  routes/ → services/ → repositories/ → Supabase    │
+└──────────────────────┬──────────────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────────┐
+│           core/agents — extraction pipeline         │
+│                                                     │
+│  Phase 1 (sequential): StructureAgent               │
+│  Phase 2 (parallel):   EntityAgent, ResultsAgent,    │
+│                        FigureAgent, ReasoningAgent   │
+│  Phase 3 (sequential): SummaryAgent, ComparisonAgent │
+└──────────────────────┬──────────────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────────┐
+│      core/graph — LangGraph summarisation engine     │
+│                                                     │
+│  map sections → extract entities/results (parallel) │
+│    → synthesize → grade (retry once if weak)        │
+│  Gemini → Groq → Ollama auto-failover                │
+└──────────────────────┬──────────────────────────────┘
+                        │
+                        ▼
+             Supabase PostgreSQL + pgvector
+                        │
+                        ▼
+             React frontend (port 3000)
 ```
+
+The LangGraph engine (`core/graph/`) is the **only** summarisation path. The
+legacy template fallback in `core/agents/summary_agent.py` has been removed: it
+assembled plausible-looking prose whenever the LLM was unreachable, which is
+indistinguishable from a real summary once persisted. `SummaryAgent` is now a
+thin adapter over the graph, and raises when summarisation fails.
 
 ---
 
@@ -45,99 +60,135 @@ User uploads PDF / arXiv ID
 PaperMind/
 ├── CLAUDE.md                     # This file
 ├── README.md
-├── requirements.txt              # Root Python deps (pip install here)
+├── requirements.txt               # Root Python deps
+├── requirements-dev.txt           # pytest, rouge-score — dev/test/eval only
+├── docker-compose.yml             # api + web + redis (+ optional workers profile)
+├── docs/                          # TESTING.md, BENCHMARKS.md, assets/
+├── evals/run_benchmark.py         # full-pipeline benchmark against real PDFs
+├── setups/                        # one-shot PowerShell setup scripts (Windows)
 │
 ├── backend/
-│   ├── app.py                    # Main Flask app, all legacy routes
-│   ├── main.py                   # PDF extraction pipeline (ImprovedPDFExtractor, etc.)
-│   ├── patterns.json             # Regex patterns for entity/result extraction
-│   ├── requirements.txt          # Backend-specific deps
-│   ├── setup_database.py         # Supabase schema initialization script
+│   ├── main_app.py                # create_app() — composition root: settings,
+│   │                               #   logging, middleware, routers. Nothing else
+│   │                               #   should wire dependencies.
+│   ├── main.py                    # Legacy PDF-extraction classes (AdvancedSectionExtractor,
+│   │                               #   EnhancedEntityExtractor, ResultsExtractor,
+│   │                               #   FigureExtractor) — still imported by core/agents/*
+│   │                               #   as fallbacks. Not dead code.
+│   ├── requirements.txt
+│   ├── setup_database.py          # Supabase schema initialization script
+│   │
+│   ├── config/settings.py         # Typed pydantic-settings — single source for every
+│   │                               #   env var. Reads backend/.env via `env_file=`, but
+│   │                               #   that only populates the Settings object, NOT
+│   │                               #   os.environ — see Configuration gotcha below.
+│   ├── db/client.py                # SupabaseProvider (lazy, thread-safe) + LazySupabase
+│   ├── repositories/               # ALL persistence. base.py, summary_repository.py,
+│   │                               #   user_repository.py (User/Activity/Stats)
+│   ├── services/                   # ALL business rules. auth_service, summary_service,
+│   │                               #   arxiv_service — no FastAPI or Supabase imports,
+│   │                               #   so they unit-test with plain fakes.
+│   ├── api/
+│   │   ├── deps.py                 # DI wiring — every repo/service as a FastAPI Depends
+│   │   ├── errors.py               # AppError hierarchy + handlers → one JSON envelope
+│   │   ├── middleware.py           # RequestContext (X-Request-ID) + SecurityHeaders
+│   │   ├── rate_limit.py           # Named limit buckets, per-user keying
+│   │   ├── health.py               # /api/health, /health/live, /health/ready
+│   │   └── logging_config.py       # structlog; JSON in prod, console in dev
+│   │
+│   ├── routes/                     # HTTP-only concerns; delegate to services/
+│   │   ├── process_paper.py        # /api/process/upload, /api/process/arxiv
+│   │   ├── summaries.py            # /api/summaries CRUD
+│   │   ├── search.py               # /api/search — arXiv keyword search
+│   │   ├── profile.py              # /api/profile/*, avatar upload
+│   │   ├── knowledge_graph.py      # /api/graph/* (semantic search, recommendations)
+│   │   ├── corpus.py               # /api/corpus/* (topic clusters, citation network,
+│   │   │                           #   author graph, contradiction map)
+│   │   ├── feedback.py             # /api/feedback/* (star ratings)
+│   │   ├── collections.py          # /api/collections/* (paper folders)
+│   │   ├── batch_compare.py        # /api/batch/compare (cross-paper comparison)
+│   │   ├── reading_queue.py        # /api/queue/* (reading list, priority scoring)
+│   │   ├── annotations.py          # /api/annotations/* (highlights/notes)
+│   │   ├── intelligence.py         # /api/intelligence/* (peer review, research gaps)
+│   │   ├── export_extra.py         # /api/export/slides/{id} (HTML deck)
+│   │   └── arxiv_diff.py           # /api/arxiv-diff/* (version-to-version diffing)
 │   ├── auth/
-│   │   ├── routes.py             # /api/auth/* (register, login, me, reset-password)
-│   │   └── utils.py              # JWT token creation/validation, bcrypt helpers
+│   │   ├── routes.py                # /api/auth/signup, /login, /logout, /me (GET+PUT),
+│   │   │                           #   /change-password, /forgot-password, /reset-password
+│   │   └── utils.py                 # JWT create/decode, bcrypt hash/verify
 │   ├── database/
-│   │   ├── config.py             # SUPABASE_URL, SUPABASE_SERVICE_KEY from .env
-│   │   ├── schema.sql            # Core tables: users, summaries, user_activity
-│   │   ├── experience_schema.sql # Agent learning tables
-│   │   └── migrations/           # Incremental DB migrations (001–005+)
-│   ├── routes/
-│   │   ├── process_paper.py      # /api/process/upload, /api/process/arxiv (auth required)
-│   │   ├── summaries.py          # /api/summaries CRUD (auth required)
-│   │   ├── profile.py            # /api/profile/* (auth required)
-│   │   ├── knowledge_graph.py    # /api/graph/* (semantic search, recommendations)
-│   │   ├── feedback.py           # /api/feedback/* (star ratings)
-│   │   ├── collections.py        # /api/collections/* (paper folders)
-│   │   └── batch_compare.py      # /api/batch/compare (cross-paper comparison)
-│   ├── tasks/
-│   │   └── paper_tasks.py        # Celery async task definitions
-│   └── uploads/, arxiv_papers/   # Temporary file storage
+│   │   ├── config.py                # JWT_SECRET_KEY etc., re-exported from config/settings.py
+│   │   ├── schema.sql                # Core tables: users, summaries, user_activity
+│   │   ├── experience_schema.sql     # Agent cross-paper learning tables
+│   │   └── migrations/               # Incremental SQL migrations, run in order
+│   ├── tasks/paper_tasks.py         # Celery async task definitions
+│   └── uploads/, arxiv_papers/      # Gitignored runtime scratch dirs (empty on a
+│                                    #   fresh checkout; repopulated at runtime)
 │
 ├── core/
-│   ├── agent_integration.py      # AgentPaperProcessor wrapper, run_agent_mode()
-│   ├── agents/
-│   │   ├── base_agent.py         # BaseAgent ABC with async process(), stats
-│   │   ├── message_bus.py        # Priority queue inter-agent communication
-│   │   ├── orchestrator.py       # ParallelAgentOrchestrator (3-phase execution)
-│   │   ├── structure_agent.py    # PDF section extraction (font-based detection)
-│   │   ├── entity_agent.py       # Model/dataset/metric/framework extraction
-│   │   ├── results_agent.py      # Quantitative results from tables + text
-│   │   ├── figure_agent.py       # Figure extraction + relevance ranking
-│   │   ├── reasoning_agent.py    # Key claims + contribution analysis
-│   │   ├── summary_agent.py      # LLM-powered 4-type summary generation
-│   │   └── comparison_agent.py   # SOTA benchmarking (optional)
-│   ├── knowledge/
-│   │   ├── embedding_service.py  # sentence-transformers singleton (all-MiniLM-L6-v2)
-│   │   ├── citation_extractor.py # Reference section parser + arXiv ID matching
-│   │   ├── graph_service.py      # Knowledge graph queries + similarity caching
-│   │   ├── lineage_service.py    # Temporal paper linking (ancestry trees)
-│   │   └── comparison_service.py # Cross-paper metrics/entity comparison
+│   ├── agent_integration.py         # AgentPaperProcessor wrapper, run_agent_mode()
+│   ├── agents/                      # BaseAgent ABC, message_bus, orchestrator,
+│   │                                #   structure/entity/results/figure/reasoning/
+│   │                                #   summary/comparison agents, plus ablation_parser,
+│   │                                #   reproducibility, and research_gap agents
+│   ├── graph/                       # ⭐ LangGraph summarisation engine
+│   │   ├── summary_graph.py         #   map-reduce StateGraph
+│   │   ├── schemas.py               #   domain-agnostic Pydantic output schemas
+│   │   ├── relation_agent.py        #   paper-to-paper relationship labelling
+│   │   └── adapter.py               #   converts graph output to the legacy shape
+│   ├── intelligence/                 # On-demand analysis, triggered from the UI's
+│   │                                #   Intelligence tab, not part of the main pipeline:
+│   │                                #   peer_review_agent, lit_review_agent,
+│   │                                #   hypothesis_agent, hallucination_guard,
+│   │                                #   confidence_service, slide_generator
+│   ├── knowledge/                    # embedding_service (all-MiniLM-L6-v2),
+│   │                                #   citation_extractor, graph_service,
+│   │                                #   lineage_service, comparison_service,
+│   │                                #   semantic_scholar_service, arxiv_diff_service,
+│   │                                #   github_service, topic_clustering
 │   ├── llm/
-│   │   └── llm_interface.py      # LocalLLM: Ollama → Transformers → Template fallback
-│   ├── memory/
-│   │   └── experience_db.py      # ExperienceStore: cross-paper learning in Supabase
+│   │   ├── providers.py              # Gemini → Groq → Ollama auto-failover chain
+│   │   └── llm_interface.py          # Legacy LocalLLM (used by the non-graph path)
+│   ├── memory/experience_db.py       # ExperienceStore: cross-paper learning in Supabase
 │   └── pipeline/
-│       ├── text_cleaner.py       # PDF text post-processing (fix hyphenation, fragments)
-│       └── processing_cache.py   # Redis SHA256 cache for PDF processing results
+│       ├── pdf_extractor.py          # MinerU → pymupdf4llm → PyMuPDF fallback chain
+│       ├── text_cleaner.py           # Post-processing (hyphenation, fragments)
+│       ├── diagram_processor.py      # Figure/diagram handling
+│       └── processing_cache.py       # Redis SHA256 cache for PDF processing results
 │
 ├── frontend/
 │   ├── package.json
-│   ├── vite.config.js            # API proxy → localhost:5000
+│   ├── vite.config.js               # API proxy → localhost:8000
+│   ├── tailwind.config.js           # Design tokens mapped to Tailwind names
 │   └── src/
-│       ├── App.jsx               # Routes: /, /login, /signup, /dashboard, /summary/:id,
-│       │                         #   /batch, /profile, /timeline
+│       ├── App.jsx                   # Routes: /, /login, /signup, /forgot-password,
+│       │                            #   /reset-password, /dashboard, /summary/:id,
+│       │                            #   /batch, /profile, /timeline, /explore, /discover
+│       ├── lib/api.js                # The single HTTP client — relative URLs, bearer
+│       │                            #   token attached automatically, normalised errors
 │       ├── contexts/
-│       │   ├── AuthContext.jsx   # JWT token management, user state
+│       │   ├── AuthContext.jsx       # JWT token management, user state
+│       │   ├── ThemeContext.jsx      # Light/dark toggle, drives the `.dark` class
 │       │   └── ToastContext.jsx
-│       ├── pages/
-│       │   ├── HomePage.jsx      # Landing: upload PDF or enter arXiv ID
-│       │   ├── DashboardPage.jsx # Paper library with search + Collections sidebar
-│       │   ├── SummaryPage.jsx   # Tabs: summaries, entities, figures, graph
-│       │   ├── BatchPage.jsx     # Batch processing + Compare All button
-│       │   ├── TimelinePage.jsx  # Research timeline + ancestry tree visualization
-│       │   └── ProfilePage.jsx
+│       ├── pages/                    # One file per route (13 pages)
 │       └── components/
-│           ├── KnowledgeGraph.jsx    # vis-network knowledge graph
-│           ├── ComparisonTable.jsx   # Cross-paper metrics matrix
-│           ├── StarRating.jsx        # 5-star feedback widget
-│           ├── EntityDisplay.jsx     # Datasets/models/metrics chips
-│           ├── FiguresDisplay.jsx    # Figure gallery
-│           ├── FlowchartViewer.jsx   # Mermaid methodology flowchart
-│           └── SectionSummaries.jsx  # Per-section accordion
+│           ├── ui/primitives.jsx     # Button, Card, Input, Badge, StagePill, Tabs,
+│           │                        #   EmptyState, ErrorState, PageHeader, Spinner, …
+│           ├── Layout.jsx            # Header, nav rail, mobile drawer, footer
+│           ├── KnowledgeGraph.jsx    # vis-network graph, themed via CSS custom props
+│           ├── ComparisonTable.jsx, EntityDisplay.jsx, FiguresDisplay.jsx,
+│           │   SectionSummaries.jsx, StarRating.jsx, PaperCard.jsx,
+│           │   ProcessingModal.jsx, ActivityChart.jsx, FlowchartViewer.jsx,
+│           │   KeywordCloud.jsx, AvatarUpload.jsx, Logo.jsx
 │
 └── tests/
-    ├── conftest.py               # Fixtures: mock Supabase, LLM, test PDF
-    ├── pytest.ini
-    ├── unit/
-    │   ├── test_text_cleaner.py
-    │   ├── test_citation_extractor.py
-    │   ├── test_summary_quality.py
-    │   └── test_embedding_service.py
-    ├── integration/
-    │   ├── test_process_paper.py
-    │   └── test_knowledge_graph.py
-    └── api/
-        └── test_routes.py
+    ├── conftest.py                   # Fixtures: mock Supabase, LLM, test PDF
+    ├── unit/                          # citation extraction, text cleaning, embeddings,
+    │                                 #   entity/structure agents, graph engine, summary
+    │                                 #   quality — pure logic, no network
+    ├── integration/                   # multi-agent pipeline wiring, knowledge-graph queries
+    └── api/                            # FastAPI route contracts (auth, process, summaries,
+                                        #   graph, and newer routes)
 ```
 
 ---
@@ -147,44 +198,29 @@ PaperMind/
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+
-- Ollama (https://ollama.com)
-- Redis (for async task queue)
-- Supabase project (free tier works)
+- A free [Supabase](https://supabase.com) project
+- A free LLM key — [Google AI Studio](https://aistudio.google.com/apikey) (Gemini)
+  and/or [Groq](https://console.groq.com) — or [Ollama](https://ollama.com) for fully local
+- Redis (optional — rate limiting and caching degrade to in-memory without it)
 
 ### 1. Backend
 
 ```bash
-cd backend
-python -m venv research
-# Windows:
-.\research\Scripts\Activate.ps1
-# Mac/Linux:
-source research/bin/activate
+python -m venv venv
+# Windows: .\venv\Scripts\Activate.ps1   |   macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt -r backend/requirements.txt
 
-pip install -r requirements.txt
-
-# Copy environment template
-cp .env.example .env
-# Fill in: SUPABASE_URL, SUPABASE_SERVICE_KEY, JWT_SECRET_KEY
+cp backend/.env.example backend/.env
+# Fill in: SUPABASE_URL, SUPABASE_SERVICE_KEY, JWT_SECRET_KEY, and at least one
+# of GOOGLE_API_KEY / GROQ_API_KEY (or leave both unset to use local Ollama)
 ```
 
-Run database migrations in order:
-```bash
-# Via Supabase dashboard SQL editor, run:
-backend/database/schema.sql
-backend/database/experience_schema.sql
-backend/database/migrations/001_knowledge_graph.sql
-backend/database/migrations/002_summary_quality.sql
-backend/database/migrations/003_user_feedback.sql
-backend/database/migrations/004_collections.sql
-backend/database/migrations/005_temporal_graph.sql
-```
+Run the SQL in `backend/database/` via the Supabase SQL editor, in order:
+`schema.sql` → `experience_schema.sql` → `migrations/001_*.sql` → … in filename order.
 
-Start Flask dev server:
 ```bash
 cd backend
-python app.py
-# Runs on http://localhost:5000
+python -m uvicorn main_app:app --reload --port 8000
 ```
 
 ### 2. Frontend
@@ -193,52 +229,57 @@ python app.py
 cd frontend
 npm install
 npm run dev
-# Runs on http://localhost:5173 (proxies /api/* to localhost:5000)
+# http://localhost:3000, proxies /api/* to http://localhost:8000 (see vite.config.js)
 ```
 
-### 3. Ollama (LLM)
+### 3. Ollama (optional local LLM)
 
 ```bash
-# Install from https://ollama.com, then:
-ollama pull qwen2.5:3b           # Default (fast, ~2GB)
-ollama pull qwen2.5:7b-instruct-q4_K_M  # Better quality (~4GB)
-ollama serve                     # Start server on :11434
+ollama pull qwen2.5:3b                   # fast tier
+ollama pull qwen2.5:7b-instruct-q4_K_M   # better quality, ~4.5GB, the practical
+                                          #   ceiling on a 4GB GPU like an RTX 2050
+ollama serve
 ```
 
-Override model via env var: `PAPERMIND_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M`
-
-### 4. Redis (async tasks)
+### 4. Redis (optional — rate limiting, Celery, processing cache)
 
 ```bash
-# Windows: use WSL or Docker
 docker run -d -p 6379:6379 redis:alpine
-# Mac: brew install redis && redis-server
 ```
 
-### 5. Celery Worker
+Without Redis, `api/rate_limit.py` probes reachability at startup and falls
+back to in-memory buckets with a logged warning — this is expected in local dev.
+
+### 5. Celery worker (optional — async processing)
 
 ```bash
 cd backend
 celery -A tasks.paper_tasks worker --loglevel=info
 ```
 
+### 6. Docker Compose (everything at once)
+
+```bash
+docker compose up --build
+# → http://localhost:8080
+```
+
 ---
 
-## The 7-Agent Pipeline
+## The Extraction & Summarisation Pipeline
 
-| Agent | Phase | Input | Output |
-|-------|-------|-------|--------|
-| `StructureAgent` | 1 (sequential) | PDF path | sections dict, domain |
-| `EntityAgent` | 2 (parallel) | sections, domain | models, datasets, metrics, tasks |
-| `ResultsAgent` | 2 (parallel) | sections | quantitative results list |
-| `FigureAgent` | 2 (parallel) | PDF path, sections | figures with captions + rank |
-| `ReasoningAgent` | 2 (parallel) | sections, entities | claims, contributions, limitations |
-| `SummaryAgent` | 3 (sequential) | all above outputs | 4 summaries + section summaries |
-| `ComparisonAgent` | 3 (sequential) | results, entities | SOTA comparison (optional) |
+| Stage | Where | What |
+|-------|-------|------|
+| `StructureAgent` | `core/agents/` — phase 1 (sequential) | PDF → sections dict, domain (`cv`/`nlp`/`ml`/`general`) |
+| `EntityAgent`, `ResultsAgent`, `FigureAgent`, `ReasoningAgent` | `core/agents/` — phase 2 (parallel) | Entities, quantitative results, figures, claims |
+| LangGraph engine | `core/graph/summary_graph.py` | map-reduce over every section → structured entities/results → synthesize → LLM-judge grade (retries once if weak) |
+| `SummaryAgent` | `core/agents/summary_agent.py` | Thin adapter over the graph engine; raises rather than falling back to templates |
+| `RelationAgent` | `core/graph/relation_agent.py` | Labels how papers relate (extends/replicates/contradicts/…) into `paper_lineage` |
+| Intelligence agents | `core/intelligence/` | On-demand only, triggered from the UI: peer review simulation, research gaps, reproducibility score, slide export |
 
-**Inter-agent communication** uses `AgentMessageBus` (priority queue). Agents can broadcast `CONFLICT` messages when disagreeing on extracted values; the orchestrator resolves via voting.
-
-**Domain detection** (`StructureAgent`) returns `cv`, `nlp`, `ml`, or `general`, which drives domain-specific prompts in `SummaryAgent` and entity patterns in `EntityAgent`.
+**Inter-agent communication** in the phase-1/2/3 pipeline uses `AgentMessageBus`
+(priority queue). Agents can broadcast `CONFLICT` messages when disagreeing on
+extracted values; the orchestrator resolves via voting.
 
 ---
 
@@ -249,7 +290,7 @@ celery -A tasks.paper_tasks worker --loglevel=info
 | Table | Purpose |
 |-------|---------|
 | `users` | Auth, profile, avatar |
-| `summaries` | Paper summaries (JSONB `summary_data` stores full agent output) |
+| `summaries` | Paper summaries (JSONB `summary_data` stores full agent/graph output) |
 | `user_activity` | Event log: search, summarize, export, view |
 
 ### Knowledge Graph Tables (`migrations/001`)
@@ -269,82 +310,84 @@ celery -A tasks.paper_tasks worker --loglevel=info
 | `result_baselines` | Running mean/std for (dataset, metric, model) triples |
 | `entity_relationships` | Entity co-occurrence / semantic relationships |
 
-### Additional Tables
+### Additional Tables (later migrations)
 
-| Table | Migration | Purpose |
-|-------|-----------|---------|
-| `summary_feedback` | 003 | 1–5 star ratings + comments |
-| `collections` | 004 | User paper folders |
-| `collection_papers` | 004 | M2M: collection ↔ summary |
-| `paper_lineage` | 005 | Temporal ancestor/descendant links |
+| Table | Purpose |
+|-------|---------|
+| `summary_feedback` | 1–5 star ratings + comments |
+| `collections`, `collection_papers` | User paper folders (M2M) |
+| `paper_lineage` | Temporal/relational links, written by `RelationAgent` |
 
 ---
 
 ## API Reference
 
-All authenticated routes require: `Authorization: Bearer <jwt_token>`
+All authenticated routes take `Authorization: Bearer <jwt>`. Interactive docs
+at `/api/docs` (disabled when `APP_ENV=production`).
 
 ### Auth
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| POST | `/api/auth/register` | — | Create account |
+| POST | `/api/auth/signup` | — | Create account |
 | POST | `/api/auth/login` | — | Get JWT token |
-| GET | `/api/auth/me` | ✓ | Current user profile |
+| POST | `/api/auth/logout` | ✓ | Invalidate the session cookie, if used |
+| GET/PUT | `/api/auth/me` | ✓ | Read / update the current profile |
+| POST | `/api/auth/change-password` | ✓ | Change password while signed in |
+| POST | `/api/auth/forgot-password` | — | Issue a reset token (always reports success) |
+| POST | `/api/auth/reset-password` | — | Consume a reset token, set a new password |
 
 ### Paper Processing
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| POST | `/api/process/upload` | ✓ | Upload PDF → process → save to DB |
+| POST | `/api/process/upload` | ✓ | Upload PDF → process → save |
 | POST | `/api/process/arxiv` | ✓ | arXiv ID → download → process → save |
-| GET | `/api/status/<task_id>` | — | Async task status |
 
-### Summaries
+### Summaries & Search
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | `/api/summaries` | ✓ | List with pagination + search |
-| GET | `/api/summaries/<id>` | ✓ | Single summary |
-| DELETE | `/api/summaries/<id>` | ✓ | Delete |
-| GET | `/api/export/<id>` | ✓ | Export: `?format=json\|markdown\|bibtex` |
+| GET | `/api/summaries/{id}` | ✓ | Single summary |
+| DELETE | `/api/summaries/{id}` | ✓ | Delete |
+| GET | `/api/search` | ✓ | arXiv keyword search |
+| GET | `/api/export/slides/{id}` | ✓ | 5-slide HTML deck |
 
-### Knowledge Graph
+### Knowledge Graph & Corpus
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| GET | `/api/graph/paper/<id>` | ✓ | Paper's entity/paper graph |
+| GET | `/api/graph/paper/{id}` | ✓ | Paper's entity/paper graph |
 | POST | `/api/graph/search` | ✓ | Semantic vector search |
-| GET | `/api/graph/recommendations/<id>` | ✓ | Top-5 similar papers |
-| GET | `/api/graph/timeline` | ✓ | All papers with dates + lineage edges |
-| GET | `/api/graph/ancestry/<id>` | ✓ | Ancestor/descendant tree |
+| GET | `/api/graph/recommendations/{id}` | ✓ | Top-K similar papers |
+| GET | `/api/corpus/topic-clusters` \| `/citation-network` \| `/author-graph` \| `/contradiction-map` | ✓ | Corpus-wide graphs |
+| POST | `/api/corpus/relate-papers` | ✓ | Run `RelationAgent` across the library |
 
-### Feedback & Collections
+### Health
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| POST | `/api/feedback/summary/<id>` | ✓ | Submit rating + comment |
-| POST | `/api/collections` | ✓ | Create collection |
-| POST | `/api/collections/<id>/papers` | ✓ | Add paper to collection |
-| POST | `/api/batch/compare` | ✓ | Cross-paper comparison (up to 10) |
+| GET | `/api/health` | — | Diagnostic (all dependencies) |
+| GET | `/api/health/live` | — | Liveness — process is up |
+| GET | `/api/health/ready` | — | Readiness — DB reachable (the only hard dependency) |
 
 ---
 
 ## Common Development Tasks
 
-### Adding a New Agent
+### Adding a New Agent (extraction pipeline)
 
 1. Create `core/agents/my_agent.py` extending `BaseAgent`
 2. Implement `async def process(self, input_data: Dict) -> Dict`
-3. Add to `ParallelAgentOrchestrator.__init__()` in `orchestrator.py`
-4. Register in Phase 2 parallel gather or Phase 3 sequential block
-5. Add agent output to `_aggregate_results()` in `orchestrator.py`
+3. Register it in `core/agents/orchestrator.py`'s `ParallelAgentOrchestrator`
+4. Add its output to `_aggregate_results()` in `orchestrator.py`
 
 ### Adding a New API Endpoint
 
-1. Create or find the Blueprint in `backend/routes/`
-2. Register it in `backend/app.py` with `app.register_blueprint(bp, url_prefix='/api')`
-3. Use `@token_required` from `auth.utils` for protected routes
-4. Return `jsonify({...}), status_code`
+1. Create or find the router in `backend/routes/`
+2. Register it in `backend/main_app.py`'s `_include_routers()` with `app.include_router(router, prefix='/api', tags=[...])`
+3. Put business logic in `backend/services/`, persistence in `backend/repositories/` — routes should stay thin
+4. Depend on `CurrentUser` from `auth.dependencies` for protected routes
 
 ### Running Database Migrations
 
-Run SQL files in order via Supabase dashboard or `psql`:
+Run SQL files in order via the Supabase SQL editor, or:
 ```bash
 psql $DATABASE_URL -f backend/database/migrations/00X_name.sql
 ```
@@ -352,68 +395,108 @@ psql $DATABASE_URL -f backend/database/migrations/00X_name.sql
 ### Running Tests
 
 ```bash
-cd PaperMind
-pip install pytest pytest-asyncio pytest-mock
-pytest tests/ -v
-pytest tests/unit/ -v          # Unit tests only
-pytest tests/api/ -v           # API route tests only
+pip install -r requirements.txt -r backend/requirements.txt -r requirements-dev.txt
+pytest tests/ -v                 # everything
+pytest tests/unit/ -v            # pure-logic units only
+pytest tests/api/ -v             # FastAPI route contracts only
+pytest tests/ --cov=core --cov=backend   # with coverage
 ```
 
-### Changing the LLM Model
+Beyond unit tests, `evals/run_benchmark.py` runs the full pipeline against
+real arXiv PDFs and measures latency, extraction coverage, and summary
+quality (ROUGE vs. each paper's abstract). See `docs/BENCHMARKS.md`.
+
+### Changing the LLM Provider
 
 ```bash
-# Option 1: Environment variable (no code change)
-export PAPERMIND_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M
-
-# Option 2: config.yaml
-llm_backend: ollama
-llm_model: qwen2.5:7b-instruct-q4_K_M
-llm_max_tokens: 1024
-
-# Option 3: .env
-PAPERMIND_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M
+# backend/.env
+PAPERMIND_LLM_PROVIDER=auto      # gemini | groq | ollama | auto (orders by available keys)
+PAPERMIND_LLM_BACKEND=groq       # legacy path's backend selector — keep in sync with the above
+GOOGLE_API_KEY=...               # Gemini — most generous free tier, recommended primary
+GROQ_API_KEY=gsk_...             # Groq — fast, but free tier is per-account (~6k TPM),
+                                  #   shared across all users, so it doesn't scale alone
 ```
 
 ---
 
 ## Configuration
 
-Environment variables (`.env`):
+### ⚠️ `.env` values must be duplicated for `core/` — read this before debugging a silent LLM/config issue
+
+`backend/config/settings.py` uses **pydantic-settings**, which reads
+`backend/.env` into a typed `Settings` object. This is what FastAPI routes see
+via `SettingsDep`.
+
+Most of `core/` (predates that settings module) reads configuration via plain
+`os.environ.get(...)` instead — the LLM backend selector, `PAPERMIND_USE_GRAPH`,
+and provider API keys. **pydantic-settings reading `.env` does not populate
+`os.environ`**, so without something bridging the two, `core/` code always sees
+its hardcoded defaults (Ollama, legacy summariser) regardless of what `.env`
+actually says — with no error, just silently wrong behavior.
+
+`core/__init__.py` calls `load_dotenv(backend/.env)` at import time specifically
+to fix this. If you add a new `os.environ`-read config value, either move it to
+`config/settings.py` and thread it through explicitly, or make sure it's set in
+`backend/.env` (not just assumed as a Settings-class default) so both read paths
+agree.
+
+### ⚠️ Use `structlog`, never stdlib `logging`
+
+The project logs with keyword fields (`logger.warning("x_failed", error=str(e))`).
+`logging.Logger.warning` rejects arbitrary kwargs with `TypeError`, so a module
+that imports stdlib `logging` raises on **every error path** — turning a handled
+failure into an unhandled one. This silently disabled the hallucination guard and
+`ResearchGapAgent` entirely. Always `import structlog` +
+`structlog.get_logger(__name__)`.
+
+### ⚠️ `pymupdf4llm` corrupts table extraction process-wide
+
+It runs `TOOLS.unset_quad_corrections(True)` at *import* time, altering character
+geometry for the whole process; resetting the flag does not undo it. Table
+detection therefore runs in a subprocess whenever `pymupdf4llm` is loaded — see
+`core/pipeline/table_extractor.py`.
+
+### Environment variables (`backend/.env`)
 
 ```bash
 # Required
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=your-service-role-key
-JWT_SECRET_KEY=your-super-secret-256bit-key
+JWT_SECRET_KEY=your-random-256-bit-key
+
+# App environment — "production" enforces a hard JWT secret check and disables
+# /api/docs; also rejects a wildcard CORS origin.
+APP_ENV=development
+
+# LLM — see "Changing the LLM Provider" above
+PAPERMIND_LLM_PROVIDER=gemini    # Gemini strongly recommended — Groq's free tier
+                                  #   (~6k tokens/min) cannot fit a whole paper.
+GOOGLE_API_KEY=...
+GROQ_API_KEY=...
 
 # Optional
-PAPERMIND_LLM_MODEL=qwen2.5:3b     # override Ollama model
-REDIS_URL=redis://localhost:6379/0  # for Celery + caching
-SENTRY_DSN=https://...@sentry.io/X # error monitoring
-FLASK_ENV=development
-FLASK_DEBUG=True
-```
-
-`config.yaml` (optional, backend/ root):
-
-```yaml
-llm_backend: ollama
-llm_model: qwen2.5:3b
-llm_max_tokens: 1024
-llm_temperature: 0.7
-experience_enabled: true
-max_figures: 10
-max_entities: 15
-max_results: 50
-enable_ocr: true
+REDIS_URL=redis://localhost:6379/0
+SENTRY_DSN=https://...@sentry.io/X
 ```
 
 ---
 
 ## Key Architecture Decisions
 
-- **pgvector over Pinecone**: all data stays in Supabase, no extra service
-- **all-MiniLM-L6-v2 over SciBERT**: faster inference, 80MB model, comparable semantic similarity
-- **Ollama-first LLM**: zero API costs, privacy-preserving, runs on consumer GPU (RTX 2050 4GB)
-- **JSONB for summary_data**: flexible schema evolution without migrations for new agent output fields
-- **Celery + Redis**: replaces fragile in-memory `processing_status` dict that loses state on restart
+- **Layered backend** (`routes → services → repositories → Supabase`): services
+  import no FastAPI and no Supabase, so they unit-test with plain fakes.
+- **LangGraph over the legacy template pipeline**: map-reduce reads the whole
+  paper instead of the abstract + first ~1k tokens; falls back to the legacy
+  path on error rather than failing the request.
+- **Gemini → Groq → Ollama auto-failover**: free-tier LLM access with no
+  single point of failure and a fully local option.
+- **pgvector over a dedicated vector DB**: all data stays in Supabase, no
+  extra service to run.
+- **JSONB for `summary_data`**: flexible schema evolution without migrations
+  for new agent/graph output fields.
+- **DesignMD `cursor` design system** (frontend): warm-cream editorial canvas,
+  hairline-only depth (no card shadows), display type pinned at weight 400,
+  and a five-pastel "stage" palette used only to mark categories (summary
+  levels, entity kinds, graph node types) — never as action colors. Tokens
+  live in `frontend/src/index.css` and `frontend/tailwind.config.js`;
+  components in `frontend/src/components/ui/primitives.jsx`.

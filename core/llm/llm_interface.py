@@ -7,7 +7,8 @@ Supports:
 - Anthropic: Cloud API via anthropic package
 - xAI (Grok): OpenAI-compatible API via openai package + XAI_API_KEY
 - Groq: Ultra-fast inference via openai package + GROQ_API_KEY
-- Fallback chain: Ollama → Transformers → Template-based
+- Fallback chain: Ollama → Transformers. Raises LLMUnavailableError when no
+  backend can answer — it never invents text.
 """
 
 import asyncio
@@ -17,6 +18,8 @@ from enum import Enum
 import json
 
 import re
+
+from core.llm.response import message_text
 
 logger = structlog.get_logger(__name__)
 
@@ -63,6 +66,16 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
 
 
+class LLMUnavailableError(RuntimeError):
+    """Raised when no LLM could produce a response.
+
+    This used to be a silent fallback that returned invented prose ("This paper
+    presents a novel approach to the problem…"), which callers could not
+    distinguish from a real generation and which was then persisted as the
+    paper's summary. Failing loudly is the point.
+    """
+
+
 class LLMBackend(Enum):
     """Available LLM backends."""
     OLLAMA = "ollama"
@@ -71,7 +84,7 @@ class LLMBackend(Enum):
     ANTHROPIC = "anthropic"
     XAI = "xai"
     GROQ = "groq"
-    TEMPLATE = "template"
+    UNAVAILABLE = "unavailable"
 
 
 class LocalLLM:
@@ -81,7 +94,8 @@ class LocalLLM:
     Priority order:
     1. Ollama (if configured and available)
     2. Transformers (if model specified)
-    3. Template-based fallback
+
+    Raises LLMUnavailableError rather than returning fabricated text.
     """
     
     def __init__(
@@ -162,8 +176,9 @@ class LocalLLM:
                 if init_fn():
                     return
 
-        logger.warning("no_llm_backend_available", using="template_based_generation")
-        self.backend = LLMBackend.TEMPLATE
+        logger.error("no_llm_backend_available",
+                     hint="set GOOGLE_API_KEY / GROQ_API_KEY, or run Ollama locally")
+        self.backend = LLMBackend.UNAVAILABLE
     
     def _init_ollama(self) -> bool:
         """Initialize Ollama backend."""
@@ -305,6 +320,33 @@ class LocalLLM:
         logger.info("groq_initialized", model=self.model_name)
         return True
 
+    async def _generate_via_providers(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        max_tokens: int,
+        temperature: float,
+    ) -> str:
+        """Generate through core.llm.providers. Empty string if it can't."""
+        try:
+            from core.llm.providers import get_model_chain
+
+            chain = get_model_chain("smart", temperature=temperature, max_tokens=max_tokens)
+            runnable = chain[0].with_fallbacks(chain[1:]) if len(chain) > 1 else chain[0]
+
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            response = await runnable.ainvoke(messages)
+            # Content blocks stringified to a Python list repr here, which every
+            # caller then treated as the model's prose. See core/llm/response.py.
+            return _strip_think_tags(message_text(response))
+        except Exception as e:
+            logger.warning("provider_chain_generation_failed", error=str(e))
+            return ""
+
     async def generate(
         self,
         prompt: str,
@@ -328,7 +370,16 @@ class LocalLLM:
         """
         max_tokens = max_tokens or self.max_tokens
         temperature = temperature or self.temperature
-        
+
+        # Route through the shared provider chain first. That stack has retries,
+        # timeouts, client-side rate limiting and an ordered Gemini → Groq →
+        # Ollama cascade; the per-backend clients below have none of it, and no
+        # Gemini support at all — so on a Groq 429 they simply failed, taking
+        # research gaps, ablations and peer review down with them.
+        text = await self._generate_via_providers(prompt, system_prompt, max_tokens, temperature)
+        if text:
+            return text
+
         if self.backend == LLMBackend.OPENAI:
             return await self._generate_openai(prompt, system_prompt, max_tokens, temperature)
         elif self.backend == LLMBackend.ANTHROPIC:
@@ -346,7 +397,10 @@ class LocalLLM:
         elif self.backend == LLMBackend.TRANSFORMERS:
             return await self._generate_transformers(prompt, system_prompt, max_tokens, temperature, stop_sequences)
         else:
-            return self._generate_template(prompt)
+            raise LLMUnavailableError(
+                "No LLM backend is available. Set GOOGLE_API_KEY / GROQ_API_KEY, "
+                "or run Ollama locally."
+            )
     
     async def _generate_ollama(
         self,
@@ -380,8 +434,10 @@ class LocalLLM:
             return _strip_think_tags(response['message']['content'])
 
         except Exception as e:
-            logger.exception("ollama_generation_error", error=str(e), fallback="template")
-            return self._generate_template(prompt)
+            logger.exception("ollama_generation_error", error=str(e))
+            raise LLMUnavailableError(
+                f"ollama generation failed: {type(e).__name__}: {e}"
+            ) from e
     
     # Reasoning models that emit <think> blocks — we disable thinking via API param when possible.
     _REASONING_MODELS = frozenset({
@@ -420,8 +476,10 @@ class LocalLLM:
             raw = response.choices[0].message.content or ''
             return _strip_think_tags(raw)
         except Exception as e:
-            logger.exception("openai_generation_error", error=str(e), fallback="template")
-            return self._generate_template(prompt)
+            logger.exception("openai_generation_error", error=str(e))
+            raise LLMUnavailableError(
+                f"openai generation failed: {type(e).__name__}: {e}"
+            ) from e
 
     async def _generate_anthropic(
         self,
@@ -445,8 +503,10 @@ class LocalLLM:
             raw = response.content[0].text if response.content else ''
             return _strip_think_tags(raw)
         except Exception as e:
-            logger.exception("anthropic_generation_error", error=str(e), fallback="template")
-            return self._generate_template(prompt)
+            logger.exception("anthropic_generation_error", error=str(e))
+            raise LLMUnavailableError(
+                f"anthropic generation failed: {type(e).__name__}: {e}"
+            ) from e
 
     async def _generate_transformers(
         self,
@@ -495,18 +555,10 @@ class LocalLLM:
             return generated
             
         except Exception as e:
-            logger.exception("transformers_generation_error", error=str(e), fallback="template")
-            return self._generate_template(prompt)
-    
-    def _generate_template(self, prompt: str) -> str:
-        """Template-based fallback (no LLM)."""
-        # Extract key information from prompt for basic template
-        if "summarize" in prompt.lower():
-            return "This paper presents a novel approach to the problem. The method demonstrates improved performance over baselines."
-        elif "contributions" in prompt.lower():
-            return "The main contributions include a new methodology and experimental validation."
-        else:
-            return "Analysis complete. See extracted data for details."
+            logger.exception("transformers_generation_error", error=str(e))
+            raise LLMUnavailableError(
+                f"transformers generation failed: {type(e).__name__}: {e}"
+            ) from e
     
     async def stream_generate(
         self,
@@ -543,8 +595,8 @@ class LocalLLM:
                     yield chunk['message']['content']
                     
         except Exception as e:
-            logger.exception("streaming_error", error=str(e), fallback="template")
-            yield self._generate_template(prompt)
+            logger.exception("streaming_error", error=str(e))
+            raise LLMUnavailableError(f"streaming failed: {type(e).__name__}: {e}") from e
     
     def get_info(self) -> Dict[str, Any]:
         """Get LLM backend information."""
