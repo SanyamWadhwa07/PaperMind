@@ -99,6 +99,59 @@ async def get_paper_intelligence(summary_id: str, current_user: CurrentUser):
         raise HTTPException(status_code=500, detail="Failed to fetch intelligence data")
 
 
+@router.get("/intelligence/sota/{summary_id}")
+async def get_state_of_the_art(summary_id: str, current_user: CurrentUser):
+    """Suggest the papers that currently define the state of the art near this one.
+
+    Read-only and uncached: the answer is a property of the outside world, not
+    of the paper, so it changes without anything in this database changing.
+    """
+    user_id = current_user["user_id"]
+
+    try:
+        resp = (
+            supabase.table("summaries")
+            .select("paper_title, published_date, primary_category, abstract_text, summary_data")
+            .eq("id", summary_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("sota_paper_lookup_failed", summary_id=summary_id, error=str(e))
+        raise ExternalServiceError("Could not read this paper.") from e
+
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    paper = resp.data[0]
+    summary_data = paper.get("summary_data") or {}
+    entities = summary_data.get("entities") or {}
+
+    published_year = None
+    published = paper.get("published_date") or ""
+    if len(published) >= 4 and published[:4].isdigit():
+        published_year = int(published[:4])
+
+    try:
+        from core.knowledge.paper_search import find_state_of_the_art
+        result = await asyncio.to_thread(
+            find_state_of_the_art,
+            paper.get("paper_title") or "",
+            entities,
+            published_year,
+            paper.get("abstract_text") or "",
+            paper.get("primary_category"),
+        )
+    except Exception as e:
+        logger.warning("sota_search_failed", summary_id=summary_id, error=str(e))
+        raise HTTPException(
+            status_code=503,
+            detail="Paper search is unavailable right now. Please try again shortly.",
+        )
+
+    return result
+
+
 @router.get("/intelligence/gaps/{summary_id}")
 async def get_research_gaps(summary_id: str, current_user: CurrentUser):
     """Return research gap analysis for a paper (from ingest-time cache)."""

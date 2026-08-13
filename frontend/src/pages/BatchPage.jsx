@@ -148,7 +148,7 @@ export default function BatchPage() {
   const pendingCount = queue.filter((q) => q.status === 'pending').length
 
   return (
-    <div className="animate-rise mx-auto max-w-5xl space-y-8">
+    <div className="animate-rise mx-auto max-w-5xl space-y-8 3xl:max-w-6xl">
       <header className="border-b border-line pb-6">
         <Eyebrow className="block">Many at once</Eyebrow>
         <h1 className="display mt-2 text-display-sm text-ink">Batch</h1>

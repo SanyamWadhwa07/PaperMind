@@ -25,6 +25,47 @@ except ImportError:
     logger.warning("supabase_unavailable", reason="import_error")
 
 
+# Events already reported as a missing schema object, so the same absent table,
+# view or function is described once rather than on every call.
+_reported_schema_gaps: set = set()
+
+
+def _log_store_failure(event: str, error: Any, **fields) -> None:
+    """Log a failed experience-store call at a severity that matches its cause.
+
+    A missing table, view or function is a provisioning gap: it is not going to
+    resolve itself, every subsequent call fails identically, and a stack trace
+    says nothing the message does not. Emitting `logger.exception` for it
+    produced one full traceback *per extracted metric* — hundreds per paper —
+    which buried the real errors this module also has to report.
+
+    Anything else keeps its traceback, because anything else might be a bug.
+    """
+    detail = str(error)
+    # PGRST202/PGRST205: PostgREST could not find the function/table. The
+    # string check backs it up for drivers that do not surface the code.
+    is_schema_gap = (
+        "PGRST202" in detail or "PGRST205" in detail or "schema cache" in detail
+    )
+
+    if not is_schema_gap:
+        logger.exception(event, error=detail, **fields)
+        return
+
+    if event in _reported_schema_gaps:
+        return
+    _reported_schema_gaps.add(event)
+    logger.warning(
+        event,
+        error=detail,
+        reason="missing_schema_object",
+        fix="Run backend/database/migrations/ in filename order "
+            "(010_missing_experience_functions.sql adds the experience RPCs). "
+            "Cross-paper learning is disabled until then; nothing else is affected.",
+        **fields,
+    )
+
+
 class ExperienceStore:
     """
     Manages agent experience data in Supabase PostgreSQL.
@@ -81,7 +122,7 @@ class ExperienceStore:
                 return response.data[0]
             return None
         except Exception as e:
-            logger.exception("entity_query_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
+            _log_store_failure("entity_query_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
             return None
     
     async def get_high_confidence_entities(self, entity_type: str, min_confidence: float = 0.8) -> List[str]:
@@ -100,7 +141,7 @@ class ExperienceStore:
             
             return [row['entity_name'] for row in response.data]
         except Exception as e:
-            logger.exception("high_confidence_entities_query_failed", entity_type=entity_type, error=str(e))
+            _log_store_failure("high_confidence_entities_query_failed", entity_type=entity_type, error=str(e))
             return []
     
     async def update_entity_knowledge(self, entity_name: str, entity_type: str, 
@@ -121,7 +162,7 @@ class ExperienceStore:
             }).execute()
             return True
         except Exception as e:
-            logger.exception("entity_knowledge_update_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
+            _log_store_failure("entity_knowledge_update_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
             return False
     
     # ==================== Pattern Performance ====================
@@ -142,7 +183,7 @@ class ExperienceStore:
                 return response.data[0]
             return None
         except Exception as e:
-            logger.exception("pattern_performance_query_failed", pattern_id=pattern_id, pattern_type=pattern_type, error=str(e))
+            _log_store_failure("pattern_performance_query_failed", pattern_id=pattern_id, pattern_type=pattern_type, error=str(e))
             return None
     
     async def get_best_patterns(self, pattern_type: str, limit: int = 10) -> List[Dict]:
@@ -161,7 +202,7 @@ class ExperienceStore:
             
             return response.data
         except Exception as e:
-            logger.exception("best_patterns_query_failed", pattern_type=pattern_type, error=str(e))
+            _log_store_failure("best_patterns_query_failed", pattern_type=pattern_type, error=str(e))
             return []
     
     async def update_pattern_performance(self, pattern_id: str, pattern_type: str,
@@ -179,7 +220,7 @@ class ExperienceStore:
             }).execute()
             return True
         except Exception as e:
-            logger.exception("pattern_performance_update_failed", pattern_id=pattern_id, pattern_type=pattern_type, error=str(e))
+            _log_store_failure("pattern_performance_update_failed", pattern_id=pattern_id, pattern_type=pattern_type, error=str(e))
             return False
     
     # ==================== Section Templates ====================
@@ -201,7 +242,7 @@ class ExperienceStore:
                 return response.data[0]
             return None
         except Exception as e:
-            logger.exception("section_template_query_failed", domain=domain, error=str(e))
+            _log_store_failure("section_template_query_failed", domain=domain, error=str(e))
             return None
     
     # ==================== Result Baselines ====================
@@ -230,7 +271,7 @@ class ExperienceStore:
                 return response.data[0]
             return None
         except Exception as e:
-            logger.exception("result_baseline_query_failed", dataset=dataset, metric=metric, error=str(e))
+            _log_store_failure("result_baseline_query_failed", dataset=dataset, metric=metric, error=str(e))
             return None
     
     async def is_outlier(self, dataset: str, metric: str, value: float, 
@@ -266,7 +307,7 @@ class ExperienceStore:
             }).execute()
             return True
         except Exception as e:
-            logger.exception("result_baseline_update_failed", dataset=dataset, metric=metric, error=str(e))
+            _log_store_failure("result_baseline_update_failed", dataset=dataset, metric=metric, error=str(e))
             return False
     
     # ==================== Entity Relationships ====================
@@ -291,7 +332,7 @@ class ExperienceStore:
             response = query.order('frequency_count', desc=True).execute()
             return response.data
         except Exception as e:
-            logger.exception("related_entities_query_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
+            _log_store_failure("related_entities_query_failed", entity_name=entity_name, entity_type=entity_type, error=str(e))
             return []
     
     async def update_entity_relationship(self, entity_1: str, type_1: str,
@@ -342,7 +383,7 @@ class ExperienceStore:
             
             return True
         except Exception as e:
-            logger.exception("entity_relationship_update_failed", entity_1=entity_1, entity_2=entity_2, error=str(e))
+            _log_store_failure("entity_relationship_update_failed", entity_1=entity_1, entity_2=entity_2, error=str(e))
             return False
     
     # ==================== Agent Logging ====================
@@ -369,7 +410,7 @@ class ExperienceStore:
                 .execute()
             return True
         except Exception as e:
-            logger.exception("agent_execution_logging_failed", agent_name=agent_name, error=str(e))
+            _log_store_failure("agent_execution_logging_failed", agent_name=agent_name, error=str(e))
             return False
     
     async def log_consensus(self, extraction_type: str, extracted_value: str,
@@ -392,7 +433,7 @@ class ExperienceStore:
                 .execute()
             return True
         except Exception as e:
-            logger.exception("consensus_logging_failed", extraction_type=extraction_type, error=str(e))
+            _log_store_failure("consensus_logging_failed", extraction_type=extraction_type, error=str(e))
             return False
     
     async def get_agent_performance(self, agent_name: Optional[str] = None) -> List[Dict]:
@@ -413,7 +454,7 @@ class ExperienceStore:
             
             return response.data
         except Exception as e:
-            logger.exception("agent_performance_query_failed", agent_name=agent_name, error=str(e))
+            _log_store_failure("agent_performance_query_failed", agent_name=agent_name, error=str(e))
             return []
 
 

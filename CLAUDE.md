@@ -121,7 +121,6 @@ PaperMind/
 │   │   ├── schema.sql                # Core tables: users, summaries, user_activity
 │   │   ├── experience_schema.sql     # Agent cross-paper learning tables
 │   │   └── migrations/               # Incremental SQL migrations, run in order
-│   ├── tasks/paper_tasks.py         # Celery async task definitions
 │   └── uploads/, arxiv_papers/      # Gitignored runtime scratch dirs (empty on a
 │                                    #   fresh checkout; repopulated at runtime)
 │
@@ -241,7 +240,7 @@ ollama pull qwen2.5:7b-instruct-q4_K_M   # better quality, ~4.5GB, the practical
 ollama serve
 ```
 
-### 4. Redis (optional — rate limiting, Celery, processing cache)
+### 4. Redis (optional — rate limiting, processing cache)
 
 ```bash
 docker run -d -p 6379:6379 redis:alpine
@@ -250,14 +249,7 @@ docker run -d -p 6379:6379 redis:alpine
 Without Redis, `api/rate_limit.py` probes reachability at startup and falls
 back to in-memory buckets with a logged warning — this is expected in local dev.
 
-### 5. Celery worker (optional — async processing)
-
-```bash
-cd backend
-celery -A tasks.paper_tasks worker --loglevel=info
-```
-
-### 6. Docker Compose (everything at once)
+### 5. Docker Compose (everything at once)
 
 ```bash
 docker compose up --build
@@ -477,6 +469,13 @@ GROQ_API_KEY=...
 # Optional
 REDIS_URL=redis://localhost:6379/0
 SENTRY_DSN=https://...@sentry.io/X
+
+# Optional — Semantic Scholar (Discover, and the SOTA suggestions on a summary).
+# Unauthenticated calls share one global pool and are rate-limited hard enough
+# that a 429 is the normal case, not the exception; `core/knowledge/paper_search.py`
+# then falls back to arXiv, which has no citation counts. A free key removes
+# that: https://www.semanticscholar.org/product/api#api-key-form
+SEMANTIC_SCHOLAR_API_KEY=
 ```
 
 ---

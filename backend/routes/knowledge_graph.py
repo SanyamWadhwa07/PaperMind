@@ -127,14 +127,26 @@ async def author_graph(current_user: CurrentUser):
 
 @router.get('/graph/discover')
 async def discover_papers(current_user: CurrentUser, q: str = Query(..., min_length=2), limit: int = Query(default=10, le=20)):
-    """Search Semantic Scholar for external papers."""
+    """Search the public catalogues for papers outside the user's library.
+
+    Returns `papers`, not `results`: the page has always read `data.papers`, so
+    the old key meant every successful search rendered as "No matches".
+    """
     try:
-        from core.knowledge.semantic_scholar_service import search_papers, normalize_s2_paper
-        raw = await asyncio.to_thread(search_papers, q, limit)
-        return {'results': [normalize_s2_paper(p) for p in raw], 'query': q}
+        from core.knowledge.paper_search import search_papers
+        data = await asyncio.to_thread(search_papers, q, limit)
+        return {
+            'papers': data['papers'],
+            'query': q,
+            'source': data['source'],
+            'degraded': data['degraded'],
+        }
     except Exception as e:
         logger.exception('discover_error', query=q, error=str(e))
-        return JSONResponse(status_code=500, content={'error': str(e)})
+        return JSONResponse(
+            status_code=503,
+            content={'detail': 'Paper search is unavailable right now. Please try again shortly.'},
+        )
 
 
 @router.get('/graph/semantic-scholar/{s2_id}')

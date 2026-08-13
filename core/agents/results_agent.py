@@ -6,15 +6,68 @@ Wraps existing ResultsExtractor with agent capabilities:
 - Cross-validation with entity agent
 """
 
+import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Optional, Set, Tuple
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from core.agents.base_agent import BaseAgent, AgentState
 from backend.main import ResultsExtractor
+
+
+def _as_baseline_number(raw: Any) -> Optional[float]:
+    """Parse an extracted result value into a number, or None if it isn't one.
+
+    Values reach here as display strings — "94.2", "80%", "1.5x" — because the
+    UI renders them verbatim. `result_baselines.mean_value` is a DECIMAL, so
+    passing the string through raised `invalid input syntax for type numeric:
+    "0%"` on Postgres, once per extracted metric.
+
+    A trailing percent sign is dropped rather than divided out: a metric
+    reported as "80%" in one paper and "0.80" in another cannot be reconciled
+    here anyway, and rescaling would silently invent the wrong baseline. Only a
+    clean leading number is accepted; anything with unresolved units is skipped.
+    """
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return float(raw)
+
+    text = str(raw or "").strip().replace(",", "")
+    if not text:
+        return None
+
+    match = re.fullmatch(r"([+-]?\d+(?:\.\d+)?)\s*%?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _is_recordable_baseline(metric: Any, dataset: Any) -> bool:
+    """True when (dataset, metric) is specific enough for a baseline to mean anything.
+
+    Two guards, both from real extractor output:
+
+    A baseline is per-dataset by definition — accuracy on SQuAD and accuracy on
+    ImageNet share no range — so an empty `dataset` produces a "baseline" that
+    averages unrelated numbers together. The regex extractor leaves it empty
+    often.
+
+    And a metric name has to name something. The extractor also emits stray
+    table cells as metrics: `8`, `1`, `10`. Requiring at least one letter drops
+    those while keeping the short real names — `F1`, `AP`, `mAP`, `BLEU` — that
+    a stricter threshold would have thrown out with them.
+    """
+    metric_text = str(metric or "").strip()
+    dataset_text = str(dataset or "").strip()
+
+    if not dataset_text or not metric_text:
+        return False
+    return bool(re.search(r"[A-Za-z]", metric_text))
 
 
 class ResultsAgent(BaseAgent):
@@ -133,15 +186,20 @@ class ResultsAgent(BaseAgent):
                 confidence_scores[result_id] = 0.6
                 validated_count += 1
             
-            # Update experience DB with this result
-            if confidence_scores.get(result_id, 0) >= 0.6:
-                await self.update_experience(
-                    'baseline',
-                    metric=metric,
-                    dataset=dataset,
-                    model=result.get('model'),
-                    value=value
-                )
+            # Update experience DB with this result. Both guards are required:
+            # the store writes into typed numeric columns, and a baseline keyed
+            # on an empty dataset or a metric called "8" is noise that later
+            # skews outlier detection for everything else.
+            if confidence_scores.get(result_id, 0) >= 0.6 and _is_recordable_baseline(metric, dataset):
+                numeric_value = _as_baseline_number(value)
+                if numeric_value is not None:
+                    await self.update_experience(
+                        'baseline',
+                        metric=metric,
+                        dataset=dataset,
+                        model=result.get('model'),
+                        value=numeric_value
+                    )
         
         # Cross-validate with EntityAgent for dataset/model names
         if entities and self.message_bus:

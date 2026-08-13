@@ -143,6 +143,27 @@
     scroll-padding-top: 5rem;
   }
 
+  /* Large displays are further away, not just wider. A 34" ultrawide sits at
+     arm's length or beyond, where 16px UI type is genuinely small — the page
+     reads as though it were zoomed out even though nothing has been scaled.
+
+     Every size in this system is expressed in rem, so moving the root size
+     moves type, spacing, control heights and the reading measure together, in
+     proportion. That is the difference between this and simply widening the
+     container: the line length in characters stays exactly where it was
+     designed, and the text just gets bigger.
+
+     Deliberately keyed to width alone, and deliberately small steps — a jump
+     large enough to notice as a jump is a jump large enough to break a
+     layout. */
+  @media (min-width: 1920px) {
+    html { font-size: 17px; }
+  }
+
+  @media (min-width: 2560px) {
+    html { font-size: 18px; }
+  }
+
   body {
     background-color: rgb(var(--canvas));
     color: rgb(var(--ink));

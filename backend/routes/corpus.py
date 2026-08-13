@@ -28,30 +28,31 @@ async def get_topic_clusters(current_user: CurrentUser):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-@router.post("/corpus/recompute-clusters", status_code=202)
+@router.post("/corpus/recompute-clusters")
 async def recompute_clusters(current_user: CurrentUser):
-    """Trigger BERTopic clustering for the user's library (runs in background)."""
+    """Cluster the user's library by topic and store the assignments.
+
+    Runs inline rather than as a background task. Clustering a personal library
+    is a few seconds of CPU on already-computed embeddings, and firing it into
+    the background meant the only honest thing the response could say was "check
+    back in a minute" — so a failure surfaced as a permanently empty graph, and
+    a success looked identical until the user reloaded and guessed. Waiting for
+    the answer lets the button report what actually happened.
+    """
     user_id = current_user["user_id"]
     try:
-        from core.knowledge.topic_clustering import BERTOPIC_AVAILABLE
-        if not BERTOPIC_AVAILABLE:
-            return JSONResponse(
-                status_code=503,
-                content={"error": "BERTopic not installed. Run: pip install bertopic hdbscan umap-learn"},
-            )
-    except Exception:
-        pass
+        from core.knowledge.topic_clustering import compute_topic_clusters
+        result = await asyncio.to_thread(compute_topic_clusters, user_id, supabase)
+    except Exception as e:
+        logger.exception("topic_clustering_failed", user_id=user_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Topic clustering failed.")
 
-    async def _run():
-        try:
-            from core.knowledge.topic_clustering import compute_topic_clusters
-            result = await asyncio.to_thread(compute_topic_clusters, user_id, supabase)
-            logger.info("topic_clustering_complete", user_id=user_id, result=result)
-        except Exception as e:
-            logger.error("topic_clustering_failed", user_id=user_id, error=str(e))
+    if result.get("error"):
+        # A library too small to cluster is the user's situation, not a fault.
+        raise HTTPException(status_code=400, detail=result["error"])
 
-    asyncio.create_task(_run())
-    return {"message": "Topic clustering started in background. Check /corpus/topic-clusters in a minute."}
+    logger.info("topic_clustering_complete", user_id=user_id, result=result)
+    return result
 
 
 @router.post("/corpus/relate-papers", status_code=202)

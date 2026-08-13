@@ -32,7 +32,56 @@ function readToken(name) {
   return raw ? `rgb(${raw})` : '#000';
 }
 
-const CATEGORY_STAGE = { cv: 1, nlp: 3, ml: 4, general: 5 };
+/** The whole palette vis needs, read at the moment the widget is (re)built. */
+function readPalette() {
+  return {
+    stages: {
+      1: readToken('stage-1'),
+      2: readToken('stage-2'),
+      3: readToken('stage-3'),
+      4: readToken('stage-4'),
+      5: readToken('stage-5'),
+    },
+    ink: readToken('ink'),
+    line: readToken('border-strong'),
+    accent: readToken('accent'),
+    accentInk: readToken('accent-ink'),
+  };
+}
+
+// The stage pastels keep the same RGB in both themes precisely so they can carry
+// dark ink either way — see the note beside `--stage-1` in index.css. Reading
+// `--ink` for text *on* a pastel therefore inverts to near-white in dark mode
+// and disappears; this is the ink those fills are designed around.
+const PASTEL_INK = '#26251e';
+
+/**
+ * Papers are stored with their arXiv primary category (`cs.CV`, `eess.IV`, …),
+ * while the extraction pipeline labels its own domains (`cv`, `nlp`, `ml`).
+ * Both land in `primary_category`, so both have to resolve here — keying the
+ * palette on the pipeline names alone meant every real arXiv paper fell through
+ * to the default and the whole timeline rendered in one colour.
+ */
+const DOMAINS = [
+  { id: 'cv', label: 'Vision', stage: 1, prefixes: ['cv', 'cs.cv', 'eess.iv'] },
+  { id: 'nlp', label: 'Language', stage: 3, prefixes: ['nlp', 'cs.cl'] },
+  {
+    id: 'ml',
+    label: 'Learning',
+    stage: 4,
+    prefixes: ['ml', 'cs.lg', 'cs.ai', 'cs.ne', 'stat.ml'],
+  },
+];
+const OTHER_DOMAIN = { id: 'general', label: 'Other', stage: 5, prefixes: [] };
+
+function domainOf(rawCategory) {
+  const value = (rawCategory || '').trim().toLowerCase();
+  if (!value) return OTHER_DOMAIN;
+  return (
+    DOMAINS.find((d) => d.prefixes.some((p) => value === p || value.startsWith(`${p}.`))) ||
+    OTHER_DOMAIN
+  );
+}
 
 // Link types read as a set of relations, so they take the stage palette too.
 const LINK_STAGE = {
@@ -64,23 +113,6 @@ export default function TimelinePage() {
   const [ancestryData, setAncestryData] = useState(null);
   const [ancestryLoading, setAncestryLoading] = useState(false);
 
-  const palette = useMemo(
-    () => ({
-      stages: {
-        1: readToken('stage-1'),
-        2: readToken('stage-2'),
-        3: readToken('stage-3'),
-        4: readToken('stage-4'),
-        5: readToken('stage-5'),
-      },
-      ink: readToken('ink'),
-      line: readToken('border-strong'),
-      accent: readToken('accent'),
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [theme]
-  );
-
   useEffect(() => {
     const fetchTimeline = async () => {
       try {
@@ -97,12 +129,39 @@ export default function TimelinePage() {
     fetchTimeline();
   }, [token]);
 
+  // Only papers carrying a publication date can be placed. Uploaded PDFs never
+  // get one — `published_date` is written on the arXiv import path alone — so
+  // they drop off this page silently; the count is surfaced below rather than
+  // leaving the library looking smaller than it is.
+  //
+  // Keyed on `timelineData` rather than on a `?? []` fallback, which would be a
+  // fresh array identity every render and rebuild the whole widget each time.
+  const datedPapers = useMemo(
+    () => (timelineData?.papers || []).filter((p) => p.published_date),
+    [timelineData]
+  );
+  const undatedCount = (timelineData?.papers?.length || 0) - datedPapers.length;
+
+  // Legend entries for the domains actually on screen, in palette order.
+  const domainsPresent = useMemo(() => {
+    const present = new Map();
+    for (const p of datedPapers) {
+      const d = domainOf(p.primary_category);
+      present.set(d.id, d);
+    }
+    return [...DOMAINS, OTHER_DOMAIN].filter((d) => present.has(d.id));
+  }, [datedPapers]);
+
   // Build vis-timeline
   useEffect(() => {
-    if (!timelineRef.current || !timelineData?.papers?.length) return;
+    if (!timelineRef.current || !datedPapers.length) return;
 
-    const papers = timelineData.papers.filter((p) => p.published_date);
-    if (!papers.length) return;
+    // Read tokens here rather than in a memo keyed on `theme`: the `.dark`
+    // class is toggled by ThemeContext's own effect, which has not run yet
+    // while a memo is being recomputed during render. Reading inside an effect
+    // always sees the class the palette is supposed to describe.
+    const palette = readPalette();
+    const papers = datedPapers;
 
     // vis-timeline renders `content` as raw HTML rather than through React, so
     // a title is built as a DOM node instead of a template string — paper
@@ -111,22 +170,25 @@ export default function TimelinePage() {
     const buildLabel = (title) => {
       const span = document.createElement('span');
       span.title = title || 'Untitled';
-      span.textContent = `${(title || 'Untitled').slice(0, 30)}…`;
+      const text = title || 'Untitled';
+      span.textContent = text.length > 30 ? `${text.slice(0, 30)}…` : text;
       return span;
     };
 
     const items = new DataSet(
-      papers.map((p) => ({
-        id: p.id,
-        content: buildLabel(p.paper_title),
-        start: p.published_date,
-        className: `cat-${p.primary_category || 'general'}`,
-        style: `background:${
-          palette.stages[CATEGORY_STAGE[p.primary_category] || 5]
-        };border-color:${palette.line};color:${
-          palette.ink
-        };border-radius:4px;padding:2px 6px;font-size:11px;`,
-      }))
+      papers.map((p) => {
+        const domain = domainOf(p.primary_category);
+        return {
+          id: p.id,
+          content: buildLabel(p.paper_title),
+          start: p.published_date,
+          title: `${p.paper_title || 'Untitled'} — ${p.published_date}`,
+          className: `cat-${domain.id}`,
+          style: `background:${palette.stages[domain.stage]};border-color:${
+            palette.line
+          };color:${PASTEL_INK};border-radius:4px;padding:2px 6px;font-size:11px;`,
+        };
+      })
     );
 
     const tl = new Timeline(timelineRef.current, items, {
@@ -135,7 +197,19 @@ export default function TimelinePage() {
       zoomable: true,
       moveable: true,
       stack: true,
-      height: 220,
+      // No fixed height. A hardcoded 220px is only right for the one library
+      // that happens to stack to that many rows; every other library either
+      // scrolls inside the box or — far more often, since items only stack
+      // when their labels overlap — leaves most of the panel blank. Letting
+      // vis size itself to its rows keeps the panel exactly as tall as the
+      // content, with `minHeight` covering the single-row case.
+      minHeight: 130,
+      margin: { item: { horizontal: 10, vertical: 8 }, axis: 8 },
+      // Two decades is a sensible outer limit and a quarter a sensible inner
+      // one; without these a stray scroll zooms out to the epoch or in to a
+      // single afternoon, and the papers vanish either way.
+      zoomMin: 1000 * 60 * 60 * 24 * 90,
+      zoomMax: 1000 * 60 * 60 * 24 * 365 * 25,
     });
 
     tl.on('select', ({ items: sel }) => {
@@ -145,7 +219,8 @@ export default function TimelinePage() {
     });
 
     return () => tl.destroy();
-  }, [timelineData, palette]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datedPapers, theme]);
 
   const loadAncestry = async (paper) => {
     setSelectedPaper(paper);
@@ -171,6 +246,8 @@ export default function TimelinePage() {
       treeNetRef.current = null;
     }
 
+    const palette = readPalette();
+
     const visNodes = new DataSet(
       ancestryData.nodes.map((n) => ({
         id: n.id,
@@ -181,12 +258,15 @@ export default function TimelinePage() {
           // The anchor is the one thing on this screen that earns the accent.
           background: n.is_anchor
             ? palette.accent
-            : palette.stages[CATEGORY_STAGE[n.category] || 5],
+            : palette.stages[domainOf(n.category).stage],
           border: palette.line,
           highlight: { background: palette.accent, border: palette.accent },
         },
         font: {
-          color: palette.ink,
+          // Both fills are light-on-dark-ink by design, so the label follows the
+          // fill rather than the page: `--ink` inverts with the theme and would
+          // put white text on a pastel node.
+          color: n.is_anchor ? palette.accentInk : PASTEL_INK,
           size: 11,
           face: 'Inter Variable, Inter, system-ui, sans-serif',
         },
@@ -224,12 +304,11 @@ export default function TimelinePage() {
 
     treeNetRef.current = net;
     return () => { net.destroy(); treeNetRef.current = null; };
-  }, [ancestryData, navigate, palette]);
-
-  const hasDated = timelineData?.papers?.filter((p) => p.published_date).length
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ancestryData, navigate, theme]);
 
   return (
-    <div className="animate-rise mx-auto max-w-6xl space-y-8">
+    <div className="animate-rise mx-auto max-w-6xl space-y-8 3xl:max-w-7xl">
       <header className="border-b border-line pb-6">
         <Eyebrow className="block">Ordered by publication</Eyebrow>
         <h1 className="display mt-2 text-display-sm text-ink">Timeline</h1>
@@ -239,25 +318,9 @@ export default function TimelinePage() {
         </p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Eyebrow>Relations</Eyebrow>
-        {Object.entries(LINK_STAGE).map(([type, stage]) => (
-          <span
-            key={type}
-            className="flex items-center gap-1.5 text-caption text-ink-muted"
-          >
-            <span
-              className={cx('inline-block h-0.5 w-4', STAGE_BG[stage])}
-              aria-hidden="true"
-            />
-            {type.replace(/_/g, ' ')}
-          </span>
-        ))}
-      </div>
-
       {loading ? (
         <Skeleton className="h-56 w-full" />
-      ) : !hasDated ? (
+      ) : !datedPapers.length ? (
         <EmptyState
           icon={Calendar}
           title="No dated papers yet"
@@ -265,10 +328,46 @@ export default function TimelinePage() {
         />
       ) : (
         <>
+          {/* The legend that belongs to *this* widget is the one for the item
+              colours. Relation colours moved down to the lineage card, which is
+              the only place an edge is ever drawn — sitting up here they
+              described a graph the reader could not yet see. */}
+          {domainsPresent.length > 1 && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <Eyebrow>Field</Eyebrow>
+              {domainsPresent.map((d) => (
+                <span
+                  key={d.id}
+                  className="flex items-center gap-1.5 text-caption text-ink-muted"
+                >
+                  <span
+                    className={cx(
+                      'inline-block h-2.5 w-2.5 rounded-sm',
+                      STAGE_BG[d.stage]
+                    )}
+                    aria-hidden="true"
+                  />
+                  {d.label}
+                </span>
+              ))}
+            </div>
+          )}
+
           <div
             ref={timelineRef}
             className="overflow-hidden rounded-lg border border-line bg-surface"
           />
+
+          <p className="text-caption text-ink-faint">
+            Scroll to zoom, drag to pan · select a paper to trace its lineage
+            {undatedCount > 0 && (
+              <>
+                {' · '}
+                {undatedCount} paper{undatedCount === 1 ? '' : 's'} hidden for
+                want of a publication date (uploads carry none)
+              </>
+            )}
+          </p>
 
           {selectedPaper && (
             <Card className="animate-fade">
@@ -294,6 +393,22 @@ export default function TimelinePage() {
                   </p>
                 ) : (
                   <>
+                    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <Eyebrow>Relations</Eyebrow>
+                      {Object.entries(LINK_STAGE).map(([type, stage]) => (
+                        <span
+                          key={type}
+                          className="flex items-center gap-1.5 text-caption text-ink-muted"
+                        >
+                          <span
+                            className={cx('inline-block h-0.5 w-4', STAGE_BG[stage])}
+                            aria-hidden="true"
+                          />
+                          {type.replace(/_/g, ' ')}
+                        </span>
+                      ))}
+                    </div>
+
                     <div
                       ref={treeRef}
                       className="overflow-hidden rounded border border-line bg-surface-sunk"

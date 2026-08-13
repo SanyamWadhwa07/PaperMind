@@ -202,7 +202,7 @@ export default function Layout({ children }) {
       </a>
 
       <header className="sticky top-0 z-50 border-b border-line bg-canvas/85 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-[1400px] 2xl:max-w-[1700px] items-center gap-3 px-4 sm:px-6">
+        <div className="mx-auto flex h-14 max-w-[1400px] 2xl:max-w-[1700px] 3xl:max-w-[1900px] items-center gap-3 px-4 sm:px-6">
           <Button
             variant="ghost"
             size="icon"
@@ -238,7 +238,7 @@ export default function Layout({ children }) {
           gutter. It still holds on a laptop, where a wider measure would hurt;
           `2xl` (1536px and up) is where the extra width is real screen rather
           than an over-long line. */}
-      <div className="mx-auto flex w-full max-w-[1400px] 2xl:max-w-[1700px] flex-1 gap-8 px-4 py-6 sm:px-6 lg:py-8">
+      <div className="mx-auto flex w-full max-w-[1400px] 2xl:max-w-[1700px] 3xl:max-w-[1900px] flex-1 gap-8 px-4 py-6 sm:px-6 lg:py-8">
         {/* Desktop rail. Sticks below the header so navigation is always to hand. */}
         <aside className="hidden w-52 shrink-0 lg:block">
           <div className="sticky top-20">
@@ -270,7 +270,7 @@ export default function Layout({ children }) {
       </div>
 
       <footer className="border-t border-line py-6">
-        <div className="mx-auto flex max-w-[1400px] 2xl:max-w-[1700px] flex-wrap items-center justify-between gap-2 px-4 text-xs text-ink-faint sm:px-6">
+        <div className="mx-auto flex max-w-[1400px] 2xl:max-w-[1700px] 3xl:max-w-[1900px] flex-wrap items-center justify-between gap-2 px-4 text-xs text-ink-faint sm:px-6">
           <p>PaperMind. Structured reading for research papers.</p>
           <p className="font-mono tabular">v2.0.0</p>
         </div>

@@ -4,6 +4,7 @@ import {
   ArrowLeft, Download, FileText, Database,
   BarChart3, BookOpen, Image, Share2, Table2,
   Brain, Zap, FlaskConical, Presentation, Star,
+  TrendingUp, ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
@@ -109,6 +110,8 @@ export default function SummaryPage() {
   const [intelligenceLoading, setIntelligenceLoading] = useState(false)
   const [peerReviewLoading, setPeerReviewLoading] = useState(false)
   const [slideLoading, setSlideLoading] = useState(false)
+  const [sota, setSota] = useState(null)
+  const [sotaLoading, setSotaLoading] = useState(false)
 
   useEffect(() => {
     loadSummary()
@@ -147,6 +150,26 @@ export default function SummaryPage() {
       toast.error('Peer review failed: ' + (e.response?.data?.detail || e.message))
     } finally {
       setPeerReviewLoading(false)
+    }
+  }
+
+  // Not cached server-side: "what is the state of the art" is a question about
+  // the outside world, so the answer goes stale on its own. Fetched on demand,
+  // and refetchable.
+  const handleFindSota = async () => {
+    setSotaLoading(true)
+    try {
+      const res = await api.get(`/api/intelligence/sota/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      setSota(res.data)
+      if (!res.data?.papers?.length) {
+        toast.info('No newer work found on this topic.')
+      }
+    } catch (e) {
+      toast.error('SOTA lookup failed: ' + (e.response?.data?.detail || e.message))
+    } finally {
+      setSotaLoading(false)
     }
   }
 
@@ -535,15 +558,6 @@ export default function SummaryPage() {
               </Card>
             )}
 
-            {/* Section digests are prose too, so they belong to the reading
-                column. Spanning them across the page only stretched the panel,
-                not the text inside it, which left each one two-thirds empty. */}
-            {Object.keys(sectionSummaries).length > 0 && (
-              <div>
-                <h3 className="mb-3 text-sm font-semibold text-ink">Section by section</h3>
-                <SectionSummaries summaries={sectionSummaries} />
-              </div>
-            )}
             </div>
 
             {/* Everything structured — claims and the results table — sits in
@@ -628,6 +642,24 @@ export default function SummaryPage() {
             )}
 
             </div>
+
+            {/* Full width, below both columns.
+
+                Living inside the reading column, this was the tallest thing on
+                the page, so the article ran hundreds of pixels past the last
+                card in the sidebar and the whole right-hand side of the screen
+                ended in a void. A collapsed accordion is a list of rows, not
+                prose — it has no reading measure to protect — so spanning it
+                lets it consume the width the two columns cannot, and both
+                columns now end at roughly the same place. The expanded body is
+                what needs the measure, and `SectionSummaries` caps that
+                itself. */}
+            {Object.keys(sectionSummaries).length > 0 && (
+              <div className="xl:col-span-2">
+                <h3 className="mb-3 text-sm font-semibold text-ink">Section by section</h3>
+                <SectionSummaries summaries={sectionSummaries} />
+              </div>
+            )}
           </div>
         )}
 
@@ -698,6 +730,9 @@ export default function SummaryPage() {
             peerReviewLoading={peerReviewLoading}
             onDownloadSlides={handleDownloadSlides}
             slideLoading={slideLoading}
+            onFindSota={handleFindSota}
+            sota={sota}
+            sotaLoading={sotaLoading}
           />
         )}
       </div>
@@ -737,6 +772,104 @@ function ScoreRing({ score }) {
   )
 }
 
+/**
+ * Newer, more-cited work on the same topic, fetched on demand.
+ *
+ * Every row is a link out. The point of the panel is to leave for the paper
+ * itself, so the title is the link rather than a trailing "view" affordance.
+ */
+function SotaPanel({ sota, loading, onRefresh }) {
+  if (loading) {
+    return (
+      <Card>
+        <CardBody className="flex h-32 items-center justify-center">
+          <Spinner className="text-accent" />
+        </CardBody>
+      </Card>
+    )
+  }
+
+  if (!sota) return null
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
+        <div className="min-w-0">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <TrendingUp className="h-4 w-4 text-ink-faint" aria-hidden="true" />
+            State of the art
+          </h3>
+          {sota.query && (
+            <p className="mt-1 text-caption text-ink-faint">
+              Searched <span className="font-mono">{sota.query}</span>
+              {sota.source === 'arxiv' && ' · via arXiv (no citation data)'}
+            </p>
+          )}
+        </div>
+        <Button variant="ghost" size="sm" onClick={onRefresh}>
+          Refresh
+        </Button>
+      </div>
+
+      <CardBody>
+        {!sota.papers?.length ? (
+          <p className="text-sm text-ink-faint">
+            Nothing newer found on this topic.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {sota.papers.map((paper, i) => (
+              <li
+                key={paper.s2_id || paper.arxiv_id || i}
+                className="border-t border-line pt-3 first:border-t-0 first:pt-0"
+              >
+                <a
+                  href={paper.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-start gap-2 font-serif text-sm leading-snug text-ink hover:text-accent"
+                >
+                  <span className="min-w-0">{paper.title}</span>
+                  <ExternalLink
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-faint group-hover:text-accent"
+                    aria-hidden="true"
+                  />
+                </a>
+
+                {paper.authors?.length > 0 && (
+                  <p className="mt-1 truncate text-caption text-ink-faint">
+                    {paper.authors.slice(0, 3).join(', ')}
+                    {paper.authors.length > 3 && ' et al.'}
+                  </p>
+                )}
+
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-faint">
+                  {paper.year && <span className="font-mono tabular">{paper.year}</span>}
+                  {paper.citation_count != null && (
+                    <span className="font-mono tabular">
+                      {paper.citation_count.toLocaleString()} citations
+                    </span>
+                  )}
+                  {paper.open_access_pdf && (
+                    <a
+                      href={paper.open_access_pdf}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent hover:underline"
+                    >
+                      PDF
+                    </a>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
 function IntelligenceTab({
   intelligence,
   loading,
@@ -745,6 +878,9 @@ function IntelligenceTab({
   peerReviewLoading,
   onDownloadSlides,
   slideLoading,
+  onFindSota,
+  sota,
+  sotaLoading,
 }) {
   if (loading) {
     return (
@@ -781,11 +917,17 @@ function IntelligenceTab({
           <FlaskConical className="h-4 w-4" aria-hidden="true" />
           {peerReviewLoading ? 'Reviewing…' : 'Simulate peer review'}
         </Button>
+        <Button variant="secondary" onClick={onFindSota} loading={sotaLoading}>
+          <TrendingUp className="h-4 w-4" aria-hidden="true" />
+          {sotaLoading ? 'Searching…' : 'Find state of the art'}
+        </Button>
         <Button variant="secondary" onClick={onDownloadSlides} loading={slideLoading}>
           <Presentation className="h-4 w-4" aria-hidden="true" />
           {slideLoading ? 'Building…' : 'Download slides'}
         </Button>
       </div>
+
+      <SotaPanel sota={sota} loading={sotaLoading} onRefresh={onFindSota} />
 
       {(explicit.length > 0 || implicit.length > 0 || future.length > 0) && (
         <Card>

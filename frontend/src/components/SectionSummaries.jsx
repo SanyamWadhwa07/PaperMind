@@ -55,8 +55,10 @@ export default function SectionSummaries({ summaries }) {
             {isExpanded && (
               <div className="animate-fade border-t border-line bg-surface-sunk px-5 py-4">
                 {/* Section digests come from the same generator as the main
-                    synthesis, so they carry the same stray markdown. */}
-                <Prose>{text}</Prose>
+                    synthesis, so they carry the same stray markdown.
+                    `measure` keeps the line length readable now that the
+                    accordion itself spans the full page width. */}
+                <Prose measure>{text}</Prose>
               </div>
             )}
           </div>

@@ -36,23 +36,18 @@ requests
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 slowapi                   # FastAPI rate limiting (equiv. of flask-limiter)
 
-# ── Task queue (optional — needed for Celery background tasks) ───────────────
-arq
-redis
+# ── Cache & rate limiting ────────────────────────────────────────────────────
+redis                     # rate-limit buckets + PDF processing cache; both
+                          #   degrade to in-memory when Redis is unreachable
 
 # ── Logging & monitoring ─────────────────────────────────────────────────────
 structlog
 python-json-logger
 sentry-sdk[fastapi]       # optional: set SENTRY_DSN env var to enable
 
-# ── Testing ──────────────────────────────────────────────────────────────────
-pytest
-pytest-asyncio
-pytest-cov
-pytest-mock
-httpx                     # FastAPI TestClient transport
+# ── HTTP client ──────────────────────────────────────────────────────────────
+httpx                     # external API calls + FastAPI TestClient transport
 
-# ── Code quality ─────────────────────────────────────────────────────────────
-black
-flake8
-mypy
+# Test and lint tooling lives in requirements-dev.txt, not here — a production
+# image has no business installing black, flake8 and mypy. `arq` was listed for
+# a task queue that was never implemented; see the note in docker-compose.yml.

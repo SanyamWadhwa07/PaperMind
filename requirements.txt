@@ -44,7 +44,11 @@ langchain-google-genai>=4.0,<5.0   # Gemini free tier (primary in the fallback c
 # langchain-openai>=0.1.0          # optional extra backend
 # langchain-anthropic>=0.1.0       # optional extra backend
 
-# Topic clustering (optional — guarded with try/except; CPU-only via pre-computed embeddings)
+# Topic clustering (optional). Left commented deliberately: between them these
+# pull numba, llvmlite and a C toolchain, which is heavy and awkward on Windows
+# for one view. core/knowledge/topic_clustering.py runs an equivalent
+# scikit-learn pipeline when they are absent, so Explore -> Topics works either
+# way; install these only to use BERTopic itself.
 # bertopic>=0.16.0
 # hdbscan>=0.8.33
 # umap-learn>=0.5.5

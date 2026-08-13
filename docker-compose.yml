@@ -90,31 +90,14 @@ services:
       timeout: 3s
       retries: 5
 
-  worker:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    restart: unless-stopped
-    command: celery -A tasks.paper_tasks worker --loglevel=info --concurrency=2
-    environment:
-      APP_ENV: ${APP_ENV:-production}
-      SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
-      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:?SUPABASE_SERVICE_KEY is required}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
-      REDIS_URL: redis://redis:6379/0
-      PAPERMIND_USE_GRAPH: ${PAPERMIND_USE_GRAPH:-1}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-    volumes:
-      - paper_uploads:/app/uploads
-      - paper_arxiv:/app/arxiv_papers
-    depends_on:
-      redis:
-        condition: service_healthy
-    profiles:
-      # Opt-in: `docker compose --profile workers up`. The API processes
-      # synchronously when no worker is running.
-      - workers
+# There is no worker service. This file used to define one running
+# `celery -A tasks.paper_tasks worker`, but `backend/tasks/paper_tasks.py` does
+# not exist and neither Celery nor arq is imported anywhere in the project — the
+# service could only ever have crashed on start. Paper processing runs
+# synchronously inside the API request, which is why `api` sets a long timeout.
+#
+# Redis above is still real: it backs rate limiting and the PDF processing
+# cache, both of which degrade to in-memory when it is absent.
 
 volumes:
   paper_uploads:

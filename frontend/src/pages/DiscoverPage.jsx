@@ -18,6 +18,8 @@ export default function DiscoverPage() {
   const toast = useToast()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
+  const [searched, setSearched] = useState(false)
+  const [source, setSource] = useState(null)
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState({})
 
@@ -31,8 +33,11 @@ export default function DiscoverPage() {
         params: { q: query, limit: 12 },
         headers: { Authorization: `Bearer ${token}` },
       })
-      setResults(res.data?.papers || [])
-      if ((res.data?.papers || []).length === 0) {
+      const papers = res.data?.papers || []
+      setResults(papers)
+      setSource(res.data?.degraded ? res.data.source : null)
+      setSearched(true)
+      if (papers.length === 0) {
         toast.info('No results found. Try a different query.')
       }
     } catch (e) {
@@ -42,12 +47,16 @@ export default function DiscoverPage() {
     }
   }
 
+  /** Results are keyed by S2 id, which arXiv-sourced results do not have. */
+  const paperKey = (paper) => paper.s2_id || paper.arxiv_id || paper.title
+
   const handleAddToLibrary = async (paper) => {
     if (!paper.arxiv_id) {
       toast.error('This paper has no arXiv ID, so it cannot be imported.')
       return
     }
-    setImporting(prev => ({ ...prev, [paper.paperId]: true }))
+    const key = paperKey(paper)
+    setImporting(prev => ({ ...prev, [key]: true }))
     try {
       await api.post('/api/process/arxiv', { arxiv_id: paper.arxiv_id }, {
         headers: { Authorization: `Bearer ${token}` },
@@ -56,12 +65,12 @@ export default function DiscoverPage() {
     } catch (e) {
       toast.error('Import failed: ' + (e.response?.data?.detail || e.message))
     } finally {
-      setImporting(prev => ({ ...prev, [paper.paperId]: false }))
+      setImporting(prev => ({ ...prev, [key]: false }))
     }
   }
 
   return (
-    <div className="animate-rise mx-auto max-w-4xl space-y-8">
+    <div className="animate-rise mx-auto max-w-4xl space-y-8 3xl:max-w-6xl">
       <header className="border-b border-line pb-6">
         <Eyebrow className="block">Beyond your library</Eyebrow>
         <h1 className="display mt-2 text-display-sm text-ink">Discover</h1>
@@ -99,10 +108,19 @@ export default function DiscoverPage() {
         </div>
       )}
 
+      {!loading && source === 'arxiv' && (
+        <p className="text-caption text-ink-faint">
+          Semantic Scholar is rate-limiting us, so these results come from arXiv
+          and carry no citation counts.
+        </p>
+      )}
+
       {!loading && results.length > 0 && (
         <div className="stagger space-y-3">
-          {results.map((paper, i) => (
-            <Card key={paper.paperId} interactive style={{ '--i': i }}>
+          {results.map((paper, i) => {
+            const key = paperKey(paper)
+            return (
+            <Card key={key} interactive style={{ '--i': i }}>
               <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 flex-1">
                   <h3 className="font-serif text-lg leading-snug text-ink">
@@ -111,7 +129,7 @@ export default function DiscoverPage() {
 
                   {paper.authors?.length > 0 && (
                     <p className="mt-1.5 text-sm text-ink-muted">
-                      {paper.authors.slice(0, 4).map((a) => a.name).join(', ')}
+                      {paper.authors.slice(0, 4).join(', ')}
                       {paper.authors.length > 4 && ` +${paper.authors.length - 4} more`}
                     </p>
                   )}
@@ -123,11 +141,11 @@ export default function DiscoverPage() {
                         <span className="font-mono tabular">{paper.year}</span>
                       </span>
                     )}
-                    {paper.citationCount != null && (
+                    {paper.citation_count != null && (
                       <span className="inline-flex items-center gap-1.5">
                         <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
                         <span className="font-mono tabular">
-                          {paper.citationCount.toLocaleString()}
+                          {paper.citation_count.toLocaleString()}
                         </span>
                         citations
                       </span>
@@ -145,8 +163,8 @@ export default function DiscoverPage() {
                   <Button
                     size="sm"
                     onClick={() => handleAddToLibrary(paper)}
-                    disabled={!paper.can_import || importing[paper.paperId]}
-                    loading={importing[paper.paperId]}
+                    disabled={!paper.can_import || importing[key]}
+                    loading={importing[key]}
                     title={
                       !paper.can_import ? 'No arXiv ID, so this cannot be imported' : 'Add to library'
                     }
@@ -169,11 +187,12 @@ export default function DiscoverPage() {
                 </div>
               </CardBody>
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
 
-      {!loading && query && results.length === 0 && (
+      {!loading && searched && results.length === 0 && (
         <EmptyState
           icon={Search}
           title="No matches"
@@ -181,7 +200,7 @@ export default function DiscoverPage() {
         />
       )}
 
-      {!loading && !query && (
+      {!loading && !searched && (
         <EmptyState
           icon={Search}
           title="Find related work"

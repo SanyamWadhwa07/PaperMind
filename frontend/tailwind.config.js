@@ -15,6 +15,15 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      // Tailwind's scale stops at 1536px, which treats a 1600px laptop and a
+      // 3440px ultrawide as the same display. These two steps are where the
+      // root font size also steps up (see index.css), so a page can widen and
+      // scale at the same breakpoints rather than fighting them.
+      screens: {
+        '3xl': '1920px',
+        '4xl': '2560px',
+      },
+
       colors: {
         canvas: token('canvas'),
         surface: {

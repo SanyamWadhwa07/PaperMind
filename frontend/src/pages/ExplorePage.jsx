@@ -41,8 +41,8 @@ export default function ExplorePage() {
     loadTab(activeTab)
   }, [activeTab])
 
-  const loadTab = async (tab) => {
-    if (graphData[tab]) return
+  const loadTab = async (tab, { force = false } = {}) => {
+    if (graphData[tab] && !force) return
     setLoading(true)
     try {
       const res = await api.get(ENDPOINT[tab], {
@@ -60,11 +60,19 @@ export default function ExplorePage() {
   const handleRecompute = async () => {
     setRecomputing(true)
     try {
-      await api.post('/api/corpus/recompute-clusters', {}, {
+      const res = await api.post('/api/corpus/recompute-clusters', {}, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      toast.success('Cluster recomputation started (background task).')
+      const { num_topics: topics, num_papers: papers } = res.data || {}
+      toast.success(
+        topics
+          ? `Grouped ${papers} papers into ${topics} topic${topics === 1 ? '' : 's'}.`
+          : 'Clusters recomputed.'
+      )
+      // Clearing the cache is not enough on its own — the tab is already
+      // active, so nothing triggers a refetch. Load the new graph directly.
       setGraphData(prev => ({ ...prev, 'topic-clusters': undefined }))
+      await loadTab('topic-clusters', { force: true })
     } catch (e) {
       toast.error('Recompute failed: ' + (e.response?.data?.detail || e.message))
     } finally {
@@ -97,7 +105,7 @@ export default function ExplorePage() {
         : null
 
   return (
-    <div className="animate-rise mx-auto max-w-6xl space-y-8">
+    <div className="animate-rise mx-auto max-w-6xl space-y-8 3xl:max-w-7xl">
       <header className="flex flex-col gap-4 border-b border-line pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Eyebrow className="block">The whole library at once</Eyebrow>

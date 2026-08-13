@@ -30,6 +30,52 @@ ALLOWED_EXTENSIONS = {'pdf'}
 MAX_PDF_PAGES = 200
 MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
 
+# Attempts for the one write that matters. See _insert_summary_with_retry.
+_SAVE_ATTEMPTS = 4
+
+
+async def _insert_summary_with_retry(record: dict) -> list:
+    """Insert the finished summary, retrying on transport failures.
+
+    This insert sits at the end of two to four minutes of PDF extraction and LLM
+    calls, and it was a single unguarded attempt. Any blip on the socket at that
+    exact moment discarded the entire run: the user waited minutes, the free-tier
+    quota was spent, and the response was a 500 with nothing saved.
+
+    Observed in practice as `WinError 10013` from httpx, where a security product
+    briefly refused an outbound socket during a burst of concurrent requests. It
+    cleared on its own seconds later, which is precisely the case a retry covers.
+
+    Only transport-level errors are retried. A rejection from PostgREST (a
+    constraint violation, a bad column) will fail identically every time, so it
+    is raised on the first attempt rather than after four.
+    """
+    last_error: Exception | None = None
+
+    for attempt in range(_SAVE_ATTEMPTS):
+        try:
+            result = await asyncio.to_thread(
+                lambda: supabase.table('summaries').insert(record).execute()
+            )
+            if attempt:
+                logger.info('summary_insert_recovered', attempt=attempt)
+            return result.data
+        except Exception as e:
+            # postgrest raises APIError for anything the server actually
+            # answered; those are deterministic and not worth repeating.
+            if type(e).__name__ == 'APIError':
+                raise
+            last_error = e
+            logger.warning(
+                'summary_insert_attempt_failed',
+                attempt=attempt, error=str(e)[:200], error_type=type(e).__name__,
+            )
+            if attempt < _SAVE_ATTEMPTS - 1:
+                await asyncio.sleep(2 ** attempt)
+
+    logger.error('summary_insert_failed', attempts=_SAVE_ATTEMPTS, error=str(last_error)[:300])
+    raise last_error  # type: ignore[misc]
+
 
 def _allowed_file(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -462,11 +508,11 @@ async def upload_and_process(current_user: CurrentUser, file: UploadFile = File(
         if embedding_list:
             record['embedding'] = embedding_list
 
-        result = await asyncio.to_thread(lambda: supabase.table('summaries').insert(record).execute())
-        if not result.data:
+        saved = await _insert_summary_with_retry(record)
+        if not saved:
             return JSONResponse(status_code=500, content={'error': 'Failed to save summary'})
 
-        new_id = result.data[0]['id']
+        new_id = saved[0]['id']
 
         # Activity log (non-critical)
         try:
@@ -599,11 +645,11 @@ async def process_from_arxiv(current_user: CurrentUser, request: Request):
         if embedding_list:
             record['embedding'] = embedding_list
 
-        result = await asyncio.to_thread(lambda: supabase.table('summaries').insert(record).execute())
-        if not result.data:
+        saved = await _insert_summary_with_retry(record)
+        if not saved:
             return JSONResponse(status_code=500, content={'error': 'Failed to save summary'})
 
-        new_id = result.data[0]['id']
+        new_id = saved[0]['id']
 
         try:
             await asyncio.to_thread(
