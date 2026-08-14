@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Download, FileText, Database,
@@ -6,7 +6,6 @@ import {
   Brain, Zap, FlaskConical, Presentation, Star,
   TrendingUp, ExternalLink,
 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import EntityDisplay from '../components/EntityDisplay'
 import FiguresDisplay from '../components/FiguresDisplay'
@@ -14,9 +13,16 @@ import TablesDisplay from '../components/TablesDisplay'
 import KnowledgeGraph from '../components/KnowledgeGraph'
 import SectionSummaries from '../components/SectionSummaries'
 import StarRating from '../components/StarRating'
-import api from '../lib/api'
+import {
+  graph as graphApi,
+  intelligence as intelligenceApi,
+  papers as papersApi,
+} from '../lib/api'
+import { fetchQuery, invalidate } from '../lib/query'
 import {
   Badge,
+  Bento,
+  BentoItem,
   Button,
   Card,
   CardBody,
@@ -28,6 +34,7 @@ import {
   Inline,
   Metric,
   Prose,
+  ScrollArea,
   Skeleton,
   Spinner,
   StagePill,
@@ -70,12 +77,18 @@ function readingTime(text) {
   return `${words.toLocaleString()} words · ${Math.max(1, Math.round(words / 220))} min read`
 }
 
-/** A titled list of claims. Used for findings, contributions, limitations. */
+/**
+ * A titled list of claims. Used for findings, contributions, limitations.
+ *
+ * The list scrolls past a handful of entries. How many claims the summariser
+ * returns varies with the paper, and letting that decide the height of a card
+ * meant the sidebar column ran hundreds of pixels past the article beside it.
+ */
 function ClaimList({ title, items, icon: Icon, tone = 'neutral' }) {
   if (!items?.length) return null
   return (
     <Card>
-      <CardBody>
+      <CardBody className="pb-0">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
           {Icon && <Icon className="h-4 w-4 text-ink-faint" aria-hidden="true" />}
           {title}
@@ -83,22 +96,25 @@ function ClaimList({ title, items, icon: Icon, tone = 'neutral' }) {
             {items.length}
           </Badge>
         </h3>
-        {/* The section spine, reused: each claim is a node on the rail. */}
-        <ul className="spine mt-4 space-y-2.5">
-          {items.map((item, i) => (
-            <li key={i} className="spine-node text-sm leading-relaxed text-ink-muted">
-              <Inline>{item}</Inline>
-            </li>
-          ))}
-        </ul>
       </CardBody>
+      <ScrollArea maxHeight="20rem" aria-label={title}>
+        <CardBody className="pt-4">
+          {/* The section spine, reused: each claim is a node on the rail. */}
+          <ul className="spine space-y-2.5">
+            {items.map((item, i) => (
+              <li key={i} className="spine-node text-sm leading-relaxed text-ink-muted">
+                <Inline>{item}</Inline>
+              </li>
+            ))}
+          </ul>
+        </CardBody>
+      </ScrollArea>
     </Card>
   )
 }
 
 export default function SummaryPage() {
   const { id } = useParams()
-  const { token } = useAuth()
   const toast = useToast()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -113,10 +129,6 @@ export default function SummaryPage() {
   const [sota, setSota] = useState(null)
   const [sotaLoading, setSotaLoading] = useState(false)
 
-  useEffect(() => {
-    loadSummary()
-  }, [id])
-
   // `force` exists for the refetch after generating something: the cached
   // result is deliberately stale at that point, and state updates do not land
   // before the next statement, so clearing it first would not lift the guard.
@@ -124,10 +136,10 @@ export default function SummaryPage() {
     if ((intelligence && !force) || intelligenceLoading) return
     setIntelligenceLoading(true)
     try {
-      const res = await api.get(`/api/intelligence/paper/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setIntelligence(res.data)
+      if (force) invalidate(['intelligence', id])
+      setIntelligence(
+        await fetchQuery(['intelligence', id], () => intelligenceApi.forPaper(id)),
+      )
     } catch {
       setIntelligence({})
     } finally {
@@ -138,16 +150,14 @@ export default function SummaryPage() {
   const handleSimulatePeerReview = async () => {
     setPeerReviewLoading(true)
     try {
-      await api.post(`/api/intelligence/peer-review/${id}`, {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      await intelligenceApi.peerReview(id)
       // Previously this refetched (a no-op — the guard saw the cached value)
       // and then set the cache to null, so the freshly generated review was
       // replaced by the "No analysis yet" empty state.
       await loadIntelligence({ force: true })
       toast.success('Peer review generated')
     } catch (e) {
-      toast.error('Peer review failed: ' + (e.response?.data?.detail || e.message))
+      toast.error('Peer review failed: ' + (e.message || 'Unknown error'))
     } finally {
       setPeerReviewLoading(false)
     }
@@ -159,15 +169,13 @@ export default function SummaryPage() {
   const handleFindSota = async () => {
     setSotaLoading(true)
     try {
-      const res = await api.get(`/api/intelligence/sota/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setSota(res.data)
-      if (!res.data?.papers?.length) {
+      const data = await intelligenceApi.sota(id)
+      setSota(data)
+      if (!data?.papers?.length) {
         toast.info('No newer work found on this topic.')
       }
     } catch (e) {
-      toast.error('SOTA lookup failed: ' + (e.response?.data?.detail || e.message))
+      toast.error('SOTA lookup failed: ' + (e.message || 'Unknown error'))
     } finally {
       setSotaLoading(false)
     }
@@ -175,12 +183,10 @@ export default function SummaryPage() {
 
   const handleDownloadSlides = async () => {
     setSlideLoading(true)
+    let url
     try {
-      const res = await api.post(`/api/export/slides/${id}`, {}, {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: 'blob',
-      })
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/html' }))
+      const blob = await intelligenceApi.slides(id)
+      url = window.URL.createObjectURL(new Blob([blob], { type: 'text/html' }))
       const link = document.createElement('a')
       link.href = url
       link.setAttribute('download', `slides_${id.slice(0, 8)}.html`)
@@ -189,8 +195,12 @@ export default function SummaryPage() {
       link.remove()
       toast.success('Slides downloaded!')
     } catch (e) {
-      toast.error('Slide generation failed: ' + (e.response?.data?.detail || e.message))
+      toast.error('Slide generation failed: ' + (e.message || 'Unknown error'))
     } finally {
+      // The object URL pins the blob in memory until it is revoked, and this
+      // one never was — every export leaked a full HTML deck for the lifetime
+      // of the tab.
+      if (url) window.URL.revokeObjectURL(url)
       setSlideLoading(false)
     }
   }
@@ -201,11 +211,11 @@ export default function SummaryPage() {
     setGraphLoading(true)
     try {
       const [graphRes, recsRes] = await Promise.all([
-        api.get(`/api/graph/paper/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
-        api.get(`/api/graph/recommendations/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetchQuery(['graph', 'paper', id], () => graphApi.forPaper(id)),
+        fetchQuery(['graph', 'recs', id], () => graphApi.recommendations(id)),
       ])
-      setGraphData(graphRes.data)
-      setRecommendations(recsRes.data?.recommendations || [])
+      setGraphData(graphRes)
+      setRecommendations(recsRes?.recommendations || [])
     } catch {
       // ignore
     } finally {
@@ -213,19 +223,37 @@ export default function SummaryPage() {
     }
   }
 
-  const loadSummary = async () => {
+  const loadSummary = useCallback(async () => {
+    setLoading(true)
     try {
-      // Through the shared client, like every other call on this page: it
-      // resolves the API origin, attaches the token, and normalises errors.
-      // The raw `fetch` here did none of that and hardcoded a same-origin path.
-      const { data } = await api.get(`/api/summaries/${id}`)
+      // Cached, so returning to a paper from the graph or the dashboard is
+      // instant. `summary_data` is the largest payload the API serves — a full
+      // pipeline output as JSONB — and it was refetched on every visit.
+      const data = await fetchQuery(['summaries', id], () => papersApi.get(id))
       setSummary(data.summary)
     } catch (error) {
       toast.error('Failed to load summary: ' + error.message)
     } finally {
       setLoading(false)
     }
-  }
+  }, [id, toast])
+
+  // Declared after `loadSummary` on purpose. A dependency array is evaluated
+  // during render, at the point the `useEffect` call appears — so listing a
+  // `const` defined further down the component throws on its temporal dead
+  // zone, even though the effect body itself would not run until after render.
+  useEffect(() => {
+    // Everything except `summary` is per-paper and lazily loaded behind an
+    // "already have it?" guard. Without clearing them, following a link from
+    // the Similar-papers list swapped the article but kept the previous
+    // paper's knowledge graph, recommendations, intelligence and SOTA on
+    // screen — and those guards meant they were never refetched for the new one.
+    setGraphData(null)
+    setRecommendations([])
+    setIntelligence(null)
+    setSota(null)
+    loadSummary()
+  }, [loadSummary])
 
   const handleExport = async (format) => {
     if (!summary) return
@@ -586,15 +614,24 @@ export default function SummaryPage() {
 
             {resultRows.length > 0 && (
               <Card>
-                <div className="border-b border-line px-5 py-4 sm:px-6">
+                <div className="flex items-center gap-2 border-b border-line px-5 py-4 sm:px-6">
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
                     <BarChart3 className="h-4 w-4 text-ink-faint" aria-hidden="true" />
                     Quantitative results
                   </h3>
+                  <Badge tone="neutral" className="ml-auto">
+                    {resultRows.length}
+                  </Badge>
                 </div>
-                <div className="overflow-x-auto">
+                {/* This is the block that decided the page's shape. A paper with
+                    forty extracted rows built a table taller than the article
+                    next to it, so the reading column ended and the right-hand
+                    side kept going alone for another screenful. Capped and
+                    scrolled, with the header pinned so the columns stay
+                    identifiable on the way down. */}
+                <ScrollArea maxHeight="24rem" aria-label="Quantitative results">
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 z-10 bg-surface">
                       <tr className="border-b border-line">
                         {['Measurement', 'Value', 'Method', 'On'].map((h) => (
                           <th
@@ -637,7 +674,7 @@ export default function SummaryPage() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollArea>
               </Card>
             )}
 
@@ -811,7 +848,8 @@ function SotaPanel({ sota, loading, onRefresh }) {
         </Button>
       </div>
 
-      <CardBody>
+      <ScrollArea maxHeight="26rem" aria-label="State of the art results">
+        <CardBody>
         {!sota.papers?.length ? (
           <p className="text-sm text-ink-faint">
             Nothing newer found on this topic.
@@ -865,7 +903,8 @@ function SotaPanel({ sota, loading, onRefresh }) {
             ))}
           </ul>
         )}
-      </CardBody>
+        </CardBody>
+      </ScrollArea>
     </Card>
   )
 }
@@ -911,8 +950,14 @@ function IntelligenceTab({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
+    /* A bento, not a stack. Every panel here used to be full width in a single
+       column, so on a wide display the tab was a narrow ribbon of cards with
+       half the screen empty beside it — and each panel set its own width, which
+       is what made the app feel like several different apps. Gaps and
+       reproducibility are both short, so they pair; the review and the ablation
+       table need the full track. */
+    <Bento>
+      <BentoItem span={6} className="flex flex-wrap gap-2">
         <Button variant="secondary" onClick={onPeerReview} loading={peerReviewLoading}>
           <FlaskConical className="h-4 w-4" aria-hidden="true" />
           {peerReviewLoading ? 'Reviewing…' : 'Simulate peer review'}
@@ -925,41 +970,51 @@ function IntelligenceTab({
           <Presentation className="h-4 w-4" aria-hidden="true" />
           {slideLoading ? 'Building…' : 'Download slides'}
         </Button>
-      </div>
+      </BentoItem>
 
-      <SotaPanel sota={sota} loading={sotaLoading} onRefresh={onFindSota} />
+      {(sota || sotaLoading) && (
+        <BentoItem span={6}>
+          <SotaPanel sota={sota} loading={sotaLoading} onRefresh={onFindSota} />
+        </BentoItem>
+      )}
 
       {(explicit.length > 0 || implicit.length > 0 || future.length > 0) && (
-        <Card>
-          <CardBody className="space-y-5">
+        <BentoItem span={3} as={Card} className="flex flex-col">
+          <CardBody className="pb-0">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
               <Zap className="h-4 w-4 text-ink-faint" aria-hidden="true" />
               Research gaps
             </h3>
-            {[
-              ['Explicitly stated', explicit],
-              ['Implicit', implicit],
-              ['Future directions', future],
-            ].map(([label, items]) =>
-              items.length ? (
-                <div key={label}>
-                  <Eyebrow className="block">{label}</Eyebrow>
-                  <ul className="spine mt-2.5 space-y-2">
-                    {items.map((g, i) => (
-                      <li key={i} className="spine-node text-sm leading-relaxed text-ink-muted">
-                        {g}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null,
-            )}
           </CardBody>
-        </Card>
+          {/* Gap detection returns as many as it finds — commonly a dozen or
+              more across the three kinds. */}
+          <ScrollArea maxHeight="22rem" aria-label="Research gaps" className="min-h-0 flex-1">
+            <CardBody className="space-y-5 pt-4">
+              {[
+                ['Explicitly stated', explicit],
+                ['Implicit', implicit],
+                ['Future directions', future],
+              ].map(([label, items]) =>
+                items.length ? (
+                  <div key={label}>
+                    <Eyebrow className="block">{label}</Eyebrow>
+                    <ul className="spine mt-2.5 space-y-2">
+                      {items.map((g, i) => (
+                        <li key={i} className="spine-node text-sm leading-relaxed text-ink-muted">
+                          <Inline>{g}</Inline>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null,
+              )}
+            </CardBody>
+          </ScrollArea>
+        </BentoItem>
       )}
 
       {repro.score != null && (
-        <Card>
+        <BentoItem span={3} as={Card}>
           <CardBody>
             <h3 className="text-sm font-semibold text-ink">Reproducibility</h3>
             <div className="mt-4 flex flex-wrap items-center gap-6">
@@ -987,28 +1042,30 @@ function IntelligenceTab({
             {(repro.github_links || []).length > 0 && (
               <div className="mt-5 border-t border-line pt-4">
                 <Eyebrow className="block">Code</Eyebrow>
-                <ul className="mt-2 space-y-1">
-                  {repro.github_links.map((url, i) => (
-                    <li key={i}>
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block truncate font-mono text-code text-accent hover:underline"
-                      >
-                        {url}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
+                <ScrollArea maxHeight="8rem" aria-label="Code repositories" className="mt-2">
+                  <ul className="space-y-1">
+                    {repro.github_links.map((url, i) => (
+                      <li key={i}>
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate font-mono text-code text-accent hover:underline"
+                        >
+                          {url}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
               </div>
             )}
           </CardBody>
-        </Card>
+        </BentoItem>
       )}
 
       {pr && (
-        <Card>
+        <BentoItem span={6} as={Card}>
           <CardBody className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
@@ -1049,27 +1106,30 @@ function IntelligenceTab({
             {(pr.minor_concerns || []).length > 0 && (
               <div>
                 <Eyebrow className="block">Minor concerns</Eyebrow>
-                <ul className="spine mt-2 space-y-1.5">
-                  {pr.minor_concerns.map((c, i) => (
-                    <li key={i} className="spine-node text-sm text-ink-muted">
-                      {c}
-                    </li>
-                  ))}
-                </ul>
+                <ScrollArea maxHeight="14rem" aria-label="Minor concerns" className="mt-2">
+                  <ul className="spine space-y-1.5">
+                    {pr.minor_concerns.map((c, i) => (
+                      <li key={i} className="spine-node text-sm text-ink-muted">
+                        <Inline>{c}</Inline>
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
               </div>
             )}
           </CardBody>
-        </Card>
+        </BentoItem>
       )}
 
       {ablation.length > 0 && (
-        <Card>
-          <div className="border-b border-line px-5 py-4 sm:px-6">
+        <BentoItem span={6} as={Card}>
+          <div className="flex items-center gap-2 border-b border-line px-5 py-4 sm:px-6">
             <h3 className="text-sm font-semibold text-ink">Ablation studies</h3>
+            <Badge tone="neutral" className="ml-auto">{ablation.length}</Badge>
           </div>
-          <div className="overflow-x-auto">
+          <ScrollArea maxHeight="24rem" aria-label="Ablation studies">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="border-b border-line">
                   {['Component', 'Metric', 'Delta', 'Baseline'].map((h) => (
                     <th
@@ -1103,17 +1163,19 @@ function IntelligenceTab({
                 ))}
               </tbody>
             </table>
-          </div>
-        </Card>
+          </ScrollArea>
+        </BentoItem>
       )}
 
       {!hasAnything && (
-        <EmptyState
-          icon={Brain}
-          title="No analysis yet"
-          description="Run a peer review simulation above, or reprocess the paper to populate gaps and reproducibility."
-        />
+        <BentoItem span={6}>
+          <EmptyState
+            icon={Brain}
+            title="No analysis yet"
+            description="Run a peer review simulation above, or reprocess the paper to populate gaps and reproducibility."
+          />
+        </BentoItem>
       )}
-    </div>
+    </Bento>
   )
 }

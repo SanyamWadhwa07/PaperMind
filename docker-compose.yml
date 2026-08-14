@@ -92,9 +92,10 @@ services:
 
 # There is no worker service. This file used to define one running
 # `celery -A tasks.paper_tasks worker`, but `backend/tasks/paper_tasks.py` does
-# not exist and neither Celery nor arq is imported anywhere in the project — the
-# service could only ever have crashed on start. Paper processing runs
-# synchronously inside the API request, which is why `api` sets a long timeout.
+# not exist and neither Celery nor arq is imported anywhere in the project, so
+# the service could only ever have crashed on start. Paper processing runs
+# synchronously inside the API request, which is why nginx allows 600s on
+# /api (see proxy_read_timeout in frontend/nginx.conf) rather than the default 60.
 #
 # Redis above is still real: it backs rate limiting and the PDF processing
 # cache, both of which degrade to in-memory when it is absent.

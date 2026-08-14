@@ -13,6 +13,8 @@ import { forwardRef, useId, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import { MATH_TOKEN, looksLikeMath, mathBody, renderMath } from '../../lib/mathText'
+
 /** Join class names, dropping falsy entries. */
 export function cx(...parts) {
   return parts.filter(Boolean).join(' ')
@@ -103,6 +105,102 @@ export function Card({ className, interactive, as: Tag = 'div', ...props }) {
  *  390px screen spends an eighth of the width on margin. */
 export function CardBody({ className, ...props }) {
   return <div className={cx('p-5 sm:p-6', className)} {...props} />
+}
+
+/* ── Scroll containment ─────────────────────────────────────────────────── */
+
+/**
+ * A block that scrolls inside itself rather than growing without bound.
+ *
+ * Extraction output has no length ceiling: one paper yields six result rows and
+ * the next yields ninety. A card that grows to fit ninety sets the height of the
+ * whole row, so the column beside it ends in hundreds of pixels of empty gutter
+ * and the page stops looking designed. Capping the height means the *layout* is
+ * decided by the design rather than by whatever the pipeline happened to
+ * extract.
+ *
+ * `maxHeight` is a raw CSS length so a caller can match one block's cap to
+ * another's. Scrolling regions are focusable on purpose — a keyboard user with
+ * no pointer otherwise cannot reach content below the fold (WCAG 2.1.1).
+ */
+export function ScrollArea({
+  maxHeight = '26rem',
+  className,
+  style,
+  children,
+  ...props
+}) {
+  return (
+    <div
+      // `overscroll-contain` stops a scroll that bottoms out here from
+      // continuing into the page behind it, which otherwise reads as the
+      // viewport lurching when the pointer happens to be over a table.
+      className={cx('overflow-auto overscroll-contain', className)}
+      style={{ maxHeight, ...style }}
+      tabIndex={0}
+      {...props}
+    >
+      {children}
+    </div>
+  )
+}
+
+/* ── Bento grid ─────────────────────────────────────────────────────────── */
+
+/**
+ * The app's one dense-layout grid.
+ *
+ * Pages had each grown their own column definition — `sm:grid-cols-3` here,
+ * `xl:grid-cols-[minmax(0,68ch)_minmax(0,1fr)]` there — so no two views lined
+ * up and a card meant a different width on each page. This is a single six-
+ * column track that every tiled view shares; tiles claim width through
+ * `BentoItem`'s `span`, and the column count is the only thing that changes
+ * across breakpoints.
+ *
+ * Six divides by two and three, so halves, thirds, and two-thirds all land on
+ * the same track — the arrangements a bento actually needs.
+ */
+export function Bento({ className, ...props }) {
+  return (
+    <div
+      className={cx(
+        'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6',
+        // Tiles in a row match heights, so a short card does not float with a
+        // gap beneath it while its neighbour runs long.
+        'items-stretch',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+/**
+ * One tile. `span` is in sixths and applies from `xl` up, where the six-column
+ * track exists; below that the grid is two columns and `wide` tiles take both.
+ */
+const BENTO_SPANS = {
+  2: 'xl:col-span-2',
+  3: 'xl:col-span-3',
+  4: 'xl:col-span-4',
+  6: 'xl:col-span-6',
+}
+
+export function BentoItem({ span = 3, className, as: Tag = 'div', ...props }) {
+  return (
+    <Tag
+      className={cx(
+        'min-w-0',
+        // A tile spanning the full track should also span both columns at the
+        // mid breakpoint — half a full-width tile is not a smaller version of
+        // the same idea, it is a different layout.
+        span === 6 && 'sm:col-span-2',
+        BENTO_SPANS[span] || BENTO_SPANS[3],
+        className,
+      )}
+      {...props}
+    />
+  )
 }
 
 export function CardHeader({ title, description, action, className }) {
@@ -420,10 +518,15 @@ export function Disclosure({
 
 // The synthesis prompt asks for flowing prose with no markdown, but models
 // emit `**bold**` anyway often enough that rendering it literally is the more
-// common failure. Handled inline rather than by pulling in a markdown library:
-// the output below is React elements, never HTML, so there is no injection
-// surface regardless of what the model writes.
-const INLINE_TOKEN = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*\n]+\*)/g
+// common failure. The same goes for the `$\alpha$` spans the source paper is
+// written in, which the summariser reproduces verbatim and correctly — those
+// are resolved by `mathText`. Handled inline rather than by pulling in a
+// markdown library: the output below is React elements, never HTML, so there is
+// no injection surface regardless of what the model writes.
+const INLINE_TOKEN = new RegExp(
+  `(\\*\\*[^*]+\\*\\*|__[^_]+__|\`[^\`]+\`|\\*[^*\\n]+\\*)|${MATH_TOKEN.source}`,
+  'g',
+)
 
 function renderInline(text, keyPrefix) {
   return text.split(INLINE_TOKEN).filter(Boolean).map((part, i) => {
@@ -440,6 +543,12 @@ function renderInline(text, keyPrefix) {
           {part.slice(1, -1)}
         </code>
       )
+    }
+    if (MATH_TOKEN.test(part)) {
+      const body = mathBody(part)
+      // A dollar amount is not notation. Left exactly as written when it is
+      // not, rather than italicised and mangled into symbols.
+      return looksLikeMath(body) ? renderMath(body, key) : part
     }
     if (part.startsWith('*') && part.endsWith('*')) {
       return <em key={key}>{part.slice(1, -1)}</em>

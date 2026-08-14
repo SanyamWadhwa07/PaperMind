@@ -11,6 +11,22 @@ export default function AvatarUpload({ currentAvatar, onAvatarUpdate }) {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(currentAvatar || null);
 
+  const uploadAvatar = async (file) => {
+    setUploading(true);
+
+    try {
+      const data = await profile.uploadAvatar(file);
+      toast.success('Avatar updated');
+      setPreview(data.avatar_url);
+      onAvatarUpdate?.(data.avatar_url);
+    } catch (error) {
+      toast.error(error.message || 'Could not upload the avatar');
+      setPreview(currentAvatar);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -36,22 +52,6 @@ export default function AvatarUpload({ currentAvatar, onAvatarUpdate }) {
 
     // Upload file
     uploadAvatar(file);
-  };
-
-  const uploadAvatar = async (file) => {
-    setUploading(true);
-
-    try {
-      const data = await profile.uploadAvatar(file);
-      toast.success('Avatar updated');
-      setPreview(data.avatar_url);
-      onAvatarUpdate?.(data.avatar_url);
-    } catch (error) {
-      toast.error(error.message || 'Could not upload the avatar');
-      setPreview(currentAvatar);
-    } finally {
-      setUploading(false);
-    }
   };
 
   const deleteAvatar = async () => {

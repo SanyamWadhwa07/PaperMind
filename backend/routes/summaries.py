@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
 from api.deps import SummaryServiceDep
+from api.response_cache import invalidate_user
 from auth.dependencies import CurrentUser
 
 logger = structlog.get_logger(__name__)
@@ -49,7 +50,10 @@ async def get_summary(
 async def delete_summary(
     summary_id: str, current_user: CurrentUser, summaries: SummaryServiceDep
 ):
-    await summaries.delete_summary(summary_id, current_user['user_id'])
+    user_id = current_user['user_id']
+    await summaries.delete_summary(summary_id, user_id)
+    # Every cached corpus view still contains the paper that was just removed.
+    invalidate_user(user_id)
     return {'message': 'Summary deleted successfully'}
 
 

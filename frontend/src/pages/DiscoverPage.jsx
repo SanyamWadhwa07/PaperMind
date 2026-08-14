@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Search, ExternalLink, PlusCircle, BookOpen, Calendar } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
-import api from '../lib/api'
+import { graph, papers as papersApi } from '../lib/api'
+import { fetchQuery, invalidate } from '../lib/query'
 import {
   Button,
   Card,
@@ -14,7 +14,6 @@ import {
 } from '../components/ui/primitives'
 
 export default function DiscoverPage() {
-  const { token } = useAuth()
   const toast = useToast()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -25,23 +24,24 @@ export default function DiscoverPage() {
 
   const handleSearch = async (e) => {
     e.preventDefault()
-    if (!query.trim()) return
+    const q = query.trim()
+    if (!q) return
     setLoading(true)
     setResults([])
     try {
-      const res = await api.get('/api/graph/discover', {
-        params: { q: query, limit: 12 },
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const papers = res.data?.papers || []
-      setResults(papers)
-      setSource(res.data?.degraded ? res.data.source : null)
+      // Cached by query text. Semantic Scholar rate-limits hard enough that
+      // re-running a search the user already ran is likely to come back a 429
+      // and fall through to the citation-less arXiv results instead.
+      const data = await fetchQuery(['discover', q], () => graph.discover(q, 12))
+      const found = data?.papers || []
+      setResults(found)
+      setSource(data?.degraded ? data.source : null)
       setSearched(true)
-      if (papers.length === 0) {
+      if (found.length === 0) {
         toast.info('No results found. Try a different query.')
       }
     } catch (e) {
-      toast.error('Search failed: ' + (e.response?.data?.detail || e.message))
+      toast.error('Search failed: ' + (e.message || 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -58,12 +58,17 @@ export default function DiscoverPage() {
     const key = paperKey(paper)
     setImporting(prev => ({ ...prev, [key]: true }))
     try {
-      await api.post('/api/process/arxiv', { arxiv_id: paper.arxiv_id }, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      // Through the endpoint map, which sets the pipeline timeout. Called
+      // directly, this inherited the client default and gave up long before the
+      // server had finished summarising — reporting a failed import for a paper
+      // that was, in fact, about to appear in the library.
+      await papersApi.processArxiv(paper.arxiv_id)
+      invalidate('summaries')
+      invalidate('corpus')
+      invalidate('graph')
       toast.success(`"${paper.title?.slice(0, 50)}..." added to your library.`)
     } catch (e) {
-      toast.error('Import failed: ' + (e.response?.data?.detail || e.message))
+      toast.error('Import failed: ' + (e.message || 'Unknown error'))
     } finally {
       setImporting(prev => ({ ...prev, [key]: false }))
     }

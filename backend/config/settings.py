@@ -58,8 +58,12 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_default: str = '120/minute'
     rate_limit_auth: str = '10/minute'
-    rate_limit_upload: str = '10/hour'
-    rate_limit_expensive: str = '30/hour'
+    # The pipeline routes. Batch offers a ten-paper queue, so a limit of ten
+    # per hour would have let a user run the feature exactly once and then fail
+    # — the ceiling has to clear the largest run the product itself offers,
+    # with room for a retry after a partial failure.
+    rate_limit_upload: str = '30/hour'
+    rate_limit_expensive: str = '60/hour'
 
     # ── External services ─────────────────────────────────────────────────────
     redis_url: str = ''

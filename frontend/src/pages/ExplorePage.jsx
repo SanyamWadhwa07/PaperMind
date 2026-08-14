@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Network, GitBranch, Users, AlertTriangle, RefreshCw } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import KnowledgeGraph from '../components/KnowledgeGraph'
-import api from '../lib/api'
+import { corpus } from '../lib/api'
+import { invalidate } from '../lib/query'
+import { useQuery } from '../lib/useQuery'
 import {
   Badge,
   Button,
@@ -22,59 +23,45 @@ const TABS = [
   { id: 'contradiction-map', label: 'Contradictions', icon: AlertTriangle },
 ]
 
-const ENDPOINT = {
-  'topic-clusters': '/api/corpus/topic-clusters',
-  'citation-network': '/api/corpus/citation-network',
-  'author-graph': '/api/corpus/author-graph',
-  'contradiction-map': '/api/corpus/contradiction-map',
+const LOADER = {
+  'topic-clusters': corpus.topicClusters,
+  'citation-network': corpus.citationNetwork,
+  'author-graph': corpus.authorGraph,
+  'contradiction-map': corpus.contradictions,
 }
 
+const EMPTY_GRAPH = { nodes: [], edges: [] }
+
 export default function ExplorePage() {
-  const { token } = useAuth()
   const toast = useToast()
   const [activeTab, setActiveTab] = useState('topic-clusters')
-  const [graphData, setGraphData] = useState({})
-  const [loading, setLoading] = useState(false)
   const [recomputing, setRecomputing] = useState(false)
 
-  useEffect(() => {
-    loadTab(activeTab)
-  }, [activeTab])
-
-  const loadTab = async (tab, { force = false } = {}) => {
-    if (graphData[tab] && !force) return
-    setLoading(true)
-    try {
-      const res = await api.get(ENDPOINT[tab], {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setGraphData(prev => ({ ...prev, [tab]: res.data }))
-    } catch (e) {
-      toast.error('Failed to load graph: ' + (e.response?.data?.detail || e.message))
-      setGraphData(prev => ({ ...prev, [tab]: { nodes: [], edges: [] } }))
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Each tab is its own cache key, and the cache is module-level — so switching
+  // tabs, leaving for Timeline, and coming back all read the graph that is
+  // already in memory. This used to be component state, which meant every
+  // navigation away threw four corpus-wide graph queries on the floor and
+  // re-ran them on return.
+  const { data, error, loading, refreshing, refetch } = useQuery(
+    ['corpus', activeTab],
+    () => LOADER[activeTab](),
+  )
 
   const handleRecompute = async () => {
     setRecomputing(true)
     try {
-      const res = await api.post('/api/corpus/recompute-clusters', {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const { num_topics: topics, num_papers: papers } = res.data || {}
+      const { num_topics: topics, num_papers: papers } =
+        (await corpus.recomputeClusters()) || {}
       toast.success(
         topics
           ? `Grouped ${papers} papers into ${topics} topic${topics === 1 ? '' : 's'}.`
           : 'Clusters recomputed.'
       )
-      // Clearing the cache is not enough on its own — the tab is already
-      // active, so nothing triggers a refetch. Load the new graph directly.
-      setGraphData(prev => ({ ...prev, 'topic-clusters': undefined }))
-      await loadTab('topic-clusters', { force: true })
+      // The clusters just changed server-side, so the cached graph is wrong
+      // rather than merely old. `refetch` forces past the TTL.
+      await refetch()
     } catch (e) {
-      toast.error('Recompute failed: ' + (e.response?.data?.detail || e.message))
+      toast.error('Recompute failed: ' + (e.message || 'Unknown error'))
     } finally {
       setRecomputing(false)
     }
@@ -83,19 +70,19 @@ export default function ExplorePage() {
   const handleMapRelations = async () => {
     setRecomputing(true)
     try {
-      await api.post('/api/corpus/relate-papers', {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      await corpus.relatePapers()
       toast.success('Relation mapping started. Refresh the citation network in a minute.')
-      setGraphData(prev => ({ ...prev, 'citation-network': undefined }))
+      // Runs in the background server-side, so there is nothing to refetch yet
+      // — just make sure the next visit does not serve the pre-mapping graph.
+      invalidate(['corpus', 'citation-network'])
     } catch (e) {
-      toast.error('Relation mapping failed: ' + (e.response?.data?.detail || e.message))
+      toast.error('Relation mapping failed: ' + (e.message || 'Unknown error'))
     } finally {
       setRecomputing(false)
     }
   }
 
-  const current = graphData[activeTab] || { nodes: [], edges: [] }
+  const current = data || EMPTY_GRAPH
 
   const action =
     activeTab === 'topic-clusters'
@@ -132,16 +119,35 @@ export default function ExplorePage() {
         )}
       </header>
 
-      <Tabs
-        tabs={TABS.map(({ id, label }) => ({ id, label }))}
-        value={activeTab}
-        onChange={setActiveTab}
-      />
+      <div className="flex items-center gap-3">
+        <Tabs
+          tabs={TABS.map(({ id, label }) => ({ id, label }))}
+          value={activeTab}
+          onChange={setActiveTab}
+          className="min-w-0 flex-1"
+        />
+        {/* A background refresh of a graph already on screen. Deliberately not
+            the full skeleton — the reader is looking at valid data. */}
+        {refreshing && !loading && (
+          <Spinner size="sm" className="shrink-0 text-ink-faint" />
+        )}
+      </div>
 
       {loading ? (
         <Card className="flex h-96 items-center justify-center">
           <Spinner className="text-accent" />
         </Card>
+      ) : error ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Could not load this graph"
+          description={error.message || 'The request failed.'}
+          action={
+            <Button variant="secondary" onClick={refetch}>
+              Try again
+            </Button>
+          }
+        />
       ) : current.nodes?.length === 0 ? (
         <EmptyState
           icon={Network}

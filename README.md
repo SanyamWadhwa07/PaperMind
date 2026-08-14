@@ -369,8 +369,8 @@ frontend and proxying `/api`), and `redis`, which backs rate limiting and the
 processing cache that lets a re-uploaded PDF skip the pipeline entirely. Both
 Redis-backed features degrade to in-memory when it is absent.
 
-Paper processing runs synchronously inside the request, which is why the `api`
-service sets a long timeout. There is no worker service.
+Paper processing runs synchronously inside the request, so nginx allows 600s on
+`/api` instead of the usual 60. There is no worker service.
 
 ### Split across managed free tiers
 

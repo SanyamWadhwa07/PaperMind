@@ -495,7 +495,13 @@ async def grade(state: SummaryState) -> Dict[str, Any]:
     system = (
         "You are a strict reviewer. Judge whether a paper summary is FAITHFUL to the "
         "source digests (no hallucinated methods/numbers) and SPECIFIC (names real "
-        "methods/materials and includes concrete numbers). Be honest and concise."
+        "methods/materials and includes concrete numbers). Be honest and concise. "
+        # Spelling the fields out is not redundant with the schema. Providers
+        # were answering `{\"faithful\": true}` and dropping the rest, which
+        # fails validation and throws the whole grade away.
+        "Answer with ALL FOUR fields every time: faithful (bool), specific "
+        "(bool), score (a number from 0.0 to 1.0), and issues (a list, empty "
+        "when there are none)."
     )
     user = (
         f"Source digests:\n{state.get('digest_text', '')}\n\n"
@@ -503,6 +509,15 @@ async def grade(state: SummaryState) -> Dict[str, Any]:
         f"Summary to grade:\n{summary}"
     )
     parsed = await _structured("smart", SummaryGrade, system, user, max_tokens=512)
+    if parsed is None:
+        # One retry before giving up. The observed failure is a provider
+        # returning a partial object, which is a property of that response
+        # rather than of this summary, so the same request often succeeds
+        # immediately. Worth one attempt: the alternative is discarding a real
+        # measurement and showing the reader no quality signal at all.
+        logger.info("grade_retry_after_parse_failure")
+        parsed = await _structured("smart", SummaryGrade, system, user, max_tokens=512)
+
     if parsed is None:
         # Grading failed (rate limit, parse error). Accept the synthesis rather
         # than loop, but record that it was never graded — previously this

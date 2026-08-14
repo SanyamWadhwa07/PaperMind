@@ -42,6 +42,24 @@ export default function ProfilePage() {
   const [stats, setStats] = useState(null)
   const [readingQueue, setReadingQueue] = useState([])
 
+  const fetchStats = async () => {
+    try {
+      setStats(await papers.dashboardStats().then((d) => d.stats))
+    } catch (error) {
+      // Stats are supplementary; the profile form still works without them.
+      console.error('Could not load profile stats:', error.message)
+    }
+  }
+
+  const fetchReadingQueue = async () => {
+    try {
+      const data = await queue.list()
+      setReadingQueue(Array.isArray(data) ? data : data?.items || [])
+    } catch {
+      // The queue is an optional panel; a failure here should not block the page.
+    }
+  }
+
   useEffect(() => {
     if (user) {
       setFormData({
@@ -55,15 +73,6 @@ export default function ProfilePage() {
       fetchReadingQueue()
     }
   }, [user])
-
-  const fetchStats = async () => {
-    try {
-      setStats(await papers.dashboardStats().then((d) => d.stats))
-    } catch (error) {
-      // Stats are supplementary; the profile form still works without them.
-      console.error('Could not load profile stats:', error.message)
-    }
-  }
 
   const handleChange = (e) => {
     setFormData({
@@ -96,15 +105,6 @@ export default function ProfilePage() {
     }
 
     setLoading(false)
-  }
-
-  const fetchReadingQueue = async () => {
-    try {
-      const data = await queue.list()
-      setReadingQueue(Array.isArray(data) ? data : data?.items || [])
-    } catch {
-      // The queue is an optional panel; a failure here should not block the page.
-    }
   }
 
   const removeFromQueue = async (queueId) => {

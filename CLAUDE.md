@@ -92,7 +92,12 @@ PaperMind/
 │   │   ├── deps.py                 # DI wiring — every repo/service as a FastAPI Depends
 │   │   ├── errors.py               # AppError hierarchy + handlers → one JSON envelope
 │   │   ├── middleware.py           # RequestContext (X-Request-ID) + SecurityHeaders
-│   │   ├── rate_limit.py           # Named limit buckets, per-user keying
+│   │   ├── rate_limit.py           # Named limit buckets, per-user keying. Applied
+│   │   │                           #   to the pipeline routes and /batch/compare.
+│   │   ├── response_cache.py       # Short-TTL cache for the corpus-wide read models
+│   │   │                           #   (/api/corpus/*). Redis when reachable, per-worker
+│   │   │                           #   LRU otherwise. Keyed per user; every write path
+│   │   │                           #   calls invalidate_user().
 │   │   ├── health.py               # /api/health, /health/live, /health/ready
 │   │   └── logging_config.py       # structlog; JSON in prod, console in dev
 │   │
@@ -163,8 +168,14 @@ PaperMind/
 │       ├── App.jsx                   # Routes: /, /login, /signup, /forgot-password,
 │       │                            #   /reset-password, /dashboard, /summary/:id,
 │       │                            #   /batch, /profile, /timeline, /explore, /discover
-│       ├── lib/api.js                # The single HTTP client — relative URLs, bearer
-│       │                            #   token attached automatically, normalised errors
+│       ├── lib/
+│       │   ├── api.js                # The single HTTP client — relative URLs, bearer
+│       │   │                        #   token attached automatically, normalised errors,
+│       │   │                        #   per-endpoint timeouts (see Timeouts below)
+│       │   ├── query.js              # Module-level LRU+TTL response cache with
+│       │   │                        #   in-flight de-duplication. Survives unmount.
+│       │   ├── useQuery.js           # The hook every page reads through
+│       │   └── mathText.jsx          # Inline LaTeX (`$\alpha$`) → readable text
 │       ├── contexts/
 │       │   ├── AuthContext.jsx       # JWT token management, user state
 │       │   ├── ThemeContext.jsx      # Light/dark toggle, drives the `.dark` class
@@ -172,7 +183,8 @@ PaperMind/
 │       ├── pages/                    # One file per route (13 pages)
 │       └── components/
 │           ├── ui/primitives.jsx     # Button, Card, Input, Badge, StagePill, Tabs,
-│           │                        #   EmptyState, ErrorState, PageHeader, Spinner, …
+│           │                        #   EmptyState, ErrorState, PageHeader, Spinner,
+│           │                        #   Bento/BentoItem, ScrollArea, …
 │           ├── Layout.jsx            # Header, nav rail, mobile drawer, footer
 │           ├── KnowledgeGraph.jsx    # vis-network graph, themed via CSS custom props
 │           ├── ComparisonTable.jsx, EntityDisplay.jsx, FiguresDisplay.jsx,
@@ -398,6 +410,78 @@ Beyond unit tests, `evals/run_benchmark.py` runs the full pipeline against
 real arXiv PDFs and measures latency, extraction coverage, and summary
 quality (ROUGE vs. each paper's abstract). See `docs/BENCHMARKS.md`.
 
+⚠️ **Run pytest from the project venv, not a system Python.** `langgraph` and
+`nltk` are declared in `requirements.txt` but a system interpreter almost
+certainly lacks them, and the failure mode is 40 collection errors that look
+like broken code rather than a missing dependency:
+
+```bash
+./venv/Scripts/python.exe -m pytest tests/ -q    # Windows
+./venv/bin/python -m pytest tests/ -q            # macOS/Linux
+```
+
+### Frontend checks
+
+```bash
+cd frontend
+npm run lint      # eslint, --max-warnings 0 — must be clean
+npm run build     # vite production build
+npm run smoke     # loads every route in a real browser (needs dev server + API up)
+```
+
+`npm run smoke` (`scripts/smoke.mjs`) exists because lint and build both pass on
+code that dies the moment it renders. It drives Chromium through every route and
+fails on any console error, uncaught exception, or tripped error boundary. Pass
+`SMOKE_EMAIL` / `SMOKE_PASSWORD` to include the authenticated pages and every
+tab of a real summary, which is where most of the rendering surface is:
+
+```bash
+SMOKE_EMAIL=you@example.com SMOKE_PASSWORD=… npm run smoke
+```
+
+`no-use-before-define` is enabled in `.eslintrc.cjs` for the same reason — see
+the comment there.
+
+### Frontend data fetching — read this before adding a `useEffect` fetch
+
+Pages read through `useQuery(key, fetcher)` (`src/lib/useQuery.js`), backed by a
+module-level LRU+TTL cache (`src/lib/query.js`). The cache outlives the
+component, which is the whole point: every page previously fetched into its own
+`useState`, so navigating from Timeline to Explore and back re-ran both
+corpus-wide queries and showed both spinners again for data that had not changed.
+
+Two rules follow from a cache that outlives components:
+
+1. **Any mutation must `invalidate()`.** Processing, importing, or deleting a
+   paper changes the library, the corpus graphs, and the dashboard counts. The
+   prefix form (`invalidate('summaries')`) clears every key under a scope, which
+   is why keys are built as `scope|id`. Miss this and the UI serves the value
+   from before the change indefinitely.
+2. **Session changes must `invalidate()` with no argument.** `AuthContext`'s
+   `clearAuth`/`applySession` and the 401 interceptor in `api.js` all do — the
+   cache holds responses fetched as the outgoing user, so without it the next
+   person to sign in on that browser is served the previous one's library out of
+   memory before any request goes out.
+
+The server-side counterpart is `backend/api/response_cache.py`, which caches the
+`/api/corpus/*` read models per user with the same contract: every write path
+calls `invalidate_user()`.
+
+### ⚠️ Client timeouts must not be shorter than the work they wait on
+
+`src/lib/api.js` sets a 30s default for ordinary reads, and two longer budgets:
+`PIPELINE_TIMEOUT` (600s, matching nginx's `proxy_read_timeout` on `/api`) for
+the two `/api/process/*` routes, and `ANALYSIS_TIMEOUT` (180s) for the endpoints
+that make one LLM or third-party call — peer review, slides, SOTA, relation
+mapping, cluster recomputation.
+
+A client timeout below the server's is worse than no timeout: the request keeps
+running server-side and the paper is *saved*, but the UI has already reported it
+as failed. `processArxiv` sat on the old 120s default for exactly this reason,
+which is what made a ten-paper batch report failures for papers that were being
+written to the database as it did so. If you add a route that calls an LLM, give
+it an explicit timeout in the endpoint map.
+
 ### Changing the LLM Provider
 
 ```bash
@@ -499,3 +583,18 @@ SEMANTIC_SCHOLAR_API_KEY=
   levels, entity kinds, graph node types) — never as action colors. Tokens
   live in `frontend/src/index.css` and `frontend/tailwind.config.js`;
   components in `frontend/src/components/ui/primitives.jsx`.
+- **One grid, and long content scrolls inside itself** (`Bento`/`BentoItem` and
+  `ScrollArea` in `primitives.jsx`): pages had each grown their own column
+  definition, so no two views lined up and a card meant a different width on
+  every page. `Bento` is a single six-column track that tiled views share.
+  `ScrollArea` exists because extraction output has no length ceiling — one
+  paper yields six result rows, the next yields ninety — and a card that grows
+  to fit ninety sets the height of its whole row, leaving the column beside it
+  in hundreds of pixels of empty gutter. Capping and scrolling means the layout
+  is decided by the design, not by whatever the pipeline happened to extract.
+- **Inline LaTeX resolved, not rendered by an engine** (`lib/mathText.jsx`):
+  papers are written in LaTeX, so extracted text carries `$\alpha$`, `$\phi$`,
+  `$x_i$`. KaTeX/MathJax is ~300KB to typeset what is nearly always a single
+  Greek letter, and both fail loudly on the malformed fragments an extractor
+  produces. A symbol table plus `<sub>`/`<sup>` covers what appears in prose,
+  and anything unrecognised falls through as its own text.

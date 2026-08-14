@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 from uuid import uuid4
 
-from fastapi import APIRouter, UploadFile, File, Request
+from fastapi import APIRouter, UploadFile, File, Request, Response
 from fastapi.responses import JSONResponse
 from werkzeug.utils import secure_filename
 from db import supabase as _shared_supabase
@@ -17,6 +17,7 @@ from db import supabase as _shared_supabase
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.errors import UnprocessableError
+from api.rate_limit import limit
 from auth.dependencies import CurrentUser
 from core.agent_integration import AgentPaperProcessor
 from backend.main import load_config
@@ -206,6 +207,12 @@ async def _persist_entities(summary_id: str, user_id: str, summary_result: dict)
 
 async def _post_save_tasks(new_id: str, user_id: str, summary_result: dict) -> None:
     """Best-effort post-save: similarity cache + citations + lineage + entity graph."""
+    # Drop the user's cached corpus views first. A new paper changes every one of
+    # them, and leaving them cached means the paper the user just watched process
+    # is absent from Explore and Timeline — which reads as the upload failing.
+    from api.response_cache import invalidate_user
+    invalidate_user(user_id)
+
     # Similarity cache
     try:
         from core.knowledge.graph_service import compute_and_cache_similarity
@@ -430,8 +437,20 @@ def _build_summary_record(user_id: str, summary_result: dict,
 
 
 @router.post('/process/upload', status_code=201)
-async def upload_and_process(current_user: CurrentUser, file: UploadFile = File(...)):
-    """Upload a PDF and run the 7-agent summarisation pipeline."""
+@limit('upload')
+async def upload_and_process(
+    request: Request,
+    response: Response,  # slowapi writes X-RateLimit-* headers here
+    current_user: CurrentUser,
+    file: UploadFile = File(...),
+):
+    """Upload a PDF and run the 7-agent summarisation pipeline.
+
+    Rate limited: these two routes are the only ones that run the full LLM
+    pipeline, and they had no limit at all — so the buckets configured in
+    `config/settings.py` for exactly this purpose were never applied, and one
+    client could spend the whole shared provider quota in a loop.
+    """
     user_id = current_user['user_id']
 
     if not _allowed_file(file.filename or ''):
@@ -537,7 +556,7 @@ async def upload_and_process(current_user: CurrentUser, file: UploadFile = File(
         return {
             'message': 'Paper processed successfully',
             'summary_id': new_id,
-            'summary': result.data[0],
+            'summary': saved[0],
             'processing_time': processing_time,
         }
 
@@ -549,7 +568,12 @@ async def upload_and_process(current_user: CurrentUser, file: UploadFile = File(
 
 
 @router.post('/process/arxiv', status_code=201)
-async def process_from_arxiv(current_user: CurrentUser, request: Request):
+@limit('upload')
+async def process_from_arxiv(
+    request: Request,
+    response: Response,  # slowapi writes X-RateLimit-* headers here
+    current_user: CurrentUser,
+):
     """Fetch a paper from arXiv by ID and run the full summarisation pipeline."""
     user_id = current_user['user_id']
     data = await request.json()
@@ -673,7 +697,7 @@ async def process_from_arxiv(current_user: CurrentUser, request: Request):
         return {
             'message': 'Paper processed successfully',
             'summary_id': new_id,
-            'summary': result.data[0],
+            'summary': saved[0],
             'processing_time': processing_time,
         }
 

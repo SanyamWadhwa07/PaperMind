@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import api from '../lib/api';
+import { graph } from '../lib/api';
+import { fetchQuery } from '../lib/query';
+import { useQuery } from '../lib/useQuery';
 import { Network } from 'vis-network';
 import { DataSet } from 'vis-data';
 import { Timeline } from 'vis-timeline';
@@ -101,33 +102,18 @@ const STAGE_BG = {
 };
 
 export default function TimelinePage() {
-  const { token } = useAuth();
   const { theme } = useTheme();
   const navigate = useNavigate();
   const timelineRef = useRef(null);
   const treeRef = useRef(null);
   const treeNetRef = useRef(null);
-  const [loading, setLoading] = useState(true);
-  const [timelineData, setTimelineData] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [ancestryData, setAncestryData] = useState(null);
   const [ancestryLoading, setAncestryLoading] = useState(false);
 
-  useEffect(() => {
-    const fetchTimeline = async () => {
-      try {
-        const res = await api.get('/api/graph/timeline', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setTimelineData(res.data);
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchTimeline();
-  }, [token]);
+  // Through the shared cache, so returning from a paper does not rebuild the
+  // whole timeline from a fresh corpus query.
+  const { data: timelineData, loading } = useQuery(['graph', 'timeline'], graph.timeline);
 
   // Only papers carrying a publication date can be placed. Uploaded PDFs never
   // get one — `published_date` is written on the arXiv import path alone — so
@@ -151,6 +137,22 @@ export default function TimelinePage() {
     }
     return [...DOMAINS, OTHER_DOMAIN].filter((d) => present.has(d.id));
   }, [datedPapers]);
+
+  const loadAncestry = async (paper) => {
+    setSelectedPaper(paper);
+    setAncestryLoading(true);
+    try {
+      // Cached per paper: clicking back and forth along the timeline is the
+      // normal way to read it, and each hop re-requested the same ancestry.
+      setAncestryData(
+        await fetchQuery(['ancestry', paper.id], () => graph.ancestry(paper.id)),
+      );
+    } catch {
+      setAncestryData(null);
+    } finally {
+      setAncestryLoading(false);
+    }
+  };
 
   // Build vis-timeline
   useEffect(() => {
@@ -219,23 +221,7 @@ export default function TimelinePage() {
     });
 
     return () => tl.destroy();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datedPapers, theme]);
-
-  const loadAncestry = async (paper) => {
-    setSelectedPaper(paper);
-    setAncestryLoading(true);
-    try {
-      const res = await api.get(`/api/graph/ancestry/${paper.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setAncestryData(res.data);
-    } catch {
-      setAncestryData(null);
-    } finally {
-      setAncestryLoading(false);
-    }
-  };
 
   // Build ancestry vis-network when data changes
   useEffect(() => {
@@ -304,7 +290,6 @@ export default function TimelinePage() {
 
     treeNetRef.current = net;
     return () => { net.destroy(); treeNetRef.current = null; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ancestryData, navigate, theme]);
 
   return (

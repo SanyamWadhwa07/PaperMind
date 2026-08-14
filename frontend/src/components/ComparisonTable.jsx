@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import { Download, BarChart2, Layers, Lightbulb } from 'lucide-react';
-import { Badge, Button, Card, CardBody, Eyebrow, cx } from './ui/primitives';
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  Eyebrow,
+  Inline,
+  ScrollArea,
+  cx,
+} from './ui/primitives';
 
 const VIEWS = [
   { key: 'metrics', label: 'Metrics', icon: BarChart2 },
@@ -24,23 +33,43 @@ function cellTone(value, allValues) {
   return 'text-ink';
 }
 
+/** Quote a CSV field: wrap in quotes and double any quote inside. */
+function csvCell(value) {
+  const s = value == null ? '' : String(value);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
 function exportCSV(papers, metricsMatrix) {
   const metricNames = Object.keys(metricsMatrix);
-  const header = ['Paper', ...metricNames].join(',');
+  const header = ['Paper', ...metricNames].map(csvCell).join(',');
   const rows = papers.map((p) =>
     [
-      `"${p.title.replace(/"/g, '""')}"`,
+      p.title,
+      // Values were written raw. A measurement like `1,024` or one carrying a
+      // quote shifted every column after it by one, silently — which is the
+      // worst way for an export to be wrong.
       ...metricNames.map((m) => metricsMatrix[m]?.[p.id] ?? ''),
-    ].join(',')
+    ]
+      .map(csvCell)
+      .join(','),
   );
-  const csv = [header, ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  // CRLF and a BOM: Excel is the overwhelmingly common destination for this
+  // file, and without the BOM it reads the UTF-8 as the local codepage and
+  // mangles every non-ASCII paper title.
+  const csv = '﻿' + [header, ...rows].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'paper_comparison.csv';
+  // Firefox ignores a click on an anchor that is not in the document, so the
+  // button did nothing there.
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  // Deferred: revoking in the same tick can cancel the download before the
+  // browser has read the blob.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export default function ComparisonTable({ data }) {
@@ -96,9 +125,17 @@ export default function ComparisonTable({ data }) {
             No quantitative metrics were extracted for these papers.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-line">
+          /* Ten papers wide and however many measurements deep. Both axes are
+             set by the corpus, so both scroll inside the card — the header row
+             stays put so a value halfway down is still attributable to a
+             paper. */
+          <ScrollArea
+            maxHeight="30rem"
+            aria-label="Metric comparison"
+            className="rounded-lg border border-line"
+          >
             <table className="w-full border-collapse text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="border-b border-line bg-surface-sunk">
                   <th className="px-4 py-2.5 text-left text-eyebrow font-semibold uppercase text-ink-faint">
                     Metric
@@ -145,19 +182,30 @@ export default function ComparisonTable({ data }) {
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollArea>
         ))}
 
       {view === 'entities' && (
-        <div className="space-y-5">
+        /* Entities shared by more than one paper come first — that is the
+           question this view answers, and burying the overlaps among dozens of
+           singletons in extraction order made it unanswerable. */
+        <ScrollArea maxHeight="30rem" aria-label="Entity overlap" className="space-y-5">
           {Object.entries(entity_overlap).map(([etype, entities]) => {
-            const items = Object.entries(entities);
+            const items = Object.entries(entities).sort(
+              (a, b) => b[1].length - a[1].length,
+            );
             if (!items.length) return null;
+            const shared = items.filter(([, pids]) => pids.length > 1).length;
             return (
               <div key={etype}>
-                <Eyebrow className="block">{etype}</Eyebrow>
+                <div className="flex items-baseline gap-2">
+                  <Eyebrow>{etype}</Eyebrow>
+                  <span className="text-caption text-ink-faint">
+                    {shared > 0 ? `${shared} shared` : 'none shared'}
+                  </span>
+                </div>
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {items.slice(0, 30).map(([ent, pids]) => (
+                  {items.map(([ent, pids]) => (
                     <Badge
                       key={ent}
                       tone={pids.length > 1 ? 'accent' : 'outline'}
@@ -174,19 +222,19 @@ export default function ComparisonTable({ data }) {
               </div>
             );
           })}
-        </div>
+        </ScrollArea>
       )}
 
       {view === 'findings' && (
-        <div className="space-y-2">
+        <ScrollArea maxHeight="30rem" aria-label="Clustered findings" className="space-y-2">
           {findings_clusters.length === 0 ? (
             <p className="text-sm text-ink-faint">No clustered findings available.</p>
           ) : (
-            findings_clusters.slice(0, 20).map((cluster, i) => (
+            findings_clusters.map((cluster, i) => (
               <Card key={i}>
                 <CardBody className="py-4">
                   <p className="text-sm leading-relaxed text-ink">
-                    {cluster.representative}
+                    <Inline>{cluster.representative}</Inline>
                   </p>
                   <p className="mt-2 text-caption text-ink-faint">
                     {cluster.unique_to
@@ -197,7 +245,7 @@ export default function ComparisonTable({ data }) {
               </Card>
             ))
           )}
-        </div>
+        </ScrollArea>
       )}
     </div>
   );

@@ -222,6 +222,15 @@ export default function KnowledgeGraph({ nodes = [], edges = [], height = 480 })
 
     simulationRef.current = simulation;
 
+    // Declared here rather than after the handlers below, both of which use it.
+    // Referencing it from inside a deferred callback happens to work, but it
+    // reads as a temporal-dead-zone bug and the linter treats it as one.
+    const zoomBehaviour = d3zoom()
+      .scaleExtent([0.2, 4])
+      .on('zoom', (event) => root.attr('transform', event.transform));
+    svg.call(zoomBehaviour);
+    zoomRef.current = zoomBehaviour;
+
     // Once settled, frame the whole graph. Without this the layout keeps
     // whatever scale it happened to reach and sat as a small clump in the
     // middle of a large empty canvas.
@@ -276,12 +285,6 @@ export default function KnowledgeGraph({ nodes = [], edges = [], height = 480 })
           d.fy = event.y;
         })
     );
-
-    const zoomBehaviour = d3zoom()
-      .scaleExtent([0.2, 4])
-      .on('zoom', (event) => root.attr('transform', event.transform));
-    svg.call(zoomBehaviour);
-    zoomRef.current = zoomBehaviour;
 
     return () => {
       simulation.stop();

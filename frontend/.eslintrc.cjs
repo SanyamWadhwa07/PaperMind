@@ -21,6 +21,21 @@ module.exports = {
   },
   settings: { react: { version: 'detect' } },
   plugins: ['react-refresh'],
+  overrides: [
+    {
+      // A context module has to export both its provider and the hook that
+      // reads it, and `primitives.jsx` exports the `cx` helper its own
+      // components are built on. The rule is a dev-only hot-reload nicety and
+      // there is no way to satisfy it here without splitting every context into
+      // two files — but `npm run lint` runs with `--max-warnings 0`, so leaving
+      // it as a warning meant lint could never pass.
+      files: [
+        'src/contexts/*.jsx',
+        'src/components/ui/primitives.jsx',
+      ],
+      rules: { 'react-refresh/only-export-components': 'off' },
+    },
+  ],
   rules: {
     // Vite's fast refresh only works when a module exports components alone.
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
@@ -37,5 +52,24 @@ module.exports = {
     eqeqeq: ['error', 'always', { null: 'ignore' }],
     'no-var': 'error',
     'prefer-const': 'error',
+
+    /**
+     * Catches a hook dependency array that names a `const` declared further
+     * down the component.
+     *
+     * A dependency array is evaluated during render, at the point the
+     * `useEffect` call appears — so `useEffect(..., [loadSummary])` written
+     * above `const loadSummary = useCallback(...)` throws on its temporal dead
+     * zone the moment the component mounts. Neither `--max-warnings 0` lint nor
+     * a production build catches it, because it is legal syntax; the page just
+     * dies at runtime with "Cannot access 'loadSummary' before initialization".
+     *
+     * Functions are exempt because hoisted `function` declarations are genuinely
+     * safe to reference earlier, and classes/type refs are not a pattern here.
+     */
+    'no-use-before-define': [
+      'error',
+      { functions: false, classes: false, variables: true, allowNamedExports: false },
+    ],
   },
 }

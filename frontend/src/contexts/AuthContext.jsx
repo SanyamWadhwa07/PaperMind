@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { auth as authApi, tokenStore } from '../lib/api'
+import { invalidate } from '../lib/query'
 
 const AuthContext = createContext(null)
 
@@ -28,6 +29,11 @@ export function AuthProvider({ children }) {
     tokenStore.clear()
     setToken(null)
     setUser(null)
+    // Every cached response was fetched as the outgoing user. The query cache
+    // outlives the components that filled it, so without this the next person
+    // to sign in on this browser would be served the previous one's library
+    // from memory before any request went out.
+    invalidate()
   }, [])
 
   useEffect(() => {
@@ -59,6 +65,9 @@ export function AuthProvider({ children }) {
   }, [clearAuth])
 
   const applySession = useCallback((data) => {
+    // Same reasoning as `clearAuth`, for the case where a session is replaced
+    // without a logout in between.
+    invalidate()
     tokenStore.set(data.token)
     setToken(data.token)
     setUser(data.user)

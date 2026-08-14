@@ -1,5 +1,14 @@
 import { Database, Cpu, BarChart3, Wrench, FlaskConical } from 'lucide-react'
-import { Badge, Card, CardBody, EmptyState, Eyebrow } from './ui/primitives'
+import {
+  Badge,
+  Bento,
+  BentoItem,
+  Card,
+  CardBody,
+  EmptyState,
+  Eyebrow,
+  ScrollArea,
+} from './ui/primitives'
 
 /**
  * Domain-agnostic typed entities from the LangGraph engine. Each kind gets one
@@ -20,10 +29,17 @@ const STAGE_DOT = {
   4: 'bg-stage-4',
 }
 
+/**
+ * One kind of entity, as a bag of badges.
+ *
+ * Extraction counts are wildly uneven — a paper can name three tools and eighty
+ * measurements — so the badge list scrolls rather than letting the busiest kind
+ * stretch its tile and leave the other three sitting in whitespace.
+ */
 function EntityGroup({ label, icon: Icon, stage, items, emptyText }) {
   return (
-    <Card>
-      <CardBody>
+    <Card className="flex h-full flex-col">
+      <CardBody className="pb-0">
         <div className="flex items-center gap-2">
           <span
             className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`}
@@ -37,24 +53,28 @@ function EntityGroup({ label, icon: Icon, stage, items, emptyText }) {
             </span>
           )}
         </div>
-
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {items.length > 0 ? (
-            items.map((item, idx) => (
-              <Badge
-                key={idx}
-                tone="outline"
-                mono
-                title={item.description || undefined}
-              >
-                {item.name ?? item}
-              </Badge>
-            ))
-          ) : (
-            <p className="text-sm text-ink-faint">{emptyText}</p>
-          )}
-        </div>
       </CardBody>
+
+      <ScrollArea maxHeight="16rem" aria-label={label} className="min-h-0 flex-1">
+        <CardBody className="pt-4">
+          <div className="flex flex-wrap gap-1.5">
+            {items.length > 0 ? (
+              items.map((item, idx) => (
+                <Badge
+                  key={idx}
+                  tone="outline"
+                  mono
+                  title={item.description || undefined}
+                >
+                  {item.name ?? item}
+                </Badge>
+              ))
+            ) : (
+              <p className="text-sm text-ink-faint">{emptyText}</p>
+            )}
+          </div>
+        </CardBody>
+      </ScrollArea>
     </Card>
   )
 }
@@ -73,18 +93,19 @@ export default function EntityDisplay({ entities, typed }) {
     return (
       <div>
         <Eyebrow className="block">Extracted from the paper</Eyebrow>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <Bento className="mt-4">
           {Object.entries(KIND_META).map(([kind, { label, icon, stage }]) => (
-            <EntityGroup
-              key={kind}
-              label={label}
-              icon={icon}
-              stage={stage}
-              items={byKind[kind] || []}
-              emptyText="None detected"
-            />
+            <BentoItem key={kind} span={3}>
+              <EntityGroup
+                label={label}
+                icon={icon}
+                stage={stage}
+                items={byKind[kind] || []}
+                emptyText="None detected"
+              />
+            </BentoItem>
           ))}
-        </div>
+        </Bento>
       </div>
     )
   }
@@ -109,18 +130,19 @@ export default function EntityDisplay({ entities, typed }) {
   return (
     <div>
       <Eyebrow className="block">Extracted from the paper</Eyebrow>
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
+      <Bento className="mt-4">
         {legacyTypes.map(({ key, label, icon, stage }) => (
-          <EntityGroup
-            key={key}
-            label={label}
-            icon={icon}
-            stage={stage}
-            items={entities[key] || []}
-            emptyText={`No ${label.toLowerCase()} detected`}
-          />
+          <BentoItem key={key} span={2}>
+            <EntityGroup
+              label={label}
+              icon={icon}
+              stage={stage}
+              items={entities[key] || []}
+              emptyText={`No ${label.toLowerCase()} detected`}
+            />
+          </BentoItem>
         ))}
-      </div>
+      </Bento>
     </div>
   )
 }

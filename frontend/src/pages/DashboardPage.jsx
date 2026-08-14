@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useToast } from '../contexts/ToastContext'
 import { Link } from 'react-router-dom'
 import ActivityChart from '../components/ActivityChart'
 import { graph, papers } from '../lib/api'
+import { fetchQuery, invalidate } from '../lib/query'
 import {
   Badge,
   Button,
@@ -139,55 +140,62 @@ export default function DashboardPage() {
   const [monthlySummaries, setMonthlySummaries] = useState({})
   const [recentActivity, setRecentActivity] = useState([])
 
+  // `searchTerm` is deliberately read from a ref rather than listed as a
+  // dependency: it changes on every keystroke, and this must run when the page
+  // or sort changes or when the form is submitted — not while the user types.
+  const searchTermRef = useRef(searchTerm)
+  searchTermRef.current = searchTerm
+
+  const fetchDashboardData = useCallback(
+    async ({ force = false } = {}) => {
+      setLoading(true)
+      try {
+        // Both panels are independent, so fetch them concurrently. `allSettled`
+        // means a stats failure still renders the paper list, and vice versa.
+        const search = searchTermRef.current
+        const listKey = ['summaries', 'list', page, sortBy, search]
+        const [statsResult, listResult] = await Promise.allSettled([
+          fetchQuery(['summaries', 'stats'], papers.dashboardStats, { force }),
+          fetchQuery(
+            listKey,
+            () =>
+              papers.list({
+                page,
+                per_page: 10,
+                sort_by: sortBy,
+                order: 'desc',
+                search,
+              }),
+            { force },
+          ),
+        ])
+
+        if (statsResult.status === 'fulfilled') {
+          const data = statsResult.value
+          setStats(data.stats)
+          setMonthlySummaries(data.monthly_summaries || {})
+          setRecentActivity(data.recent_activity || [])
+        }
+
+        if (listResult.status === 'fulfilled') {
+          setSummaries(listResult.value.summaries || [])
+          setTotalPages(listResult.value.total_pages || 0)
+        } else {
+          throw listResult.reason
+        }
+      } catch (error) {
+        toast.error(error.message || 'Could not load your library')
+      } finally {
+        setLoading(false)
+      }
+    },
+    // `toast` is stable — it comes from a context whose value is memoised.
+    [page, sortBy, toast],
+  )
+
   useEffect(() => {
     fetchDashboardData()
-  }, [page, sortBy])
-
-  const fetchDashboardData = async () => {
-    setLoading(true)
-    try {
-      // Both panels are independent, so fetch them concurrently. `allSettled`
-      // means a stats failure still renders the paper list, and vice versa.
-      const [statsResult, listResult] = await Promise.allSettled([
-        papers.dashboardStats(),
-        papers.list({
-          page,
-          per_page: 10,
-          sort_by: sortBy,
-          order: 'desc',
-          search: searchTerm,
-        }),
-      ])
-
-      if (statsResult.status === 'fulfilled') {
-        const data = statsResult.value
-        setStats(data.stats)
-        setMonthlySummaries(data.monthly_summaries || {})
-        setRecentActivity(data.recent_activity || [])
-      }
-
-      if (listResult.status === 'fulfilled') {
-        setSummaries(listResult.value.summaries || [])
-        setTotalPages(listResult.value.total_pages || 0)
-      } else {
-        throw listResult.reason
-      }
-    } catch (error) {
-      toast.error(error.message || 'Could not load your library')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleSearch = async (e) => {
-    e.preventDefault()
-    setPage(1)
-    if (searchMode === 'semantic' && searchTerm.trim()) {
-      await runSemanticSearch(searchTerm)
-    } else {
-      fetchDashboardData()
-    }
-  }
+  }, [fetchDashboardData])
 
   const runSemanticSearch = async (query) => {
     setSemanticSearching(true)
@@ -202,13 +210,30 @@ export default function DashboardPage() {
     }
   }
 
+  const handleSearch = async (e) => {
+    e.preventDefault()
+    setPage(1)
+    if (searchMode === 'semantic' && searchTerm.trim()) {
+      await runSemanticSearch(searchTerm)
+    } else {
+      // A submit is an explicit request for this search term's results, and the
+      // term is not in the effect's dependencies, so nothing else triggers it.
+      fetchDashboardData()
+    }
+  }
+
   const deleteSummary = async (id) => {
     if (!confirm('Delete this summary? This cannot be undone.')) return
 
     try {
       await papers.remove(id)
       toast.success('Summary deleted')
-      fetchDashboardData()
+      // The row is gone, so every cached list page, the stats, and the corpus
+      // graphs that counted it are all wrong now — not merely stale.
+      invalidate('summaries')
+      invalidate('corpus')
+      invalidate('graph')
+      fetchDashboardData({ force: true })
     } catch (error) {
       toast.error(error.message || 'Could not delete the summary')
     }
