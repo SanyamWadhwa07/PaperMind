@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Regression floors for `python evals/golden_eval.py gate`, enforced in CI.",
+    "These are FLOORS, not targets. Each is set just below the measured value at",
+    "the time it was added, so the gate catches a regression without pretending",
+    "the current number is good. Raise a floor when the metric genuinely improves;",
+    "never lower one to make a red build green.",
+    "Metrics not computed in a run are reported as SKIP, never as a pass."
+  ],
+  "_measured": {
+    "on": "2026-08-25",
+    "golden_papers": 1,
+    "golden_claims": 16,
+    "note": "One paper is not a benchmark. These floors are placeholders that become meaningful at 40+ papers."
+  },
+
+  "grounding_precision": {
+    "min": 0.45,
+    "_why": "Measured 0.533. A false positive is a fabricated claim shown to the user as verified, so this is the number that matters most and the one most in need of improvement."
+  },
+  "grounding_recall": {
+    "min": 0.85,
+    "_why": "Measured 1.000. Recall is cheap here because the guard passes almost everything; a drop would mean true claims are being flagged."
+  },
+  "grounding_f1": {
+    "min": 0.60,
+    "_why": "Measured 0.696."
+  },
+  "section_detection": {
+    "min": 0.70,
+    "_why": "Measured 0.800 on one paper. The 2026-07-07 benchmark saw 50% on abstract/methodology across eight, so expect this to fall as the set grows."
+  },
+  "degenerate_rate": {
+    "max": 0.10,
+    "_why": "The 2026-07-07 run produced 25% degenerate summaries under free-tier pressure. Requires --predictions; SKIPped otherwise."
+  },
+  "numeric_fidelity": {
+    "min": 0.60,
+    "_why": "Never measured. Requires --predictions. Placeholder until a prediction set exists."
+  }
+}

@@ -239,3 +239,201 @@ def test_valid_peer_review_parses():
         'Here you go: {"novelty": 7, "soundness": 6, "clarity": 8, "significance": 5}'
     )
     assert parsed['novelty'] == 7
+
+
+# ── The guard must be WIRED IN, not merely correct ────────────────────────────
+#
+# The guard's own docstring records that it once imported a class this project
+# never defined, so its failure path was the only path that ever ran. It was then
+# fixed — and left with no production call site at all, which is the same bug
+# wearing a different hat: `README.md` advertised claim-level groundedness that
+# nothing computed. Correctness tests could not catch that, because the function
+# passed them in isolation. These two do.
+
+def test_guard_has_a_production_call_site():
+    """`verify_claims` must be reachable from shipped code, not just from tests.
+
+    A guard that nothing calls is indistinguishable from a guard that does not
+    exist, except that it reads as a feature to anyone auditing the repo.
+    """
+    import ast
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    callers = []
+    for directory in ('core', 'backend'):
+        for path in (repo_root / directory).rglob('*.py'):
+            if any(part in {'__pycache__', 'venv', 'node_modules'} for part in path.parts):
+                continue
+            if path.name == 'hallucination_guard.py':      # the definition itself
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding='utf-8'))
+            except (SyntaxError, UnicodeDecodeError):
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name) and node.id == 'verify_claims':
+                    callers.append(str(path.relative_to(repo_root)))
+                elif isinstance(node, ast.Attribute) and node.attr == 'verify_claims':
+                    callers.append(str(path.relative_to(repo_root)))
+
+    assert callers, (
+        'hallucination_guard.verify_claims has no call site in core/ or backend/. '
+        'It is dead code, and any documentation claiming per-claim groundedness '
+        'is unsupported.'
+    )
+
+
+def test_graph_routes_the_accepted_synthesis_through_verify():
+    """Grounding must sit on the path a shipped summary actually takes."""
+    from core.graph import summary_graph
+
+    graph = summary_graph.get_summary_graph()
+    assert 'verify' in graph.get_graph().nodes, 'verify node missing from the graph'
+
+    # It must hang off `grade`'s accept branch, so it sees the final text and
+    # runs once — not off `synthesize`, which a retry can discard.
+    edges = {(e.source, e.target) for e in graph.get_graph().edges}
+    assert ('grade', 'verify') in edges, f'grade does not route into verify: {sorted(edges)}'
+
+
+async def test_verify_node_grounds_real_claims_and_flags_invented_ones():
+    from core.graph.summary_graph import verify
+
+    state = {
+        'sections': {
+            'results': (
+                'The Transformer achieves 28.4 BLEU on the WMT 2014 English-to-German '
+                'translation task, improving over the previous best results by over two '
+                'BLEU. Training took 3.5 days on eight P100 GPUs, a small fraction of the '
+                'training costs reported for the best models from the literature.'
+            ),
+        },
+        'synthesis': {
+            'key_findings': ['The model reaches 28.4 BLEU on WMT 2014 English-to-German.'],
+            'contributions': ['The authors prove a new lower bound for quantum error correction.'],
+        },
+    }
+
+    out = await verify(state)
+    claims = out['claims']
+
+    assert len(claims) == 2
+    assert claims[0]['grounded'] is True
+    assert claims[1]['grounded'] is False
+    assert claims[0]['source_section'] == 'results'
+
+
+async def test_verify_node_never_fails_the_run():
+    """A completed summary must survive a broken guard."""
+    import core.intelligence.hallucination_guard as guard
+    from core.graph.summary_graph import verify
+
+    original = guard.verify_claims
+    guard.verify_claims = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError('boom'))
+    try:
+        out = await verify({
+            'sections': {'results': 'x' * 300},
+            'synthesis': {'key_findings': ['A claim.']},
+        })
+    finally:
+        guard.verify_claims = original
+
+    assert out == {'claims': []}
+
+
+async def test_verify_node_ignores_the_bibliography():
+    """A claim matching a *cited* paper's title is not grounded in this paper."""
+    from core.graph.summary_graph import verify
+
+    state = {
+        'sections': {
+            'references': (
+                'Kingma and Ba. Adam: A Method for Stochastic Optimization. ICLR 2015. '
+                'He et al. Deep Residual Learning for Image Recognition. CVPR 2016. '
+                'Devlin et al. BERT: Pre-training of Deep Bidirectional Transformers. 2019.'
+            ),
+        },
+        'synthesis': {'key_findings': ['We introduce deep residual learning for image recognition.']},
+    }
+
+    out = await verify(state)
+    # The only source text was a bibliography, which usable_sections() drops — so
+    # there is nothing legitimate to verify against and the claim is unverifiable,
+    # NOT grounded.
+    assert out['claims'][0]['grounded'] is None
+
+
+# ── The numeric rule ──────────────────────────────────────────────────────────
+#
+# Measuring the guard against the labelled claims in evals/golden/ showed cosine
+# similarity classifying close negatives at chance: accuracy 0.500 at every
+# threshold from 0.05 to 0.50. "…reaches 28.4 BLEU" and "…reaches 31.7 BLEU" are
+# near-identical sentences, so they are near-identical vectors — the falsehood
+# lives in one digit, which contributes almost nothing to an embedding. No
+# threshold fixes that, so a deterministic numeric rule sits in front.
+
+def test_a_fabricated_number_is_caught_however_similar_the_sentence_reads():
+    from core.intelligence import hallucination_guard
+
+    sections = {'results': (
+        'The Transformer achieves 28.4 BLEU on the WMT 2014 English-to-German '
+        'translation task. Training took 3.5 days on eight P100 GPUs.'
+    )}
+    real = 'The model achieves 28.4 BLEU on WMT 2014 English-to-German.'
+    fabricated = 'The model achieves 31.7 BLEU on WMT 2014 English-to-German.'
+
+    out = hallucination_guard.verify_claims([real, fabricated], sections)
+
+    assert out[0]['grounded'] is True
+    assert out[1]['grounded'] is False, 'a swapped number must not pass'
+    assert out[1]['rule'] == 'numeric'
+    assert '31.7' in out[1]['unsupported_numbers']
+
+    # The point of the rule: similarity alone would have passed both.
+    assert out[1]['best_similarity'] >= hallucination_guard.SIMILARITY_THRESHOLD
+
+
+def test_the_offending_number_is_named_so_the_flag_is_actionable():
+    from core.intelligence import hallucination_guard
+
+    out = hallucination_guard.verify_claims(
+        ['Training required 400 GPU-days on the benchmark corpus described above.'],
+        {'results': 'Training took 3.5 days on eight P100 GPUs for the base configuration.'},
+    )
+    assert out[0]['unsupported_numbers'] == ['400']
+
+
+def test_extractor_mangled_decimals_do_not_read_as_hallucinations():
+    """pymupdf4llm renders "28.4" in prose as "28 _._ 4". Without normalisation
+    the guard would flag every correctly-extracted decimal as invented."""
+    from core.intelligence import hallucination_guard
+
+    out = hallucination_guard.verify_claims(
+        ['The model reaches 28.4 BLEU on the English-to-German translation task.'],
+        {'results': 'establishing a new state-of-the-art BLEU score of 28 _._ 4 on the task.'},
+    )
+    assert out[0]['grounded'] is True, out[0]
+
+
+def test_claims_without_numbers_fall_through_to_the_semantic_rule():
+    from core.intelligence import hallucination_guard
+
+    out = hallucination_guard.verify_claims(
+        ['The authors prove a new lower bound for quantum error correction.'],
+        {'results': 'The Transformer relies entirely on attention mechanisms for translation.'},
+    )
+    assert out[0]['rule'] == 'semantic'
+    assert out[0]['grounded'] is False
+
+
+def test_years_alone_do_not_trigger_the_numeric_rule():
+    """A year appears in nearly every paper, so requiring it to match adds no
+    evidence and would cost recall."""
+    from core.intelligence import hallucination_guard
+
+    out = hallucination_guard.verify_claims(
+        ['The work was evaluated on a translation benchmark released in 1997.'],
+        {'results': 'The Transformer relies entirely on attention mechanisms for translation.'},
+    )
+    assert out[0]['rule'] == 'semantic'

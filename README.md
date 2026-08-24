@@ -5,6 +5,7 @@
 <br/>
 
 [![Tests](https://github.com/SanyamWadhwa07/PaperMind/actions/workflows/tests.yml/badge.svg)](.github/workflows/tests.yml)
+[![Evals](https://github.com/SanyamWadhwa07/PaperMind/actions/workflows/evals.yml/badge.svg)](.github/workflows/evals.yml)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react&logoColor=white)](https://reactjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?style=flat)](https://langchain-ai.github.io/langgraph/)
@@ -27,7 +28,7 @@
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [API reference](#api-reference)
-- [Testing and benchmarks](#testing-and-benchmarks)
+- [Evaluation](#evaluation)
 - [Deployment](#deployment)
 - [Project structure](#project-structure)
 - [License](#license)
@@ -77,13 +78,23 @@ Most tools paste an abstract into one prompt and return a paragraph.
 | **On failure** | returns something anyway | raises; nothing invented is ever stored |
 | **Reliability** | one model | Gemini → Groq → Ollama failover |
 | **Relations** | a similarity score | RelationAgent explains *how* two papers relate |
+| **Verification** | none | every finding checked against the source; numbers checked deterministically |
+| **Evaluation** | none | hand-labelled golden set gating CI, not ROUGE against the abstract |
 
 ### Failure is never dressed up as a result
 
 A run that cannot reach an LLM raises instead of returning invented prose. A
-summary that comes back degenerate is rejected rather than saved. A claim that
-could not be checked reports `grounded: null` rather than `true`. An ungraded
+summary that comes back degenerate is rejected rather than saved. An ungraded
 summary carries no quality score at all instead of a plausible-looking one.
+
+Every key finding and contribution is checked against the paper's own sentences
+before the summary is stored — the graph's `verify` step
+([`summary_graph.py`](core/graph/summary_graph.py), backed by
+[`hallucination_guard.py`](core/intelligence/hallucination_guard.py)) — and each
+claim lands in `summary_data.claims` as one of three states, never two:
+`grounded: true` (checked, supported), `false` (checked, unsupported), or `null`
+(could not be checked). The bibliography is excluded from the source text, so a
+claim cannot be scored as grounded by matching a paper this one merely cites.
 Every stage writes `ok` or `failed` into `summary_data.pipeline_status`, so an
 empty section stays distinguishable from a broken one.
 
@@ -119,7 +130,7 @@ LangGraph `StateGraph`:
 ```
 START → prepare ─┬─ fits?  ──▶ read_paper ────────────────┐
                  └─ too long ─▶ map_sections ─┬─▶ entities ┤
-                                              └─▶ results ─┴─▶ synthesize → grade ──▶ END
+                                              └─▶ results ─┴─▶ synthesize → grade → verify → END
                                                                           └──(retry if weak)
 ```
 
@@ -135,6 +146,10 @@ START → prepare ─┬─ fits?  ──▶ read_paper ────────
 5. `grade` runs an LLM judge over faithfulness and specificity, and a weak
    result loops back once. If the judge itself fails, the summary is kept and
    marked ungraded rather than given an invented score.
+6. `verify` grounds every key finding and contribution against the paper's own
+   sentences. It hangs off `grade`'s *accept* branch, so it runs exactly once, on
+   the text that will actually be stored, rather than on a draft a retry
+   discards.
 
 Free tiers meter requests far more tightly than context, so one large call costs
 less than a dozen small ones. That is roughly 3 LLM calls per paper instead of
@@ -314,45 +329,129 @@ Authenticated routes take `Authorization: Bearer <jwt>`. Interactive docs live a
 
 ---
 
-## Testing and benchmarks
+## Evaluation
 
-Unit, integration and API-contract tests across `core/` and `backend/`. CI runs
-the suite with coverage on every push. See
-[`.github/workflows/tests.yml`](.github/workflows/tests.yml) and
-[`docs/TESTING.md`](docs/TESTING.md).
+Two CI jobs, because they answer different questions. `tests.yml` proves the code
+runs; `evals.yml` proves the *output* has not got worse.
 
 ```bash
 pip install -r requirements.txt -r backend/requirements.txt -r requirements-dev.txt
-pytest tests/ --cov=core --cov=backend
+pytest tests/ --cov=core --cov=backend      # unit, integration, API contracts
+python evals/golden_eval.py score           # quality metrics vs. hand labels
 ```
 
-[`evals/run_benchmark.py`](evals/run_benchmark.py) runs the full pipeline against
-real arXiv papers rather than fixtures, measuring latency, parallel speedup,
-extraction coverage and summary quality (ROUGE against each paper's own
-abstract). Methodology and full results are in
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+### Why a second job exists
 
-> **The published benchmark numbers predate the current pipeline and are being
-> re-measured.** The old harness scored `success = bool(summary_text)`, so two
-> two-word summaries counted toward a "100% success rate". It now requires real
-> content and reports a failure reason, so the next run's success rate will be
-> both lower and meaningful.
+Prompts in this project are not in a prompts directory. They are string literals
+in [`summary_graph.py`](core/graph/summary_graph.py) and — less obviously — the
+**field descriptions** in [`schemas.py`](core/graph/schemas.py), which are passed
+to the model as part of the structured-output contract. The module says so
+itself: *"the field descriptions are part of the prompt … they materially affect
+extraction quality."*
 
-Measured end-to-end on real arXiv papers across ML, LLM and particle physics:
+A test suite cannot see that. Without an eval gate, a PR can rewrite the prompt
+and CI stays green.
 
-| Metric | Value |
-|---|---|
-| Summary length | 600–970 words, plus method and setup sections |
-| Quantitative results extracted | 18–34 rows per paper, from the real tables |
-| Tables detected | 3–4 per paper, with captions |
-| Section digests | 12–24 per paper |
-| LLM calls per paper | ~3, down from ~16 |
-| End-to-end latency | 2–4 min per paper on free tiers |
-| Entities / figures | 13 / 8.5 per paper (median) |
+### The golden set
 
-Writing the benchmark caught a real bug: the legacy figure extractor was
-silently producing zero usable figures per paper. Root cause and fix are in
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md#what-this-benchmark-caught).
+Ground truth is hand-labelled, in [`evals/golden/`](evals/golden/): a section map,
+the headline numbers, expected findings, and ~20 claims marked supported or
+unsupported per paper.
+
+```bash
+python evals/label.py init 1706.03762 --domain nlp   # extract + pre-fill a stub
+python evals/label.py check -v                       # validate
+python evals/label.py stats                          # corpus composition
+```
+
+Two rules make the set worth having:
+
+1. **Stubs are pre-filled from the paper's own text, never from PaperMind's
+   output.** Seeding a benchmark with the system's own answers produces one the
+   system cannot fail.
+2. **Both claim classes are required.** A guard hardcoded to return "grounded"
+   scores perfectly on an all-supported set. `label.py check` rejects a one-class
+   or badly imbalanced set for that reason.
+
+### What is measured
+
+| Metric | Needs an LLM key | What it catches |
+|---|---|---|
+| Grounding precision / recall / F1 | no | claims shown as verified that the paper never supports |
+| Threshold calibration sweep | no | a similarity cutoff drifting out of range |
+| Section detection | no | extraction missing sections the paper demonstrably has |
+| Numeric fidelity | no* | numbers asserted in findings that occur nowhere in the source |
+| Headline-result recall | no* | quotable numbers the summary dropped |
+| Degenerate-output rate | no* | near-empty summaries returned as successes |
+
+<sup>\* needs saved pipeline output via `--predictions`, not a live key.</sup>
+
+Grounding and section detection need only the labelled claims and a local
+embedding model, so `evals.yml` gates every PR **without an API key** — including
+from forks. A metric that cannot be computed is reported as `SKIP`, never as a
+pass, because a gate that quietly stops gating is worse than none.
+
+Floors live in [`evals/thresholds.json`](evals/thresholds.json) with the measured
+value and rationale beside each. They are floors, not targets: raise one when a
+metric genuinely improves, never lower one to turn a build green.
+
+### What measuring it immediately found
+
+The harness earned its keep on the first run, which is the point of building it
+before trusting any number:
+
+- **The grounding guard was dead code.** `verify_claims` had no production call
+  site — only tests — while the README advertised claim-level groundedness.
+  It now runs as a `verify` node in the graph, and
+  `test_guard_has_a_production_call_site` fails the build if that regresses.
+- **Embedding similarity cannot detect a wrong number.** Scored against labelled
+  claims, cosine similarity classified close negatives *at chance* — accuracy
+  0.500 at every threshold from 0.05 to 0.50, peaking at 0.625. "…reaches 28.4
+  BLEU" and "…reaches 31.7 BLEU" are near-identical sentences and therefore
+  near-identical vectors. No threshold fixes that, so the guard now runs a
+  deterministic numeric rule in front of the semantic one and names the
+  offending value.
+- **The extractor corrupts decimals.** `pymupdf4llm` renders "28.4" in prose as
+  `28 _._ 4`. Comparing numbers without repairing that first would have scored
+  every correct decimal as a hallucination.
+
+Current scores, and their limits, are in
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). **The golden set currently holds one
+paper.** One paper is not a benchmark: the numbers below are a worked example
+proving the harness runs end-to-end, and the thresholds are placeholders until
+the set reaches 40+ papers across several fields.
+
+| Metric | Value | Read it as |
+|---|---|---|
+| Grounding recall | 1.000 | the guard passes nearly everything |
+| Grounding precision | 0.533 | …which is why this is the number that matters |
+| — numeric rule | 0.714 (7 claims) | deterministic, and carrying the guard |
+| — semantic rule | 0.444 (9 claims) | worse than a coin flip on close negatives |
+| Section detection | 0.800 (4/5) | the Results heading was missed entirely |
+
+### Run provenance
+
+Every summary records what produced it in `summary_data.run_meta`: the models
+that actually **responded** (not the configured primary — those differ whenever
+the Gemini → Groq → Ollama fallback fires), token counts, per-node timing, and a
+`prompt_fingerprint` hashed from the schemas and node sources. A hand-bumped
+`PROMPT_VERSION` is correct until the first person who edits a prompt and forgets;
+a computed one cannot go stale. Without this, a quality regression cannot be
+attributed to a model change rather than a prompt change.
+
+### Pipeline benchmark
+
+[`evals/run_benchmark.py`](evals/run_benchmark.py) separately runs the full
+pipeline against real arXiv PDFs for latency, parallel speedup and extraction
+coverage. Its ROUGE-against-the-abstract score is kept as a reproducible
+reference, not as a quality headline — a good full-paper summary is *supposed* to
+diverge from the abstract, so a higher score there partly rewards the failure
+mode. Those numbers date from a single run on 2026-07-07 and are labelled as such
+in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+
+Writing that harness caught a real bug: the legacy figure extractor was silently
+producing zero usable figures per paper
+([root cause](docs/BENCHMARKS.md#what-this-benchmark-caught)).
 
 ---
 
@@ -422,7 +521,12 @@ PaperMind/
 │   ├── pages/                 # one file per route
 │   ├── components/ui/         # design-system primitives
 │   └── contexts/              # auth, toast, theme
-├── evals/run_benchmark.py     # full-pipeline benchmark against real PDFs
+├── evals/
+│   ├── label.py               # build the golden set: extract + pre-fill, validate
+│   ├── golden_eval.py         # score/calibrate/gate against hand labels
+│   ├── golden/                # hand-labelled ground truth, one JSON per paper
+│   ├── thresholds.json        # CI regression floors, with rationale per metric
+│   └── run_benchmark.py       # full-pipeline benchmark against real PDFs
 └── docs/                      # TESTING.md, BENCHMARKS.md, assets/
 ```
 

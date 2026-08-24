@@ -19,7 +19,9 @@ class _FakeStructured:
     def with_fallbacks(self, _rest):
         return self
 
-    async def ainvoke(self, _messages):
+    # `config=` carries the per-call usage collector, exactly as a real
+    # LangChain runnable receives it.
+    async def ainvoke(self, _messages, config=None):
         s = self.schema
         if s is schemas.SectionDigest:
             return s(summary="A faithful section digest with a number 92.3%.",
