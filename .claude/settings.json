@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./venv/Scripts/python.exe -m pytest tests/unit/test_no_stdlib_logging.py -v)",
+      "Bash(./venv/Scripts/python.exe -m core.pipeline.table_extractor nonexistent.pdf 3)",
+      "Bash(./venv/Scripts/python.exe -c ' *)"
+    ]
+  }
+}

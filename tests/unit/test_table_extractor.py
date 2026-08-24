@@ -6,8 +6,14 @@ arrive looking structurally identical to data rows. Most of these tests pin that
 boundary.
 """
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
+from core.pipeline import table_extractor
 from core.pipeline.table_extractor import (
     TableInfo,
     _is_plausible_table,
@@ -16,10 +22,13 @@ from core.pipeline.table_extractor import (
     _merge_split_columns,
     _normalise,
     _split_caption,
+    _split_wrapped_rows,
     _to_markdown,
     _trim_to_numeric_signature,
     tables_to_markdown,
 )
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 # ── Grid normalisation ────────────────────────────────────────────────────────
@@ -183,3 +192,210 @@ def test_tables_to_markdown_prefixes_caption_once():
     block = tables_to_markdown([t])[0]
     assert block.startswith('Table 1: Results')
     assert block.count('Table 1') == 1, 'caption must not be duplicated'
+
+
+# ── Wrapped-row splitting (booktabs tables merged into one line by the rules) ──
+
+def test_split_wrapped_rows_explodes_stacked_cells():
+    """A ruled booktabs table: the header rule and bottom rule bound one middle
+    band, so a line-based detector returns every data row merged into it, with
+    the original row breaks surviving only as \\n inside each cell."""
+    grid = [
+        ['Model', 'BLEU', 'COMET'],
+        ['LAION-CLAP\nSALM-s\nSALM', '2.3\n7.9\n8.4', '-\n4.2\n1.8'],
+    ]
+    assert _split_wrapped_rows(grid) == [
+        ['Model', 'BLEU', 'COMET'],
+        ['LAION-CLAP', '2.3', '-'],
+        ['SALM-s', '7.9', '4.2'],
+        ['SALM', '8.4', '1.8'],
+    ]
+
+
+def test_split_wrapped_rows_anchors_single_line_label_to_first_row():
+    """A label cell that didn't wrap (one line) next to cells that stacked N
+    values is a span across the block, not data repeated N times."""
+    grid = [['Ours', 'A\nB\nC', 'X\nY\nZ']]
+    assert _split_wrapped_rows(grid) == [
+        ['Ours', 'A', 'X'],
+        ['', 'B', 'Y'],
+        ['', 'C', 'Z'],
+    ]
+
+
+def test_split_wrapped_rows_leaves_unwrapped_rows_alone():
+    grid = [['a', 'b'], ['c', 'd']]
+    assert _split_wrapped_rows(grid) == grid
+
+
+def test_split_wrapped_rows_requires_agreement_before_splitting():
+    """One stacked cell against two single-line cells isn't enough agreement to
+    infer the row's real height — could just as easily be a cell that itself
+    wraps for width, not height."""
+    grid = [['a\nb', 'c', 'd']]
+    assert _split_wrapped_rows(grid) == grid
+
+
+# ── Subprocess isolation (core/pipeline/table_extractor.py:_process_is_polluted,
+#    _extract_in_subprocess, extract_tables, _main) ────────────────────────────
+#
+# pymupdf4llm corrupts PyMuPDF cell geometry process-wide on import, so table
+# extraction re-runs in a clean subprocess whenever that import has already
+# happened. These tests cover the isolation machinery itself — the part with no
+# prior coverage — not the extraction logic already covered above.
+
+def test_process_is_polluted_reflects_pymupdf4llm_import(monkeypatch):
+    monkeypatch.delitem(sys.modules, 'pymupdf4llm', raising=False)
+    assert table_extractor._process_is_polluted() is False
+
+    monkeypatch.setitem(sys.modules, 'pymupdf4llm', object())
+    assert table_extractor._process_is_polluted() is True
+
+
+def test_extract_in_subprocess_returns_none_when_run_raises(monkeypatch):
+    def _raise(*args, **kwargs):
+        raise OSError('no interpreter')
+
+    monkeypatch.setattr(table_extractor.subprocess, 'run', _raise)
+    assert table_extractor._extract_in_subprocess('irrelevant.pdf', 10) is None
+
+
+def test_extract_in_subprocess_returns_none_on_nonzero_exit(monkeypatch):
+    class _Completed:
+        returncode = 1
+        stdout = ''
+        stderr = 'boom'
+
+    monkeypatch.setattr(table_extractor.subprocess, 'run', lambda *a, **k: _Completed())
+    assert table_extractor._extract_in_subprocess('irrelevant.pdf', 10) is None
+
+
+def test_extract_in_subprocess_returns_none_on_bad_json(monkeypatch):
+    """The regression case: a log line landed on stdout ahead of the payload."""
+    class _Completed:
+        returncode = 0
+        stdout = '2026-08-15 [debug] table_strategy_failed\n[]'
+        stderr = ''
+
+    monkeypatch.setattr(table_extractor.subprocess, 'run', lambda *a, **k: _Completed())
+    assert table_extractor._extract_in_subprocess('irrelevant.pdf', 10) is None
+
+
+_ROW = {
+    'markdown': '| a |\n| --- |\n| b |', 'caption': 'Table 1', 'page_number': 1,
+    'n_rows': 2, 'n_cols': 1, 'bbox': [0, 0, 1, 1],
+}
+
+
+def _fake_run(monkeypatch, stdout, returncode=0):
+    class _Completed:
+        pass
+    _Completed.returncode = returncode
+    _Completed.stdout = stdout
+    _Completed.stderr = ''
+    monkeypatch.setattr(table_extractor.subprocess, 'run', lambda *a, **k: _Completed())
+
+
+def test_extract_in_subprocess_parses_legacy_list_payload(monkeypatch):
+    """A bare list is the pre-v2 shape, kept working for one rolling deploy."""
+    _fake_run(monkeypatch, json.dumps([_ROW]))
+    outcome = table_extractor._extract_in_subprocess('irrelevant.pdf', 10)
+    assert outcome is not None
+    tables, error = outcome
+    assert len(tables) == 1
+    assert tables[0].caption == 'Table 1'
+    assert error is None
+
+
+def test_extract_in_subprocess_parses_valid_payload(monkeypatch):
+    _fake_run(monkeypatch, json.dumps({'tables': [_ROW], 'error': None}))
+    outcome = table_extractor._extract_in_subprocess('irrelevant.pdf', 10)
+    assert outcome is not None
+    tables, error = outcome
+    assert len(tables) == 1
+    assert tables[0].caption == 'Table 1'
+    assert error is None
+
+
+def test_extract_in_subprocess_surfaces_child_extraction_error(monkeypatch):
+    """The child catches its own errors and still exits 0.
+
+    ``_extract_tables_impl`` returns its exception as the status half of a tuple
+    rather than raising, so a hard failure leaves returncode 0, empty stderr and
+    an empty table list. Dropping the error half here is what made every table
+    failure reach the UI as the reassuring "No tables detected" empty state.
+    """
+    _fake_run(monkeypatch, json.dumps({'tables': [], 'error': "no such file: 'x.pdf'"}))
+    outcome = table_extractor._extract_in_subprocess('x.pdf', 10)
+    assert outcome is not None
+    tables, error = outcome
+    assert tables == []
+    assert error == "no such file: 'x.pdf'"
+
+
+def test_extract_tables_with_status_propagates_child_error(monkeypatch):
+    """End of the same wire: the error must reach the caller, not be zeroed."""
+    monkeypatch.setitem(sys.modules, 'pymupdf4llm', object())
+    monkeypatch.setattr(table_extractor, '_extract_in_subprocess',
+                        lambda *a, **k: ([], 'boom'))
+    tables, error = table_extractor.extract_tables_with_status('irrelevant.pdf')
+    assert tables == []
+    assert error == 'boom'
+
+
+def test_extract_tables_uses_subprocess_result_when_process_polluted(monkeypatch):
+    monkeypatch.setitem(sys.modules, 'pymupdf4llm', object())
+    sentinel = [TableInfo(markdown='| x |\n| --- |\n| y |', caption='', page_number=1,
+                          n_rows=2, n_cols=1, bbox=(0, 0, 1, 1))]
+    monkeypatch.setattr(table_extractor, '_extract_in_subprocess',
+                        lambda *a, **k: (sentinel, None))
+    assert table_extractor.extract_tables('irrelevant.pdf') is sentinel
+
+
+def test_extract_tables_falls_back_in_process_when_subprocess_unavailable(
+    monkeypatch, test_pdf_path,
+):
+    monkeypatch.setitem(sys.modules, 'pymupdf4llm', object())
+    monkeypatch.setattr(table_extractor, '_extract_in_subprocess', lambda *a, **k: None)
+    # Degraded but not absent: falls through to in-process extraction rather than
+    # raising, even though the pymupdf4llm import means the geometry may be off.
+    result = table_extractor.extract_tables(test_pdf_path)
+    assert isinstance(result, list)
+
+
+def test_main_subprocess_stdout_is_pure_json_and_logs_go_to_stderr(test_pdf_path, tmp_path):
+    """End-to-end regression test for the stdout/log collision.
+
+    ``_main`` used to leave structlog on its unconfigured default
+    (``PrintLoggerFactory()`` -> stdout), so any ``logger.debug``/``.warning`` call
+    inside ``_extract_tables_impl`` — routine on a per-page strategy failure —
+    corrupted the JSON payload the parent process parses from stdout, silently
+    falling back to in-process extraction on the corrupted pymupdf4llm geometry
+    this subprocess exists to avoid. This drives the real ``python -m
+    core.pipeline.table_extractor`` entry point in a genuine child process (so a
+    passing assertion here can't be explained by test-process state) and confirms
+    a log call after extraction lands on stderr, never stdout.
+    """
+    driver = tmp_path / 'driver.py'
+    driver.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(REPO_ROOT)!r})\n"
+        "from core.pipeline.table_extractor import _main\n"
+        "import structlog\n"
+        f"code = _main([{str(test_pdf_path)!r}])\n"
+        "structlog.get_logger('core.pipeline.table_extractor').warning(\n"
+        "    'table_extraction_failed', error='synthetic')\n"
+        "sys.exit(code)\n",
+        encoding='utf-8',
+    )
+    proc = subprocess.run(
+        [sys.executable, str(driver)], capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+    payload = json.loads(proc.stdout)  # must parse cleanly — the whole point of the fix
+    assert isinstance(payload, dict)
+    assert isinstance(payload['tables'], list)
+    assert payload['error'] is None  # this fixture is a readable PDF
+    assert 'table_extraction_failed' not in proc.stdout
+    assert 'table_extraction_failed' in proc.stderr

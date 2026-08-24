@@ -90,15 +90,46 @@ services:
       timeout: 3s
       retries: 5
 
-# There is no worker service. This file used to define one running
-# `celery -A tasks.paper_tasks worker`, but `backend/tasks/paper_tasks.py` does
-# not exist and neither Celery nor arq is imported anywhere in the project, so
-# the service could only ever have crashed on start. Paper processing runs
-# synchronously inside the API request, which is why nginx allows 600s on
-# /api (see proxy_read_timeout in frontend/nginx.conf) rather than the default 60.
-#
-# Redis above is still real: it backs rate limiting and the PDF processing
-# cache, both of which degrade to in-memory when it is absent.
+  # Optional standalone workers, off by default (`docker compose --profile
+  # workers up`). `api` above already runs an in-process JobWorker
+  # (backend/services/job_queue.py, gated by JOB_WORKER_ENABLED, on by
+  # default) that claims and runs queued paper-processing jobs alongside
+  # serving HTTP — see backend/database/migrations/012_processing_jobs.sql
+  # for the queue this claims from. Scaling `api` replicas scales both HTTP
+  # capacity and worker capacity together; uncomment this to scale worker
+  # throughput independently instead. It's the same image running the same
+  # command, so if you use this, set JOB_WORKER_ENABLED=false on `api` unless
+  # you actually want both claiming jobs.
+  #
+  # worker:
+  #   build:
+  #     context: .
+  #     dockerfile: backend/Dockerfile
+  #   restart: unless-stopped
+  #   profiles: ["workers"]
+  #   environment:
+  #     # Mirror `api`'s environment block above — same settings module, same
+  #     # required secrets. JOB_WORKER_ENABLED defaults to true so no override
+  #     # is needed here specifically.
+  #     APP_ENV: ${APP_ENV:-production}
+  #     SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
+  #     SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:?SUPABASE_SERVICE_KEY is required}
+  #     JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+  #     REDIS_URL: redis://redis:6379/0
+  #     PAPERMIND_USE_GRAPH: ${PAPERMIND_USE_GRAPH:-1}
+  #     PAPERMIND_LLM_PROVIDER: ${PAPERMIND_LLM_PROVIDER:-auto}
+  #     GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+  #     GROQ_API_KEY: ${GROQ_API_KEY:-}
+  #   volumes:
+  #     - paper_uploads:/app/uploads
+  #     - paper_arxiv:/app/arxiv_papers
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+
+# Redis above is real: it backs rate limiting and the PDF processing cache,
+# both of which degrade to in-memory when it is absent, plus the processing
+# queue's claim/heartbeat RPCs live in Postgres (Supabase), not here.
 
 volumes:
   paper_uploads:

@@ -77,14 +77,14 @@ async def test_llm_backend_error_propagates(monkeypatch):
 ])
 def test_degenerate_summaries_are_rejected(summaries, label):
     from api.errors import UnprocessableError
-    from routes.process_paper import _reject_degenerate_summary
+    from services.paper_processing_service import _reject_degenerate_summary
 
     with pytest.raises(UnprocessableError):
         _reject_degenerate_summary({'summaries': summaries})
 
 
 def test_real_summary_is_accepted():
-    from routes.process_paper import _reject_degenerate_summary
+    from services.paper_processing_service import _reject_degenerate_summary
 
     real = (
         'The paper introduces the Transformer, a sequence transduction architecture '
@@ -96,7 +96,7 @@ def test_real_summary_is_accepted():
 def test_rejection_carries_pipeline_status():
     """The error should say which stage failed, not just that something did."""
     from api.errors import UnprocessableError
-    from routes.process_paper import _reject_degenerate_summary
+    from services.paper_processing_service import _reject_degenerate_summary
 
     status = {'entity': {'status': 'failed', 'error': 'RateLimitError: 429'}}
     with pytest.raises(UnprocessableError) as exc:

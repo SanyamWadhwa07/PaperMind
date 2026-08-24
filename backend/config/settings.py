@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     upload_dir: str = 'uploads'
     arxiv_dir: str = 'arxiv_papers'
 
-    # ── Rate limits (slowapi syntax) ──────────────────────────────────────────
+    # ── Rate limits ("count/period"; token bucket, see api/rate_limit.py) ──────────────────────────────────────────
     rate_limit_enabled: bool = True
     rate_limit_default: str = '120/minute'
     rate_limit_auth: str = '10/minute'
@@ -69,6 +69,29 @@ class Settings(BaseSettings):
     redis_url: str = ''
     sentry_dsn: str = ''
     github_token: str = ''
+
+    # ── Job queue ─────────────────────────────────────────────────────────────
+    # Paper processing runs as a background job claimed from `processing_jobs`
+    # rather than inline in the HTTP request — see
+    # backend/database/migrations/012_processing_jobs.sql and
+    # backend/services/job_queue.py. Disabled under pytest (see tests/conftest.py)
+    # so the test suite doesn't start a real poller against a mock client.
+    job_worker_enabled: bool = True
+    # Concurrent jobs *per uvicorn process*. Global concurrency is this times
+    # WEB_CONCURRENCY (2 in backend/Dockerfile) — kept low because extraction is
+    # CPU-bound work sharing the same process as the API, and because a shared
+    # free-tier LLM quota is the actual bottleneck, not I/O concurrency.
+    job_concurrency: int = 1
+    # In-flight cap per user, enforced inside claim_processing_job — stops one
+    # user's batch from starving everyone else's queue.
+    job_max_per_user: int = 2
+    # Queued-or-running cap per user at enqueue time. A per-hour rate limit alone
+    # can't stop someone parking 200 papers in the queue at once.
+    job_max_queued_per_user: int = 20
+    job_poll_interval_seconds: float = 3.0
+    # Comfortably past the slowest observed pipeline run; a lease this short
+    # would reap and requeue a job that was still legitimately running.
+    job_lease_seconds: int = 900
 
     # ── LLM ───────────────────────────────────────────────────────────────────
     papermind_use_graph: bool = True

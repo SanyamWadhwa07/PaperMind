@@ -27,6 +27,12 @@ function readToken(name) {
 
 const CATEGORY_STAGE = { cv: 1, nlp: 3, ml: 4, general: 5 };
 const ENTITY_STAGE = { model: 4, dataset: 3, metric: 2, framework: 1, task: 5 };
+// Authors have no sub-kind to encode (unlike a paper's category or an
+// entity's type), so every author node gets one deliberate, consistent
+// colour rather than falling through to ENTITY_STAGE's "unknown type"
+// default — which is what made every author render as the same accidental
+// grey regardless of this constant even existing.
+const AUTHOR_STAGE = 4;
 
 const STAGE_BG = {
   1: 'bg-stage-1',
@@ -118,7 +124,9 @@ export default function KnowledgeGraph({ nodes = [], edges = [], height = 480 })
     const fillFor = (n) =>
       n.group === 'paper'
         ? palette.stages[CATEGORY_STAGE[n.category] || 5]
-        : palette.stages[ENTITY_STAGE[n.entity_type] || 5];
+        : n.group === 'author'
+          ? palette.stages[AUTHOR_STAGE]
+          : palette.stages[ENTITY_STAGE[n.entity_type] || 5];
 
     const radiusFor = (n) => {
       if (n.group === 'paper') return n.is_anchor ? 16 : 11;
@@ -321,6 +329,12 @@ export default function KnowledgeGraph({ nodes = [], edges = [], height = 480 })
 
   const paperKeys = usedKeys(visibleNodes, 'paper', 'category', 'general');
   const entityKeys = usedKeys(visibleNodes, 'entity', 'entity_type', 'other');
+  const hasAuthors = visibleNodes.some((n) => n.group === 'author');
+  // The toggle only ever hides/shows 'entity' nodes — on a pure author graph
+  // (no 'entity' nodes at all, in either state) it did nothing but sat there
+  // looking like a real control. Base this on the unfiltered node list, not
+  // visibleNodes, so hiding entities doesn't hide the toggle that hides them.
+  const canToggleEntities = nodes.some((n) => n.group === 'entity');
 
   return (
     <div className="space-y-3">
@@ -381,13 +395,22 @@ export default function KnowledgeGraph({ nodes = [], edges = [], height = 480 })
           </>
         )}
 
-        <button
-          type="button"
-          onClick={() => setShowEntities((v) => !v)}
-          className="ml-auto text-caption text-ink-muted underline-offset-2 hover:text-ink hover:underline"
-        >
-          {showEntities ? 'Papers only' : 'Show mentions'}
-        </button>
+        {hasAuthors && (
+          <p className="text-caption text-ink-muted">
+            Nodes are authors; a line means they co-authored a paper. With a
+            small library, most clusters are just one paper&apos;s author list.
+          </p>
+        )}
+
+        {canToggleEntities && (
+          <button
+            type="button"
+            onClick={() => setShowEntities((v) => !v)}
+            className="ml-auto text-caption text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+          >
+            {showEntities ? 'Papers only' : 'Show mentions'}
+          </button>
+        )}
       </div>
 
       {selected && (
@@ -424,6 +447,10 @@ export default function KnowledgeGraph({ nodes = [], edges = [], height = 480 })
                     </Button>
                   )}
                 </>
+              ) : selected.group === 'author' ? (
+                <span className="font-mono tabular text-code text-ink-faint">
+                  {selected.paper_count} paper{selected.paper_count === 1 ? '' : 's'} in your library
+                </span>
               ) : (
                 <>
                   <Badge tone="outline">{selected.entity_type}</Badge>
@@ -435,6 +462,31 @@ export default function KnowledgeGraph({ nodes = [], edges = [], height = 480 })
                 </>
               )}
             </div>
+
+            {/* An author node used to open onto an empty entity-type badge —
+                the actual point of clicking one is jumping to their papers. */}
+            {selected.group === 'author' && selected.papers?.length > 0 && (
+              <ul className="mt-2 space-y-1 border-t border-line pt-2">
+                {selected.papers.map((p) => (
+                  <li key={p.id}>
+                    <a
+                      href={`/summary/${p.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block truncate text-sm text-accent hover:underline"
+                      title={p.title}
+                    >
+                      {p.title}
+                    </a>
+                  </li>
+                ))}
+                {selected.paper_count > selected.papers.length && (
+                  <li className="text-caption text-ink-faint">
+                    +{selected.paper_count - selected.papers.length} more
+                  </li>
+                )}
+              </ul>
+            )}
           </CardBody>
         </Card>
       )}

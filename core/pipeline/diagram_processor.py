@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
-import logging
 import os
 import re
 from pathlib import Path
@@ -403,8 +402,18 @@ class DiagramProcessor:
             _process_one(i, fig)
             for i, fig in enumerate(figures[:max_figures])
         ]
-        results = await asyncio.gather(*tasks, return_exceptions=False)
-        return list(results)
+        # One unreadable PNG must not cost the paper every other figure:
+        # return_exceptions=False propagated the first failure out of gather and
+        # zeroed the whole batch, which the UI then rendered as "no figures".
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        out: List[Dict[str, Any]] = []
+        for i, res in enumerate(results):
+            if isinstance(res, BaseException):
+                logger.warning("figure_processing_failed", index=i,
+                               error=str(res), error_type=type(res).__name__)
+                continue
+            out.append(res)
+        return out
 
     def process_figures_sync(
         self, figures: list, max_figures: int = 15

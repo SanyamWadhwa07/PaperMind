@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { FileImage } from 'lucide-react'
-import { Badge, Card, CardBody, EmptyState, Eyebrow } from './ui/primitives'
+import { Badge, Card, CardBody, EmptyState, ErrorState, Eyebrow } from './ui/primitives'
 
 /**
  * One figure card. Shows the extracted image when the pipeline managed to store
@@ -80,8 +80,19 @@ function FigureCard({ figure, index }) {
   )
 }
 
-export default function FiguresDisplay({ figures }) {
+export default function FiguresDisplay({ figures, pipelineStatus }) {
   if (!figures || figures.length === 0) {
+    // Distinguishes "this paper has no figures" from "figure extraction
+    // crashed" — the FigureAgent stage in pipeline_status — which previously
+    // rendered as the exact same reassuring empty state.
+    if (pipelineStatus?.status === 'failed') {
+      return (
+        <ErrorState
+          title="Figure extraction failed"
+          message={pipelineStatus.error || 'Something went wrong while pulling figures from this PDF.'}
+        />
+      )
+    }
     return (
       <EmptyState
         icon={FileImage}

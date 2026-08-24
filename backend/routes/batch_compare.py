@@ -30,7 +30,7 @@ _COMPARE_COLUMNS = 'id, paper_title, arxiv_id, published_date, quality_score, su
 @limit('expensive')
 async def compare_papers_endpoint(
     request: Request,
-    response: Response,  # slowapi writes X-RateLimit-* headers here
+    response: Response,  # receives the RateLimit-* headers
     data: BatchCompareRequest,
     current_user: CurrentUser,
 ):

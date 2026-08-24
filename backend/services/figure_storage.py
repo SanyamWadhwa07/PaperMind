@@ -140,9 +140,20 @@ class FigureStorage:
             for index, figure in enumerate(figures):
                 record = {k: v for k, v in figure.items() if k != "path"}
                 raw_path = figure.get("path")
-                if raw_path:
+                if not raw_path:
+                    logger.warning("figure_missing_path", summary_id=summary_id, index=index)
+                else:
                     source = Path(raw_path)
-                    if source.is_file():
+                    if not source.is_file():
+                        # A cached pipeline result carries a `path` from whatever
+                        # temp dir the extraction that produced it wrote to — if
+                        # that result is served from a different process or a
+                        # fresh container, the file is simply gone. This used to
+                        # be silent, so the paper rendered caption-only forever
+                        # with no signal anything had gone wrong.
+                        logger.warning("figure_source_missing", summary_id=summary_id,
+                                       index=index, path=raw_path)
+                    else:
                         url = self._upload_one(summary_id, index, source)
                         if url:
                             record["image_url"] = url

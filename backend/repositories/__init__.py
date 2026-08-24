@@ -6,6 +6,7 @@ without touching the routes.
 """
 
 from .base import BaseRepository, RepositoryError
+from .job_repository import JobRepository
 from .summary_repository import SummaryRepository
 from .user_repository import ActivityRepository, StatsRepository, UserRepository
 
@@ -16,4 +17,5 @@ __all__ = [
     'UserRepository',
     'ActivityRepository',
     'StatsRepository',
+    'JobRepository',
 ]

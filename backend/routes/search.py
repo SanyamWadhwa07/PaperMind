@@ -26,7 +26,7 @@ def get_arxiv_service() -> ArxivService:
 @limit('expensive')
 async def search_arxiv(
     request: Request,
-    response: Response,  # slowapi writes X-RateLimit-* headers here
+    response: Response,  # receives the RateLimit-* headers
     data: ArxivSearchRequest,
     current_user: CurrentUser,
     arxiv: ArxivService = Depends(get_arxiv_service),

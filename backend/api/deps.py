@@ -16,6 +16,7 @@ from config import Settings, get_settings
 from db import get_supabase
 from repositories import (
     ActivityRepository,
+    JobRepository,
     StatsRepository,
     SummaryRepository,
     UserRepository,
@@ -45,10 +46,15 @@ def get_stats_repository(client: SupabaseDep) -> StatsRepository:
     return StatsRepository(client)
 
 
+def get_job_repository(client: SupabaseDep) -> JobRepository:
+    return JobRepository(client)
+
+
 SummaryRepoDep = Annotated[SummaryRepository, Depends(get_summary_repository)]
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 ActivityRepoDep = Annotated[ActivityRepository, Depends(get_activity_repository)]
 StatsRepoDep = Annotated[StatsRepository, Depends(get_stats_repository)]
+JobRepoDep = Annotated[JobRepository, Depends(get_job_repository)]
 
 
 # ── Services ──────────────────────────────────────────────────────────────────

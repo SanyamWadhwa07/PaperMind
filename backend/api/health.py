@@ -122,6 +122,26 @@ async def readiness() -> JSONResponse:
     )
 
 
+def _check_worker() -> dict[str, Any]:
+    """The processing-job worker (services/job_queue.py).
+
+    Deliberately never touched by readiness — a stalled worker means queued
+    papers wait longer, not that the API should stop taking traffic (and
+    taking the container out of rotation wouldn't restart the worker anyway;
+    it would just stop everything else that's healthy).
+    """
+    settings = get_settings()
+    if not settings.job_worker_enabled:
+        return {'status': 'disabled'}
+
+    from services import job_queue
+
+    worker = job_queue.CURRENT_WORKER
+    if worker is None:
+        return {'status': 'error', 'detail': 'enabled but not running'}
+    return {'status': 'ok', **worker.snapshot()}
+
+
 @router.get('/health')
 async def health(probe_llm: bool = False) -> dict[str, Any]:
     """Full diagnostics. Always 200 so it can be scraped without alerting.
@@ -134,8 +154,9 @@ async def health(probe_llm: bool = False) -> dict[str, Any]:
     database, redis_state, llm = await asyncio.gather(
         _check_database(), _check_redis(), _check_llm(probe=probe_llm)
     )
+    worker = _check_worker()
 
-    checks = {'database': database, 'redis': redis_state, 'llm': llm}
+    checks = {'database': database, 'redis': redis_state, 'llm': llm, 'worker': worker}
     required_ok = database['status'] == 'ok'
     degraded = any(c['status'] in ('error', 'degraded') for c in checks.values())
 

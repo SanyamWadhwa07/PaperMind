@@ -17,6 +17,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { Button, cx } from './ui/primitives'
 import Logo from './Logo'
+import ProcessingTray from './ProcessingTray'
 
 /**
  * Navigation is grouped by what the user is doing, not by which endpoint backs
@@ -275,6 +276,13 @@ export default function Layout({ children }) {
           <p className="font-mono tabular">v2.0.0</p>
         </div>
       </footer>
+
+      {/* Renders on every route, including the public "/" — a paper queued
+          from Home must stay visible while browsing anywhere else. Sits outside
+          `<main>`'s `isolate` stacking context (see the comment on it above) so
+          it's never painted over, and under the header's z-50 so it never
+          covers the account menu. */}
+      <ProcessingTray />
     </div>
   )
 }

@@ -7,6 +7,7 @@ here testable with plain fakes and lets routes stay as thin adapters.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from api.errors import NotFoundError, ValidationError
@@ -92,13 +93,28 @@ class SummaryService:
 
         stats = await self._stats.for_user(user_id)
         recent = await self._activity.recent(user_id, limit=10)
-        recent_summaries = await self._summaries.created_since(user_id, days=180)
+        # Day-level, not month-level: a personal library processes a handful
+        # of papers a week at most, so a month-bucketed chart flattened every
+        # real day of activity into one indistinguishable monthly bar. 30 days
+        # of daily buckets is the same "recent activity" window at a
+        # granularity that actually shows which days something happened.
+        window_days = 30
+        recent_summaries = await self._summaries.created_since(user_id, days=window_days)
 
-        monthly: dict[str, int] = {}
+        # Zero-filled up front so every day in the window has a bar/point —
+        # a chart built only from days that had activity draws a line
+        # straight across the gaps in between, which reads as continuous
+        # activity on days nothing happened.
+        today = datetime.now(timezone.utc).date()
+        daily: dict[str, int] = {
+            (today - timedelta(days=i)).isoformat(): 0
+            for i in range(window_days - 1, -1, -1)
+        }
         for row in recent_summaries:
             created = row.get('created_at') or ''
-            if len(created) >= 7:
-                monthly[created[:7]] = monthly.get(created[:7], 0) + 1
+            if len(created) >= 10:
+                key = created[:10]
+                daily[key] = daily.get(key, 0) + 1
 
         return {
             'stats': {
@@ -109,7 +125,7 @@ class SummaryService:
                 'active_days': stats.get('active_days', 0),
             },
             'recent_activity': recent,
-            'monthly_summaries': monthly,
+            'daily_summaries': daily,
         }
 
     async def export(

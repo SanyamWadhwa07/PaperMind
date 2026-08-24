@@ -1,7 +1,7 @@
 """Reading queue routes — prioritize and manage a personal paper reading list."""
 
 import asyncio
-import logging
+import structlog
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -11,7 +11,7 @@ from db import supabase as _shared_supabase
 
 from auth.dependencies import CurrentUser
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 router = APIRouter()
 supabase = _shared_supabase
 

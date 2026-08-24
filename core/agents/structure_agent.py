@@ -9,8 +9,9 @@ Pre-extracted figures are passed downstream via 'pre_extracted_figures'
 in the returned result so FigureAgent can skip redundant extraction.
 """
 
+import asyncio
 import sys
-import logging
+import structlog
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -20,7 +21,7 @@ from core.agents.base_agent import BaseAgent, AgentState
 from core.pipeline.pdf_extractor import extract_pdf, ExtractionResult
 from backend.main import AdvancedSectionExtractor
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class StructureAgent(BaseAgent):
@@ -77,7 +78,12 @@ class StructureAgent(BaseAgent):
             self.section_extractor = AdvancedSectionExtractor(font_config=font_config)
 
         # ── New layered extractor: MinerU → pymupdf4llm → fitz ─────────────
-        extraction: ExtractionResult = extract_pdf(pdf_path, prefer_mineru=True)
+        # MinerU tier is opt-in (PAPERMIND_ENABLE_MINERU) — see extract_pdf's
+        # docstring; leave prefer_mineru unset so that governs it.
+        # Off the event loop: extract_pdf is fully synchronous and its table
+        # step shells out to a subprocess with a 120s timeout, retried once —
+        # so a slow paper could stall every other coroutine for four minutes.
+        extraction: ExtractionResult = await asyncio.to_thread(extract_pdf, pdf_path)
         sections = extraction.sections
         pre_extracted_figures = extraction.figures  # List[FigureInfo]
 
@@ -89,7 +95,8 @@ class StructureAgent(BaseAgent):
                 backend=extraction.backend,
                 fallback="AdvancedSectionExtractor",
             )
-            sections = self.section_extractor.extract_sections_from_pdf(pdf_path)
+            sections = await asyncio.to_thread(
+                self.section_extractor.extract_sections_from_pdf, pdf_path)
             pre_extracted_figures = []
 
         self.current_sections = sections
@@ -163,7 +170,19 @@ class StructureAgent(BaseAgent):
                 'has_expected_structure': all(s in sections for s in expected_sections[:3]),
                 'figures_pre_extracted': len(self._pre_extracted_figures),
                 'extraction_backend': getattr(extraction, 'backend', 'unknown'),
-                'table_count': len(getattr(extraction, 'tables_md', []) or []),
+                # table_count is the structured tables list the UI renders;
+                # table_markdown_count is what the summariser reads. These used to
+                # collide under one 'table_count' key computed from tables_md, so the
+                # UI's own table count (len(extraction.tables)) was never the number
+                # actually surfaced here. On a MinerU paper the two can genuinely
+                # differ — tables_md may be MinerU's own extraction, not this one's.
+                'table_count': len(getattr(extraction, 'tables', []) or []),
+                'table_markdown_count': len(getattr(extraction, 'tables_md', []) or []),
+                # Set only when table extraction itself raised, not merely when it
+                # found none — lets the UI distinguish "no tables in this paper"
+                # from "table extraction failed" instead of showing the same
+                # empty state for both.
+                'table_extraction_error': (extraction.metadata or {}).get('table_extraction_error'),
                 # Recovered from page-1 layout by the extractor. Empty when it
                 # couldn't be determined — callers fall back to the filename
                 # rather than inventing a placeholder.

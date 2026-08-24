@@ -34,7 +34,7 @@ from api.middleware import (  # noqa: E402
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
-from api.rate_limit import SLOWAPI_AVAILABLE, limiter  # noqa: E402
+from api.rate_limit import limiter  # noqa: E402
 from config import get_settings  # noqa: E402
 
 logger = structlog.get_logger(__name__)
@@ -72,6 +72,7 @@ def _include_routers(app: FastAPI) -> None:
     from routes.feedback import router as feedback_router
     from routes.intelligence import router as intelligence_router
     from routes.knowledge_graph import router as knowledge_graph_router
+    from routes.process_jobs import router as process_jobs_router
     from routes.process_paper import router as process_router
     from routes.profile import router as profile_router
     from routes.reading_queue import router as reading_queue_router
@@ -82,6 +83,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(auth_router, prefix='/api/auth', tags=['auth'])
     app.include_router(search_router, prefix='/api', tags=['search'])
     app.include_router(process_router, prefix='/api', tags=['process'])
+    app.include_router(process_jobs_router, prefix='/api', tags=['process'])
     app.include_router(summaries_router, prefix='/api', tags=['summaries'])
     app.include_router(knowledge_graph_router, prefix='/api', tags=['graph'])
     app.include_router(feedback_router, prefix='/api', tags=['feedback'])
@@ -114,14 +116,18 @@ def create_app() -> FastAPI:
     _configure_sentry(settings.sentry_dsn, settings.app_env)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI):
+    async def lifespan(app: FastAPI):
         logger.info(
             'api_startup',
             version=API_VERSION,
             environment=settings.app_env,
             rate_limiting=limiter is not None,
+            job_worker=settings.job_worker_enabled,
         )
+        from services.job_queue import start_workers, stop_workers
+        start_workers(app)
         yield
+        await stop_workers(app)
         logger.info('api_shutdown')
 
     app = FastAPI(
@@ -144,18 +150,18 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allow_headers=['Authorization', 'Content-Type', 'X-Request-ID'],
-        expose_headers=['X-Request-ID'],
+        # RateLimit-*/Retry-After are exposed so a browser client can read its
+        # own budget and back off, instead of discovering the limit by 429.
+        expose_headers=['X-Request-ID', 'RateLimit-Limit', 'RateLimit-Remaining',
+                        'RateLimit-Reset', 'Retry-After'],
         max_age=600,
     )
 
-    if limiter is not None and SLOWAPI_AVAILABLE:
-        from slowapi import _rate_limit_exceeded_handler
-        from slowapi.errors import RateLimitExceeded
-        from slowapi.middleware import SlowAPIMiddleware
-
+    # The token bucket enforces itself in the `@limit(...)` decorator and raises
+    # RateLimitError, which register_error_handlers already renders into the
+    # single JSON envelope — no limiter-specific middleware or handler needed.
+    if limiter is not None:
         app.state.limiter = limiter
-        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-        app.add_middleware(SlowAPIMiddleware)
 
     register_error_handlers(app)
     _include_routers(app)

@@ -210,27 +210,37 @@ async def get_reproducibility(summary_id: str, current_user: CurrentUser):
 
 
 @router.post("/intelligence/peer-review/{summary_id}", status_code=201)
-async def simulate_peer_review(summary_id: str, current_user: CurrentUser):
+async def simulate_peer_review(summary_id: str, current_user: CurrentUser, force: bool = False):
     """
     Run a peer review simulation for a paper.
     Results are cached to paper_intelligence for future retrieval.
+
+    `force=true` bypasses the cache and regenerates. There was previously no way to
+    do this: a review generated before the prompt read the correct paper content
+    (see core/intelligence/peer_review_agent.py) would be served from cache forever.
     """
     user_id = current_user["user_id"]
     if not _check_paper_ownership(summary_id, user_id):
         raise HTTPException(status_code=404, detail="Paper not found")
 
     # Return cached result if available
-    cached = _get_cached(summary_id, "peer_review")
-    if cached:
-        return {"cached": True, **cached["analysis_data"]}
+    if not force:
+        cached = _get_cached(summary_id, "peer_review")
+        if cached:
+            return {"cached": True, **cached["analysis_data"]}
 
+    from core.intelligence.peer_review_agent import (
+        simulate_peer_review as _run, PeerReviewUnavailableError,
+    )
     try:
-        from core.intelligence.peer_review_agent import simulate_peer_review as _run
         result = await _run(summary_id=summary_id, user_id=user_id, supabase_client=supabase)
         return result
+    except PeerReviewUnavailableError as e:
+        logger.warning("peer_review_unavailable", error=str(e), summary_id=summary_id)
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error("peer_review_error", error=str(e), summary_id=summary_id)
-        raise HTTPException(status_code=500, detail=f"Peer review failed: {e}")
+        raise HTTPException(status_code=500, detail="Peer review failed. Please try again shortly.")
 
 
 @router.post("/intelligence/hypothesis", status_code=201)

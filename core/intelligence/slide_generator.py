@@ -47,12 +47,20 @@ async def generate_slides(
         logger.error("slide_fetch_error", exc_info=e)
         paper = {}
 
-    sd = paper.get("summary_data", {})
+    sd = paper.get("summary_data") or {}
     title = paper.get("paper_title", "Research Paper")
     authors = ", ".join((paper.get("paper_authors") or [])[:4])
-    simple_summary = sd.get("summaries", {}).get("simple", "")[:600]
-    technical_summary = sd.get("summaries", {}).get("technical", "")[:600]
-    results_text = json.dumps(sd.get("results", {}).get("table_results", [])[:3])[:400]
+    # The persisted record has one summary under `summaries.main` (see
+    # core/graph/adapter.py), not the `simple`/`technical` split this used to read —
+    # both of those were always "". `methods_detail` is the closest thing to a
+    # technical summary the pipeline actually writes.
+    simple_summary = (sd.get("summaries") or {}).get("main", "")[:600]
+    technical_summary = sd.get("methods_detail", "")[:600]
+    results = sd.get("results") or {}
+    results_text = json.dumps({
+        "summary": results.get("summary", "")[:200],
+        "metrics": (results.get("metrics") or [])[:5],
+    })[:600]
 
     prompt = (
         f"Title: {title}\nAuthors: {authors}\n"

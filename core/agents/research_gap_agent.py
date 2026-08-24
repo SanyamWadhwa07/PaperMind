@@ -94,10 +94,13 @@ class ResearchGapAgent(BaseAgent):
     async def _llm_extract(self, sections: Dict[str, str]) -> Dict[str, List[str]]:
         try:
             from core.llm.llm_interface import get_llm
-            # Use a fast non-reasoning model to avoid rate-limit contention with SummaryAgent
-            fast_config = dict(self._llm_config or {})
-            fast_config['model_name'] = 'llama-3.1-8b-instant'
-            llm = get_llm(fast_config)
+            # get_llm() returns a process-wide singleton that ignores `config` after
+            # first construction (core/llm/llm_interface.py:641-647), and generate()
+            # always routes through the "smart" tier regardless of model_name
+            # (_generate_via_providers hardcodes tier="smart") — so overriding
+            # model_name here was a no-op; every call already goes through whatever
+            # backend SummaryAgent initialized first.
+            llm = get_llm(self._llm_config)
             # Focus on high-signal sections; cap at ~1200 chars total
             target_keys = ["conclusion", "conclusions", "limitations", "discussion",
                            "future_work", "abstract"]

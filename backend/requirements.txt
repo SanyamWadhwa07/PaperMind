@@ -34,7 +34,6 @@ arxiv
 requests
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
-slowapi                   # FastAPI rate limiting (equiv. of flask-limiter)
 
 # ── Cache & rate limiting ────────────────────────────────────────────────────
 redis                     # rate-limit buckets + PDF processing cache; both
@@ -49,5 +48,8 @@ sentry-sdk[fastapi]       # optional: set SENTRY_DSN env var to enable
 httpx                     # external API calls + FastAPI TestClient transport
 
 # Test and lint tooling lives in requirements-dev.txt, not here — a production
-# image has no business installing black, flake8 and mypy. `arq` was listed for
-# a task queue that was never implemented; see the note in docker-compose.yml.
+# image has no business installing black, flake8 and mypy. `arq` was listed
+# here for a task queue that was never implemented; the queue that now exists
+# (backend/services/job_queue.py) is a plain asyncio worker over a Postgres
+# table — see backend/database/migrations/012_processing_jobs.sql — so it adds
+# no dependency here at all.

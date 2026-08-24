@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Download, FileText, Database,
   BarChart3, BookOpen, Image, Share2, Table2,
   Brain, Zap, FlaskConical, Presentation, Star,
-  TrendingUp, ExternalLink,
+  TrendingUp, ExternalLink, RefreshCw,
 } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import EntityDisplay from '../components/EntityDisplay'
@@ -18,6 +18,7 @@ import {
   intelligence as intelligenceApi,
   papers as papersApi,
 } from '../lib/api'
+import { reprocessPaper } from '../lib/processingStore'
 import { fetchQuery, invalidate } from '../lib/query'
 import {
   Badge,
@@ -115,9 +116,11 @@ function ClaimList({ title, items, icon: Icon, tone = 'neutral' }) {
 
 export default function SummaryPage() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const toast = useToast()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [reprocessing, setReprocessing] = useState(false)
   const [activeTab, setActiveTab] = useState('summaries')
   const [graphData, setGraphData] = useState(null)
   const [recommendations, setRecommendations] = useState([])
@@ -147,15 +150,15 @@ export default function SummaryPage() {
     }
   }
 
-  const handleSimulatePeerReview = async () => {
+  const handleSimulatePeerReview = async (force = false) => {
     setPeerReviewLoading(true)
     try {
-      await intelligenceApi.peerReview(id)
+      await intelligenceApi.peerReview(id, { force })
       // Previously this refetched (a no-op — the guard saw the cached value)
       // and then set the cache to null, so the freshly generated review was
       // replaced by the "No analysis yet" empty state.
       await loadIntelligence({ force: true })
-      toast.success('Peer review generated')
+      toast.success(force ? 'Peer review regenerated' : 'Peer review generated')
     } catch (e) {
       toast.error('Peer review failed: ' + (e.message || 'Unknown error'))
     } finally {
@@ -254,6 +257,23 @@ export default function SummaryPage() {
     setSota(null)
     loadSummary()
   }, [loadSummary])
+
+  // Deletes the current summary server-side and enqueues a fresh run against
+  // the same arXiv id — see the route's docstring for why this only works
+  // for arXiv-sourced papers, and why it doesn't wait to confirm the new run
+  // succeeds before discarding the old one.
+  const handleReprocess = async () => {
+    if (!summary || reprocessing) return
+    setReprocessing(true)
+    try {
+      await reprocessPaper(id)
+      toast.success('Reprocessing — track progress in the tray. This paper reappears once it finishes.')
+      navigate('/dashboard')
+    } catch (error) {
+      toast.error(error.message || 'Reprocess failed')
+      setReprocessing(false)
+    }
+  }
 
   const handleExport = async (format) => {
     if (!summary) return
@@ -434,6 +454,18 @@ export default function SummaryPage() {
         </Button>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          {summary.arxiv_id && summary.arxiv_id !== 'uploaded' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleReprocess}
+              loading={reprocessing}
+              title="Delete this summary and re-run the pipeline against the same arXiv paper"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              Reprocess
+            </Button>
+          )}
           <Eyebrow className="mr-1 hidden sm:inline">Export</Eyebrow>
           {['json', 'markdown', 'bibtex'].map((format) => (
             <Button
@@ -704,15 +736,22 @@ export default function SummaryPage() {
           <EntityDisplay
             entities={summaryData.entities || {}}
             typed={summaryData.typed_entities || {}}
+            pipelineStatus={summaryData.pipeline_status?.entity}
           />
         )}
 
         {activeTab === 'figures' && (
-          <FiguresDisplay figures={summaryData.figures || []} />
+          <FiguresDisplay
+            figures={summaryData.figures || []}
+            pipelineStatus={summaryData.pipeline_status?.figure}
+          />
         )}
 
         {activeTab === 'tables' && (
-          <TablesDisplay tables={summaryData.tables || []} />
+          <TablesDisplay
+            tables={summaryData.tables || []}
+            pipelineStatus={summaryData.pipeline_status?.tables}
+          />
         )}
 
         {activeTab === 'graph' && (
@@ -1072,9 +1111,20 @@ function IntelligenceTab({
                 <FlaskConical className="h-4 w-4 text-ink-faint" aria-hidden="true" />
                 Simulated peer review
               </h3>
-              <Badge tone={RECOMMENDATION_TONE[pr.recommendation] || 'neutral'}>
-                {(pr.recommendation || '').replace(/_/g, ' ')}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge tone={RECOMMENDATION_TONE[pr.recommendation] || 'neutral'}>
+                  {(pr.recommendation || '').replace(/_/g, ' ')}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onPeerReview(true)}
+                  loading={peerReviewLoading}
+                  title="Regenerate this review"
+                >
+                  Regenerate
+                </Button>
+              </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1095,6 +1145,19 @@ function IntelligenceTab({
             </div>
 
             {pr.summary && <Prose>{pr.summary}</Prose>}
+
+            {(pr.strengths || []).length > 0 && (
+              <div>
+                <Eyebrow className="block">Strengths</Eyebrow>
+                <ul className="spine mt-2 space-y-1.5">
+                  {pr.strengths.map((s, i) => (
+                    <li key={i} className="spine-node text-sm text-ink-muted">
+                      <Inline>{s}</Inline>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {(pr.major_concerns || []).length > 0 && (
               <ErrorState

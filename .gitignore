@@ -239,3 +239,12 @@ site/
 *.cert
 secret.txt
 secrets/
+
+# One-off debug dumps (e.g. backend/scratch_job1.json)
+scratch_*.json
+**/scratch_*.json
+
+# graphify knowledge-graph output: regenerable artifacts (graph.html/graph.json
+# are multi-MB) plus a per-file extraction cache. Rebuild with /graphify --update.
+graphify-out/
+**/graphify-out/

@@ -45,6 +45,13 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         response.headers['X-Request-ID'] = request_id
         response.headers['X-Response-Time'] = f'{duration_ms:.0f}ms'
 
+        # Set here, not in the endpoint: a raising endpoint's injected Response
+        # is discarded by the error handler, and a 401 or 429 is precisely when
+        # a client most needs to know how much budget it has left.
+        from api.rate_limit import rate_limit_headers
+        for header, value in rate_limit_headers(request).items():
+            response.headers[header] = value
+
         if request.url.path not in _QUIET_PATHS:
             logger.info(
                 'request_completed',

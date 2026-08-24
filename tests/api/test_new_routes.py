@@ -21,6 +21,7 @@ def client(api_client):
     "/api/corpus/author-graph",
     "/api/dashboard/stats",
     "/api/queue",
+    "/api/process/jobs",
 ])
 def test_protected_routes_reject_anonymous(client, path):
     resp = client.get(path)
