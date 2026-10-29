@@ -91,3 +91,14 @@ class SummaryRepository(BaseRepository):
             self.table.select('*').eq('arxiv_id', arxiv_id).eq('user_id', user_id)
         )
         return await self._fetch_one(query, action='find_by_arxiv_id')
+
+    async def find_by_sha256(
+        self, sha256: str, user_id: str
+    ) -> dict[str, Any] | None:
+        """Cheap pre-flight duplicate check for an upload, before the pipeline
+        runs at all — see backend/routes/process_jobs.py."""
+        query = (
+            self.table.select('id, paper_title')
+            .eq('source_sha256', sha256).eq('user_id', user_id)
+        )
+        return await self._fetch_one(query, action='find_by_sha256')

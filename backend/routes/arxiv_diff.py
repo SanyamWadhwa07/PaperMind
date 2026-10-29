@@ -1,14 +1,14 @@
 """ArXiv version diff routes."""
 
 import asyncio
-import logging
+import structlog
 
 from fastapi import APIRouter, HTTPException
 from db import supabase as _shared_supabase
 
 from auth.dependencies import CurrentUser
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 router = APIRouter()
 supabase = _shared_supabase
 

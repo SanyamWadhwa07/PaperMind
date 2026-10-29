@@ -1,9 +1,9 @@
 """Confidence aggregation across all agent outputs."""
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
-def aggregate_confidence(summary_data: Dict[str, Any]) -> Dict[str, float]:
+def aggregate_confidence(summary_data: Dict[str, Any]) -> Dict[str, Optional[float]]:
     """
     Walk summary_data and pull per-agent confidence_scores into a flat map.
     Also computes an overall_confidence as the mean of available agent scores.
@@ -30,5 +30,7 @@ def aggregate_confidence(summary_data: Dict[str, Any]) -> Dict[str, float]:
                 confidence_map[key] = float(agent_data["confidence"])
                 scores.append(float(agent_data["confidence"]))
 
-    confidence_map["overall_confidence"] = round(sum(scores) / len(scores), 4) if scores else 0.5
+    # None, not a fabricated 0.5, when nothing was scored — indistinguishable from a
+    # genuinely computed midpoint otherwise.
+    confidence_map["overall_confidence"] = round(sum(scores) / len(scores), 4) if scores else None
     return confidence_map

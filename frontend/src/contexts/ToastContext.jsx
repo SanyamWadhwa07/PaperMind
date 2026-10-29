@@ -9,8 +9,10 @@ export const useToast = () => {
   return context
 }
 
+// The processing tray (components/ProcessingTray.jsx) owns top-right — it's the
+// persistent surface, toasts are transient — so toasts moved to bottom-right.
 const TOAST_OPTS = {
-  position: 'top-right',
+  position: 'bottom-right',
   style: { fontSize: '14px' },
 }
 
@@ -43,8 +45,9 @@ export function ToastProvider({ children }) {
       {/* Toasts follow the theme: react-hot-toast takes concrete CSS values, so
           these read the same custom properties every component does. */}
       <Toaster
-        position="top-right"
+        position="bottom-right"
         toastOptions={{
+          duration: 4000,
           style: {
             fontSize: '14px',
             background: 'rgb(var(--surface))',

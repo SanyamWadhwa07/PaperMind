@@ -6,6 +6,7 @@ import {
   Card,
   CardBody,
   EmptyState,
+  ErrorState,
   Eyebrow,
   ScrollArea,
 } from './ui/primitives'
@@ -79,9 +80,20 @@ function EntityGroup({ label, icon: Icon, stage, items, emptyText }) {
   )
 }
 
-export default function EntityDisplay({ entities, typed }) {
+export default function EntityDisplay({ entities, typed, pipelineStatus }) {
   // Prefer the domain-agnostic typed entities (works for any field, not just ML).
   const typedList = typed?.entities || []
+
+  if (typedList.length === 0 && !entities && pipelineStatus?.status === 'failed') {
+    // The EntityAgent stage crashed rather than the paper genuinely having no
+    // extractable entities — those looked identical before this.
+    return (
+      <ErrorState
+        title="Entity extraction failed"
+        message={pipelineStatus.error || 'Something went wrong while extracting entities from this paper.'}
+      />
+    )
+  }
 
   if (typedList.length > 0) {
     const byKind = { method: [], material: [], measurement: [], tool: [] }

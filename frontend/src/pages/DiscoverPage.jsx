@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Search, ExternalLink, PlusCircle, BookOpen, Calendar } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
-import { graph, papers as papersApi } from '../lib/api'
-import { fetchQuery, invalidate } from '../lib/query'
+import { graph } from '../lib/api'
+import { fetchQuery } from '../lib/query'
+import { enqueueArxiv, useJobFor } from '../lib/processingStore'
 import {
   Button,
   Card,
@@ -13,6 +14,81 @@ import {
   SkeletonCard,
 } from '../components/ui/primitives'
 
+function ResultCard({ paper, index, onAdd }) {
+  const job = useJobFor(paper.arxiv_id)
+  const busy = Boolean(job)
+
+  return (
+    <Card interactive style={{ '--i': index }}>
+      <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-serif text-lg leading-snug text-ink">
+            {paper.title}
+          </h3>
+
+          {paper.authors?.length > 0 && (
+            <p className="mt-1.5 text-sm text-ink-muted">
+              {paper.authors.slice(0, 4).join(', ')}
+              {paper.authors.length > 4 && ` +${paper.authors.length - 4} more`}
+            </p>
+          )}
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-ink-faint">
+            {paper.year && (
+              <span className="inline-flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="font-mono tabular">{paper.year}</span>
+              </span>
+            )}
+            {paper.citation_count != null && (
+              <span className="inline-flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="font-mono tabular">
+                  {paper.citation_count.toLocaleString()}
+                </span>
+                citations
+              </span>
+            )}
+          </div>
+
+          {paper.abstract && (
+            <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-ink-muted">
+              {paper.abstract}
+            </p>
+          )}
+        </div>
+
+        <div className="flex shrink-0 gap-2 sm:flex-col">
+          <Button
+            size="sm"
+            onClick={() => onAdd(paper)}
+            disabled={!paper.can_import || busy}
+            title={
+              !paper.can_import ? 'No arXiv ID, so this cannot be imported'
+                : busy ? 'Already queued' : 'Add to library'
+            }
+          >
+            <PlusCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            {busy ? 'Queued' : 'Add'}
+          </Button>
+          {paper.url && (
+            <Button
+              variant="secondary"
+              size="sm"
+              href={paper.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              Source
+            </Button>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
+
 export default function DiscoverPage() {
   const toast = useToast()
   const [query, setQuery] = useState('')
@@ -20,7 +96,6 @@ export default function DiscoverPage() {
   const [searched, setSearched] = useState(false)
   const [source, setSource] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [importing, setImporting] = useState({})
 
   const handleSearch = async (e) => {
     e.preventDefault()
@@ -55,22 +130,21 @@ export default function DiscoverPage() {
       toast.error('This paper has no arXiv ID, so it cannot be imported.')
       return
     }
-    const key = paperKey(paper)
-    setImporting(prev => ({ ...prev, [key]: true }))
     try {
-      // Through the endpoint map, which sets the pipeline timeout. Called
-      // directly, this inherited the client default and gave up long before the
-      // server had finished summarising — reporting a failed import for a paper
-      // that was, in fact, about to appear in the library.
-      await papersApi.processArxiv(paper.arxiv_id)
-      invalidate('summaries')
-      invalidate('corpus')
-      invalidate('graph')
-      toast.success(`"${paper.title?.slice(0, 50)}..." added to your library.`)
+      // Enqueues and returns in well under a second — the pipeline runs in the
+      // background (see the processing tray), so there is no "importing…"
+      // spinner to hold open here anymore, and clicking Add on five results in
+      // a row queues five jobs instead of firing five concurrent pipeline runs
+      // (the server-side per-user concurrency cap and queue-depth limit do the
+      // rest — see backend/database/migrations/012_processing_jobs.sql).
+      const job = await enqueueArxiv(paper.arxiv_id)
+      toast.success(`Queued — "${job.display_title}"`)
     } catch (e) {
-      toast.error('Import failed: ' + (e.message || 'Unknown error'))
-    } finally {
-      setImporting(prev => ({ ...prev, [key]: false }))
+      if (e.status === 409) {
+        toast.info(e.message)
+      } else {
+        toast.error('Import failed: ' + (e.message || 'Unknown error'))
+      }
     }
   }
 
@@ -122,78 +196,14 @@ export default function DiscoverPage() {
 
       {!loading && results.length > 0 && (
         <div className="stagger space-y-3">
-          {results.map((paper, i) => {
-            const key = paperKey(paper)
-            return (
-            <Card key={key} interactive style={{ '--i': i }}>
-              <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-serif text-lg leading-snug text-ink">
-                    {paper.title}
-                  </h3>
-
-                  {paper.authors?.length > 0 && (
-                    <p className="mt-1.5 text-sm text-ink-muted">
-                      {paper.authors.slice(0, 4).join(', ')}
-                      {paper.authors.length > 4 && ` +${paper.authors.length - 4} more`}
-                    </p>
-                  )}
-
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-ink-faint">
-                    {paper.year && (
-                      <span className="inline-flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span className="font-mono tabular">{paper.year}</span>
-                      </span>
-                    )}
-                    {paper.citation_count != null && (
-                      <span className="inline-flex items-center gap-1.5">
-                        <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span className="font-mono tabular">
-                          {paper.citation_count.toLocaleString()}
-                        </span>
-                        citations
-                      </span>
-                    )}
-                  </div>
-
-                  {paper.abstract && (
-                    <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-ink-muted">
-                      {paper.abstract}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex shrink-0 gap-2 sm:flex-col">
-                  <Button
-                    size="sm"
-                    onClick={() => handleAddToLibrary(paper)}
-                    disabled={!paper.can_import || importing[key]}
-                    loading={importing[key]}
-                    title={
-                      !paper.can_import ? 'No arXiv ID, so this cannot be imported' : 'Add to library'
-                    }
-                  >
-                    <PlusCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                    Add
-                  </Button>
-                  {paper.url && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      href={paper.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                      Source
-                    </Button>
-                  )}
-                </div>
-              </CardBody>
-            </Card>
-            )
-          })}
+          {results.map((paper, i) => (
+            <ResultCard
+              key={paperKey(paper)}
+              paper={paper}
+              index={i}
+              onAdd={handleAddToLibrary}
+            />
+          ))}
         </div>
       )}
 

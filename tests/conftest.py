@@ -1,4 +1,5 @@
 """Shared pytest fixtures."""
+import os
 import sys
 from pathlib import Path
 
@@ -6,6 +7,13 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'backend'))
 sys.path.insert(0, str(ROOT / 'core'))
+
+# backend/main_app.py builds `app` (and its lifespan closure) at import time, and
+# that module is only ever imported once per test process — so this has to be set
+# before anything imports it, not inside a fixture. Without it, every api_client
+# test would start a real polling worker against whatever Supabase mock happens to
+# be active at that moment.
+os.environ.setdefault('PAPERMIND_JOB_WORKER_ENABLED', 'false')
 
 import pytest
 
@@ -95,7 +103,7 @@ def mock_supabase():
     builder = MagicMock()
     for method in (
         'select', 'insert', 'update', 'upsert', 'delete',
-        'eq', 'neq', 'in_', 'gte', 'lte', 'or_', 'ilike',
+        'eq', 'neq', 'in_', 'gte', 'lte', 'or_', 'ilike', 'is_',
         'order', 'range', 'limit', 'single',
     ):
         getattr(builder, method).return_value = builder

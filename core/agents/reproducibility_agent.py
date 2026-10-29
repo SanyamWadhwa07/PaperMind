@@ -2,7 +2,7 @@
 
 import sys
 import re
-import logging
+import structlog
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from core.agents.base_agent import BaseAgent
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Regex patterns per rubric criterion
 CRITERIA: List[Dict] = [
@@ -31,7 +31,13 @@ CRITERIA: List[Dict] = [
         "patterns": [
             r"\b(?:ImageNet|COCO|SQuAD|GLUE|SuperGLUE|WikiText|Penn Treebank|"
             r"CIFAR|MNIST|MS\s*COCO|VQA|CelebA|LAION|C4|The Pile|OpenWebText|"
-            r"SNLI|MultiNLI|CoQA|TriviaQA|HotpotQA)\b",
+            r"SNLI|MultiNLI|CoQA|TriviaQA|HotpotQA|"
+            # Speech/audio corpora — the list was vision/NLP-only, so a speech paper
+            # correctly citing its data still scored 0 on this criterion.
+            r"LibriSpeech|LibriTTS|Libri-?Light|VoxCeleb|VoxPopuli|CommonVoice|"
+            r"Common\s*Voice|AMI|TIMIT|WSJ0|WSJ1|AISHELL|TED-?LIUM|MUSAN|"
+            r"WHAM!?|WHAMR!?|VCTK|LJSpeech|GigaSpeech|People's\s*Speech|MLS|"
+            r"Multilingual\s*LibriSpeech|SUPERB)\b",
         ],
         "description": "dataset names mentioned",
     },

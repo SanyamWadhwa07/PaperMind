@@ -6,10 +6,10 @@ by AdvancedSectionExtractor under the '__references__' key.
 
 from __future__ import annotations
 import re
-import logging
+import structlog
 from typing import List, Dict, Optional
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Common reference entry starters: [1], 1., Author et al., etc.
 _REF_SPLIT = re.compile(
@@ -124,6 +124,6 @@ def match_arxiv_ids_to_library(
             if c.get('cited_arxiv_id') in id_map:
                 c['matched_summary_id'] = id_map[c['cited_arxiv_id']]
     except Exception as e:
-        logger.warning("arxiv_id_match_failed: %s", str(e))
+        logger.warning("arxiv_id_match_failed", error=str(e))
 
     return citations

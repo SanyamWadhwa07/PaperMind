@@ -18,6 +18,7 @@ There are two reading strategies, chosen per paper by ``prepare``:
 
       → synthesize           long-form summary + findings/limitations/… (smart LLM)
       → grade                LLM-as-judge; if weak & retries left → synthesize
+      → verify               ground each accepted claim in the paper's own text
       → END
 
 Single pass exists because free tiers meter *requests* far more tightly than
@@ -40,6 +41,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 import structlog
 
+from core.graph.provenance import callback_config, prompt_fingerprint, start_run
 from core.llm.providers import context_budget_chars, get_model_chain
 from core.llm.response import message_text
 from core.graph.schemas import (
@@ -109,6 +111,7 @@ class SummaryState(TypedDict, total=False):
     # output
     synthesis: Dict[str, Any]             # PaperSynthesis.model_dump()
     grade: Dict[str, Any]
+    claims: List[Dict[str, Any]]          # [{claim, grounded, best_similarity, source_section}]
     attempts: int
 
 
@@ -134,27 +137,35 @@ def _with_fallbacks(runnables: List[Any]):
     return primary.with_fallbacks(rest) if rest else primary
 
 
-async def _structured(tier: str, schema, system: str, user: str, *, max_tokens: int = 2048):
-    """Structured output across the provider chain (primary → fallbacks). None on total failure."""
+async def _structured(tier: str, schema, system: str, user: str, *,
+                      max_tokens: int = 2048, node: str = "unknown"):
+    """Structured output across the provider chain (primary → fallbacks). None on total failure.
+
+    `node` is recorded with the call's token usage so cost and latency can be
+    attributed to a graph step rather than to the run as a whole.
+    """
     try:
         chain = [m.with_structured_output(schema) for m in get_model_chain(tier, max_tokens=max_tokens)]
         runnable = _with_fallbacks(chain)
         async with _get_semaphore():
             return await runnable.ainvoke(
-                [{"role": "system", "content": system}, {"role": "user", "content": user}]
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                config=callback_config(node, tier),
             )
     except Exception as e:  # all providers failed / parse failure / schema mismatch
         logger.warning("structured_call_failed", schema=schema.__name__, error=str(e))
         return None
 
 
-async def _text(tier: str, system: str, user: str, *, max_tokens: int = 2048) -> str:
+async def _text(tier: str, system: str, user: str, *,
+                max_tokens: int = 2048, node: str = "unknown") -> str:
     """Plain text generation across the provider chain. Empty string on total failure."""
     try:
         runnable = _with_fallbacks(get_model_chain(tier, max_tokens=max_tokens))
         async with _get_semaphore():
             resp = await runnable.ainvoke(
-                [{"role": "system", "content": system}, {"role": "user", "content": user}]
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                config=callback_config(node, tier),
             )
         # `.content` is a list of blocks for some providers, where `.strip()`
         # raises and the whole call silently degrades to an empty summary.
@@ -280,7 +291,7 @@ async def read_paper(state: SummaryState) -> Dict[str, Any]:
         + f"Full paper text:\n{state.get('paper_text', '')}"
     )
 
-    parsed = await _structured("smart", PaperReading, system, user, max_tokens=8192)
+    parsed = await _structured("smart", PaperReading, system, user, max_tokens=8192, node="read_paper")
     if parsed is None:
         logger.warning("single_pass_read_failed", fallback="map_reduce")
         return {"single_pass": False}
@@ -330,7 +341,7 @@ async def map_sections(state: SummaryState) -> Dict[str, Any]:
             f"Section: {chunk['name'].replace('_', ' ').title()}\n\n"
             f"{chunk['text']}"
         )
-        digest = await _structured("fast", SectionDigest, system, user, max_tokens=1024)
+        digest = await _structured("fast", SectionDigest, system, user, max_tokens=1024, node="map_sections")
         if digest is None:
             # Keep the raw head of the section so downstream coverage isn't lost,
             # but flag it: this is unsummarised paper text, and labelling it as a
@@ -360,7 +371,7 @@ async def extract_entities(state: SummaryState) -> Dict[str, Any]:
         "Do not invent entities that are not present."
     )
     user = f"Paper title: {state.get('title', '')}\n\nPaper digest:\n{state.get('digest_text', '')}"
-    parsed = await _structured("fast", PaperEntities, system, user, max_tokens=1536)
+    parsed = await _structured("fast", PaperEntities, system, user, max_tokens=1536, node="extract_entities")
     if parsed is None:
         return {"entities": {"entities": []}}
     return {"entities": parsed.model_dump()}
@@ -388,7 +399,7 @@ async def extract_results(state: SummaryState) -> Dict[str, Any]:
         (f"Markdown tables:\n{tables}\n\n" if tables else "")
         + f"Results text:\n{result_text}"
     )
-    parsed = await _structured("fast", PaperResults, system, user, max_tokens=2048)
+    parsed = await _structured("fast", PaperResults, system, user, max_tokens=2048, node="extract_results")
     if parsed is None:
         return {"results": []}
     return {"results": [r.model_dump() for r in parsed.results]}
@@ -445,11 +456,11 @@ async def synthesize(state: SummaryState) -> Dict[str, Any]:
     )
     # Generous ceiling: the schema asks for ~1200 words of summary plus method and
     # setup sections, which does not fit in the old 3072.
-    parsed = await _structured("smart", PaperSynthesis, system, user, max_tokens=8192)
+    parsed = await _structured("smart", PaperSynthesis, system, user, max_tokens=8192, node="synthesize")
 
     if parsed is None:
         # Last-resort: plain-text summary so the user still gets something useful.
-        text = await _text("smart", system, user, max_tokens=2048)
+        text = await _text("smart", system, user, max_tokens=2048, node="synthesize")
         synthesis = {
             "summary": text or state.get("abstract", "") or "Summary unavailable.",
             "contributions": [], "key_findings": [], "limitations": [], "future_work": [],
@@ -508,7 +519,7 @@ async def grade(state: SummaryState) -> Dict[str, Any]:
         f"Quantitative results available:\n{_results_brief(state.get('results', []))}\n\n"
         f"Summary to grade:\n{summary}"
     )
-    parsed = await _structured("smart", SummaryGrade, system, user, max_tokens=512)
+    parsed = await _structured("smart", SummaryGrade, system, user, max_tokens=512, node="grade")
     if parsed is None:
         # One retry before giving up. The observed failure is a provider
         # returning a partial object, which is a property of that response
@@ -516,7 +527,7 @@ async def grade(state: SummaryState) -> Dict[str, Any]:
         # immediately. Worth one attempt: the alternative is discarding a real
         # measurement and showing the reader no quality signal at all.
         logger.info("grade_retry_after_parse_failure")
-        parsed = await _structured("smart", SummaryGrade, system, user, max_tokens=512)
+        parsed = await _structured("smart", SummaryGrade, system, user, max_tokens=512, node="grade")
 
     if parsed is None:
         # Grading failed (rate limit, parse error). Accept the synthesis rather
@@ -553,6 +564,53 @@ def _route_after_grade(state: SummaryState) -> str:
     return "retry"
 
 
+# ── Grounding ─────────────────────────────────────────────────────────────────
+
+# Claims worth checking. key_findings and contributions are what a reader quotes,
+# and the schema requires findings to carry concrete numbers — the field where a
+# fabricated value does the most damage.
+MAX_VERIFIED_CLAIMS = 24
+
+
+async def verify(state: SummaryState) -> Dict[str, Any]:
+    """Check the accepted synthesis's claims against the paper's own sentences.
+
+    Runs once, on the synthesis the graph will actually return, rather than on a
+    draft a retry would replace. It never fails the run: a claim that cannot be
+    checked comes back ``grounded=None``, and an unexpected error here yields an
+    empty claims list rather than losing a completed summary.
+    """
+    synthesis = state.get("synthesis") or {}
+    claims = [
+        c.strip()
+        for c in (list(synthesis.get("key_findings") or [])
+                  + list(synthesis.get("contributions") or []))
+        if isinstance(c, str) and c.strip()
+    ][:MAX_VERIFIED_CLAIMS]
+    if not claims:
+        return {"claims": []}
+
+    # Verify against the same cleaned sections the model was shown. Raw `sections`
+    # still carries the bibliography, where a claim can match a *cited* paper's
+    # title and score as grounded in text this paper never asserted.
+    sources = dict(usable_sections(state.get("sections") or {}))
+
+    try:
+        from core.intelligence.hallucination_guard import verify_claims
+        # Embedding is CPU-bound and loads a model on first use — keep it off the loop.
+        checked = await asyncio.to_thread(verify_claims, claims, sources)
+    except Exception as e:
+        logger.warning("grounding_check_failed", error=str(e))
+        return {"claims": []}
+
+    counts = {"grounded": 0, "ungrounded": 0, "unverified": 0}
+    for c in checked:
+        g = c.get("grounded")
+        counts["unverified" if g is None else ("grounded" if g else "ungrounded")] += 1
+    logger.info("grounding_checked", total=len(checked), **counts)
+    return {"claims": checked}
+
+
 # ── Graph assembly ───────────────────────────────────────────────────────────────
 
 _compiled = None
@@ -574,6 +632,7 @@ def get_summary_graph():
     g.add_node("extract_results", extract_results)
     g.add_node("synthesize", synthesize)
     g.add_node("grade", grade)
+    g.add_node("verify", verify)
 
     g.add_edge(START, "prepare")
     # Whole-paper read when it fits, section-by-section when it doesn't.
@@ -593,7 +652,10 @@ def get_summary_graph():
     g.add_edge("extract_entities", "synthesize")
     g.add_edge("extract_results", "synthesize")
     g.add_edge("synthesize", "grade")
-    g.add_conditional_edges("grade", _route_after_grade, {"retry": "synthesize", "done": END})
+    # "done" means the synthesis is accepted, so grounding runs exactly once,
+    # on the text that will actually be stored.
+    g.add_conditional_edges("grade", _route_after_grade, {"retry": "synthesize", "done": "verify"})
+    g.add_edge("verify", END)
 
     _compiled = g.compile()
     return _compiled
@@ -609,8 +671,10 @@ async def summarize_paper(
 ) -> Dict[str, Any]:
     """Run the full summarization graph and return the raw final state.
 
-    The returned dict contains: synthesis, entities, results, digests, grade.
+    The returned dict contains: synthesis, entities, results, digests, grade,
+    and claims (per-claim groundedness against the paper's own text).
     """
+    recorder = start_run()
     graph = get_summary_graph()
     initial: SummaryState = {
         "title": title or "",
@@ -620,4 +684,8 @@ async def summarize_paper(
         "abstract": abstract or "",
     }
     final = await graph.ainvoke(initial)
-    return dict(final)
+    out = dict(final)
+    # Which models actually answered, what they cost, and which prompt produced
+    # it — so a quality change can be attributed instead of guessed at.
+    out["run_meta"] = {**recorder.summary(), "prompt_fingerprint": prompt_fingerprint()}
+    return out

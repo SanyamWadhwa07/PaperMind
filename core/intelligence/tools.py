@@ -5,7 +5,6 @@ clean for LLM invocation.
 """
 
 import json
-import asyncio
 import structlog
 from typing import List, Optional, Any
 
@@ -28,15 +27,15 @@ def make_corpus_tools(user_id: str, supabase_client: Any):
 
     @tool
     def search_corpus(query: str, limit: int = 5) -> str:
-        """Search the user's paper corpus by semantic similarity. Returns JSON list of {id, title, similarity}."""
+        """Search the user's paper corpus by semantic similarity. Returns JSON list of {id, paper_title, similarity_score}."""
         try:
-            from core.knowledge.embedding_service import EmbeddingService
-            svc = EmbeddingService()
-            loop = asyncio.new_event_loop()
-            results = loop.run_until_complete(
-                svc.find_similar_papers(query, user_id=user_id, top_k=limit)
-            )
-            loop.close()
+            # embedding_service exposes module-level functions, not a class — this used
+            # to import a nonexistent `EmbeddingService`, so every call raised ImportError
+            # (silently swallowed below) and this tool always returned [].
+            from core.knowledge.embedding_service import embed_text, find_similar_papers
+            embedding = embed_text(query)
+            results = find_similar_papers(embedding, user_id=user_id,
+                                          supabase_client=supabase_client, top_k=limit)
             return json.dumps(results)
         except Exception as e:
             logger.error("search_corpus_error", exc_info=e)

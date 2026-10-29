@@ -407,6 +407,15 @@ def get_author_graph(user_id: str, supabase_client) -> Dict[str, Any]:
     """
     Build a co-authorship graph from the user's paper library.
     Nodes = authors, edges = co-authored at least one paper (weight = paper count).
+
+    ``title``/``size``/``color`` used to be set here for the old vis-network
+    renderer, which read colour and size directly off each node. The graph is
+    now drawn by `KnowledgeGraph.jsx` (d3-force + design-system tokens), which
+    derives colour from `group`/`entity_type` and radius from `paper_count`
+    itself — those three fields were silently never read, so clicking a node
+    surfaced an empty, un-styled badge instead of anything useful. `papers` is
+    new: without it there was no way to show *which* papers an author's node
+    represents, only a bare count.
     """
     nodes: List[Dict] = []
     edges: List[Dict] = []
@@ -418,6 +427,7 @@ def get_author_graph(user_id: str, supabase_client) -> Dict[str, Any]:
             .limit(200) \
             .execute()
         papers = resp.data or []
+        titles_by_id = {p["id"]: (p.get("paper_title") or "Untitled") for p in papers}
 
         author_papers: Dict[str, List[str]] = {}
         co_weight: Dict[tuple, int] = {}
@@ -433,27 +443,26 @@ def get_author_graph(user_id: str, supabase_client) -> Dict[str, Any]:
                     key = (min(a1, a2), max(a1, a2))
                     co_weight[key] = co_weight.get(key, 0) + 1
 
-        # Build nodes — size proportional to paper count
         for author, pids in author_papers.items():
             nodes.append({
                 "id": f"author_{author}",
                 "label": author[:30],
-                "title": f"{author} ({len(pids)} papers)",
                 "group": "author",
                 "paper_count": len(pids),
-                "size": 10 + min(len(pids) * 4, 30),
-                "color": "#6366f1",
+                # Capped so a prolific author's node doesn't balloon the
+                # payload — the click-through only ever shows a short list.
+                "papers": [
+                    {"id": pid, "title": titles_by_id.get(pid, "Untitled")}
+                    for pid in pids[:5]
+                ],
             })
 
-        # Build edges
         for (a1, a2), weight in co_weight.items():
             edges.append({
                 "from": f"author_{a1}",
                 "to": f"author_{a2}",
                 "value": weight,
-                "title": f"{weight} co-authored paper(s)",
                 "group": "coauthorship",
-                "color": "#c4b5fd",
             })
 
     except Exception as e:

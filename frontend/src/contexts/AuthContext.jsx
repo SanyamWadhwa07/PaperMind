@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { auth as authApi, tokenStore } from '../lib/api'
 import { invalidate } from '../lib/query'
+import { startProcessingPoller, stopProcessingPoller } from '../lib/processingStore'
 
 const AuthContext = createContext(null)
 
@@ -34,6 +35,7 @@ export function AuthProvider({ children }) {
     // to sign in on this browser would be served the previous one's library
     // from memory before any request went out.
     invalidate()
+    stopProcessingPoller()
   }, [])
 
   useEffect(() => {
@@ -50,7 +52,10 @@ export function AuthProvider({ children }) {
     authApi
       .me()
       .then((data) => {
-        if (!cancelled) setUser(data.user)
+        if (!cancelled) {
+          setUser(data.user)
+          startProcessingPoller()
+        }
       })
       .catch(() => {
         if (!cancelled) clearAuth()
@@ -71,6 +76,7 @@ export function AuthProvider({ children }) {
     tokenStore.set(data.token)
     setToken(data.token)
     setUser(data.user)
+    startProcessingPoller()
   }, [])
 
   const login = useCallback(

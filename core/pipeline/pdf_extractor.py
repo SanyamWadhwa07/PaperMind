@@ -2,7 +2,12 @@
 
 Backends are tried in order and the first to produce a usable result wins:
 
-1. MinerU (magic-pdf)  — layout model: figures, equations, tables, OCR
+1. MinerU (magic-pdf)  — layout model: figures, equations, tables, OCR.
+   Opt-in only (``PAPERMIND_ENABLE_MINERU=true``) — its local model install is
+   a common source of silent breakage (missing/version-mismatched weights
+   make it exit 0 having written nothing), and there is no per-document
+   signal that distinguishes "broken install" from "this PDF"; every paper
+   fails the same way until the install is fixed. See ``_extract_mineru``.
 2. pymupdf4llm         — fast, born-digital PDFs, clean Markdown
 3. PyMuPDF fitz        — always available, basic text fallback
 
@@ -20,16 +25,20 @@ applied once, in :func:`_enrich_result`:
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import tempfile
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Sequence
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 import structlog
 
 from core.pipeline.metadata_extractor import extract_title_authors
-from core.pipeline.table_extractor import TableInfo, extract_tables, tables_to_markdown
+from core.pipeline.table_extractor import (
+    TableInfo, extract_tables_with_status, tables_to_markdown,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -189,9 +198,23 @@ def _find_mineru_exe() -> Optional[str]:
     return None
 
 
+# Set once a MinerU attempt has failed with the "ran, but wrote nothing"
+# signature — a broken model install, not a per-document fluke. Retrying it on
+# the next paper reproduces the exact same failure, so it just re-pays a
+# ~5-minute subprocess (and the CPU it eats fighting the rest of the pipeline
+# for cycles) for a result we already know is None. Cleared on process
+# restart, so a fixed install is picked back up without a code change.
+_mineru_broken = False
+
+
 def _extract_mineru(pdf_path: str, output_dir: Path) -> Optional[ExtractionResult]:
     """Run MinerU CLI as a subprocess and parse its output."""
     import subprocess, json, sys
+
+    global _mineru_broken
+    if _mineru_broken:
+        logger.debug("mineru_skipped", reason="known-broken install this process")
+        return None
 
     exe = _find_mineru_exe()
     if not exe:
@@ -235,13 +258,18 @@ def _extract_mineru(pdf_path: str, output_dir: Path) -> Optional[ExtractionResul
 
     if not work_dir:
         # magic-pdf exited 0 but wrote nothing — almost always missing or
-        # version-mismatched model weights. Surface the cause, not just the symptom.
+        # version-mismatched model weights, and reproducible on every document,
+        # not a one-off. Stop paying the ~5-minute subprocess for the rest of
+        # this process's lifetime rather than repeating the same failure per paper.
+        _mineru_broken = True
         missing_weights = re.search(r"No such file or directory: '([^']*\.(?:pth|pt|bin))'", stderr)
         logger.warning(
-            "mineru_produced_no_output",
+            "mineru_produced_no_output_disabling",
             output_dir=str(output_dir),
             missing_model=missing_weights.group(1) if missing_weights else None,
-            hint="run 'python -m magic_pdf.tools.common download_models' to repair model weights",
+            hint="model weights are missing or version-mismatched; MinerU is "
+                 "disabled for the rest of this process — restart after fixing "
+                 "the local model install to retry it",
             stderr=stderr[-300:],
         )
         return None
@@ -266,10 +294,16 @@ def _extract_mineru(pdf_path: str, output_dir: Path) -> Optional[ExtractionResul
                 if t == "image":
                     img_path = work_dir / item.get("img_path", "")
                     if img_path.exists():
+                        page_idx = item.get("page_idx")
                         figures.append(FigureInfo(
                             path=str(img_path),
                             caption=item.get("img_caption", ""),
-                            page_number=item.get("page_idx", 0),
+                            # MinerU's page_idx is 0-based; every other backend in
+                            # this module reports 1-based page numbers, and
+                            # FiguresDisplay.jsx treats page <= 0 as "unknown" — so
+                            # a MinerU page-1 figure silently lost its label, and
+                            # every other one showed one page early.
+                            page_number=(page_idx + 1) if isinstance(page_idx, int) else 0,
                         ))
                 elif t == "equation":
                     latex = item.get("text", "")
@@ -301,6 +335,304 @@ def _extract_mineru(pdf_path: str, output_dir: Path) -> Optional[ExtractionResul
 
 
 # ---------------------------------------------------------------------------
+# Figure recovery (shared by the non-MinerU backends)
+#
+# `page.get_images()` returns embedded raster XObjects and nothing else, but
+# academic figures are overwhelmingly *vector*: matplotlib, TikZ and PGF emit
+# path operators, so a paper with six plots can contain zero bitmaps. Asking for
+# images therefore reports "1 figure" on a paper that visibly has several.
+#
+# The fix is to render the figure's region instead. Captions anchor it — a paper
+# that prints "Fig. 3." has a figure directly above that line — and the vector
+# ink in the same column tells us how far up it extends.
+# ---------------------------------------------------------------------------
+
+_FIG_CAPTION_RE = re.compile(r"^\s*fig(?:ure)?\s*\.?\s*(\d+)\s*[.:]?\s*(.*)", re.IGNORECASE | re.DOTALL)
+
+
+def _parse_figure_number(label: Optional[str]) -> Optional[int]:
+    """Extract the integer out of a "Figure 3"-shaped label, or None."""
+    if not label:
+        return None
+    m = re.search(r"(\d+)", label)
+    return int(m.group(1)) if m else None
+
+# A text block longer than this is body prose, not an axis label or a legend, so
+# it marks where the figure stops and the paper resumes.
+_PROSE_WORDS = 25
+
+# Ink separated by a bigger vertical gap than this belongs to another object.
+_INK_GAP_PT = 40.0
+
+# Smaller than this in either axis and it's a rule or a stray glyph box.
+_MIN_FIGURE_PT = 55.0
+
+# 200 dpi keeps axis tick labels legible without producing megabyte PNGs.
+_FIGURE_DPI = 200
+
+
+def _page_ink_rects(page) -> List[tuple]:
+    """Bounding boxes of everything drawn on the page — vector paths and bitmaps."""
+    rects: List[tuple] = []
+
+    for drawing in page.get_drawings():
+        r = drawing.get("rect")
+        if r and r.width > 1 and r.height > 1:
+            rects.append((r.x0, r.y0, r.x1, r.y1))
+
+    for info in page.get_images(full=True):
+        try:
+            for r in page.get_image_rects(info[0]):
+                rects.append((r.x0, r.y0, r.x1, r.y1))
+        except Exception:
+            continue
+
+    return rects
+
+
+def _prose_blocks(page) -> List[tuple]:
+    """Bounding boxes of text blocks long enough to be body paragraphs."""
+    blocks: List[tuple] = []
+    try:
+        data = page.get_text("dict")
+    except Exception:
+        return blocks
+
+    for block in data.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        text = " ".join(
+            span.get("text", "")
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+        )
+        if len(text.split()) >= _PROSE_WORDS:
+            blocks.append(tuple(block["bbox"]))
+    return blocks
+
+
+def _caption_blocks(page) -> List[tuple]:
+    """(bbox, figure_number, caption_text) for every 'Fig. N' line on the page."""
+    found: List[tuple] = []
+    try:
+        data = page.get_text("dict")
+    except Exception:
+        return found
+
+    for block in data.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        text = " ".join(
+            span.get("text", "")
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+        ).strip()
+        m = _FIG_CAPTION_RE.match(text)
+        if m:
+            found.append((tuple(block["bbox"]), int(m.group(1)), re.sub(r"\s+", " ", m.group(2)).strip()))
+
+    return sorted(found, key=lambda item: item[0][1])
+
+
+def _figure_region(caption_bbox: tuple, ink: Sequence[tuple],
+                   prose: Sequence[tuple]) -> Optional[tuple]:
+    """Grow a figure region upward from its caption.
+
+    Bounded on three sides by the caption's own column, and on top by whichever
+    comes first: a vertical gap in the ink, or the body paragraph the figure sits
+    below. Both bounds matter — the gap alone would swallow the plot above it in
+    a single-column paper, and the paragraph alone would swallow a figure's own
+    whitespace in a two-column one.
+    """
+    cx0, cy0, cx1, _ = caption_bbox
+    # Captions are typeset to the column, and a figure is often a little wider
+    # than its caption's text block, so allow some overhang either side.
+    pad = 24.0
+    lo, hi = cx0 - pad, cx1 + pad
+
+    above = [
+        r for r in ink
+        if r[3] <= cy0 + 2 and r[0] >= lo - pad and r[2] <= hi + pad and r[3] > cy0 - 700
+    ]
+    if not above:
+        return None
+
+    # Walk up from the caption, absorbing ink while it stays contiguous.
+    above.sort(key=lambda r: r[3], reverse=True)
+    x0, y0, x1, y1 = above[0]
+    for rx0, ry0, rx1, ry1 in above[1:]:
+        if y0 - ry1 > _INK_GAP_PT:
+            break
+        x0, y0 = min(x0, rx0), min(y0, ry0)
+        x1, y1 = max(x1, rx1), max(y1, ry1)
+
+    # Don't reach back over a paragraph that ends inside the region.
+    for px0, _, px1, py1 in prose:
+        if py1 <= y1 and py1 > y0 and not (px1 < x0 or px0 > x1):
+            y0 = max(y0, py1 + 2)
+
+    if x1 - x0 < _MIN_FIGURE_PT or y1 - y0 < _MIN_FIGURE_PT:
+        return None
+    return (x0, y0, x1, y1)
+
+
+def _render_figures(pdf_path: str, image_dir: Path) -> Tuple[List[FigureInfo], set]:
+    """Render every captioned figure region to a PNG.
+
+    Returns ``(figures, fallback_pages)``, where ``fallback_pages`` is every
+    0-based page index that produced nothing here — no caption was found on it,
+    or a caption was found but its region couldn't be grown or rendered. The
+    caller runs the raster fallback on exactly those pages rather than the whole
+    document, so a paper where every figure but one is captioned still gets that
+    one figure instead of losing it because the rest of the paper rendered fine.
+    """
+    import fitz  # type: ignore
+
+    figures: List[FigureInfo] = []
+    fallback_pages: set = set()
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    doc = fitz.open(pdf_path)
+    try:
+        for page_index, page in enumerate(doc):
+            captions = _caption_blocks(page)
+            if not captions:
+                fallback_pages.add(page_index)
+                continue
+
+            ink = _page_ink_rects(page)
+            prose = _prose_blocks(page)
+            rendered_any = False
+
+            for caption_bbox, number, caption_text in captions:
+                region = _figure_region(caption_bbox, ink, prose)
+                if not region:
+                    continue
+                out_path = image_dir / f"fig_{number:03d}_p{page_index + 1}.png"
+                try:
+                    pix = page.get_pixmap(clip=fitz.Rect(*region), dpi=_FIGURE_DPI)
+                    pix.save(str(out_path))
+                except Exception as exc:
+                    logger.debug("figure_render_failed", page=page_index + 1,
+                                 figure=number, error=str(exc))
+                    continue
+
+                figures.append(FigureInfo(
+                    path=str(out_path),
+                    caption=caption_text,
+                    page_number=page_index + 1,
+                    figure_number=f"Figure {number}",
+                    width=pix.width,
+                    height=pix.height,
+                ))
+                rendered_any = True
+
+            if not rendered_any:
+                fallback_pages.add(page_index)
+    finally:
+        doc.close()
+
+    # A figure spanning a column break is captioned once but drawn twice; keep
+    # the first rendering of each number.
+    seen: set = set()
+    unique: List[FigureInfo] = []
+    for fig in figures:
+        if fig.figure_number in seen:
+            continue
+        seen.add(fig.figure_number)
+        unique.append(fig)
+    return unique, fallback_pages
+
+
+def _extract_raster_figures(
+    pdf_path: str, image_dir: Path, pages: Optional[Sequence[int]] = None,
+) -> List[FigureInfo]:
+    """Pull embedded bitmaps out of a PDF.
+
+    `pages`, when given, restricts extraction to those 0-based page indices —
+    used to fill in exactly the pages `_render_figures` couldn't caption-anchor,
+    rather than re-scanning (and duplicating figures already rendered on) every
+    page in the document.
+    """
+    import fitz  # type: ignore
+
+    figures: List[FigureInfo] = []
+    image_dir.mkdir(parents=True, exist_ok=True)
+    page_filter = set(pages) if pages is not None else None
+
+    doc = fitz.open(pdf_path)
+    try:
+        fig_index = 0
+        for page_num, page in enumerate(doc):
+            if page_filter is not None and page_num not in page_filter:
+                continue
+            for img_info in page.get_images(full=True):
+                xref = img_info[0]
+                try:
+                    base_image = doc.extract_image(xref)
+                    if base_image["ext"] not in ("png", "jpeg", "jpg"):
+                        continue
+                    w, h = base_image["width"], base_image["height"]
+                    if w < 80 or h < 80:      # icons, bullets, rules
+                        continue
+                    out_path = image_dir / f"raster_{fig_index:03d}.png"
+                    try:
+                        from PIL import Image  # type: ignore
+                        import io
+                        Image.open(io.BytesIO(base_image["image"])).save(str(out_path), "PNG")
+                    except Exception:
+                        out_path.write_bytes(base_image["image"])
+                    figures.append(FigureInfo(
+                        path=str(out_path),
+                        page_number=page_num + 1,
+                        width=w,
+                        height=h,
+                    ))
+                    fig_index += 1
+                except Exception:
+                    continue
+    finally:
+        doc.close()
+
+    return figures
+
+
+def _extract_figures(pdf_path: str, image_dir: Path) -> List[FigureInfo]:
+    """Recover figures: caption-anchored regions first, embedded bitmaps for
+    whichever pages didn't produce one.
+
+    This used to be all-or-nothing per document — any successfully rendered
+    figure anywhere in the paper skipped the raster pass entirely, so a paper
+    with one captioned figure and five uncaptioned ones only ever showed the
+    one. Now the raster fallback runs on exactly the pages that didn't render,
+    and the two lists are merged.
+    """
+    rendered: List[FigureInfo] = []
+    fallback_pages: Optional[set] = None
+    try:
+        rendered, fallback_pages = _render_figures(pdf_path, image_dir)
+    except Exception as exc:
+        logger.warning("figure_render_pass_failed", error=str(exc))
+        # The render pass didn't get far enough to say which pages failed —
+        # raster the whole document rather than silently returning nothing.
+        rendered, fallback_pages = [], None
+
+    if fallback_pages is not None and not fallback_pages:
+        return rendered
+
+    try:
+        raster = _extract_raster_figures(
+            pdf_path, image_dir,
+            pages=sorted(fallback_pages) if fallback_pages is not None else None,
+        )
+    except Exception as exc:
+        logger.warning("figure_raster_pass_failed", error=str(exc))
+        raster = []
+
+    return rendered + raster
+
+
+# ---------------------------------------------------------------------------
 # Backend 2 — pymupdf4llm
 # ---------------------------------------------------------------------------
 
@@ -318,60 +650,32 @@ def _extract_pymupdf4llm(pdf_path: str, output_dir: Path) -> Optional[Extraction
         if len(sections) < 2:
             return None
 
-        # Extract figures as PNGs using fitz
-        figures: List[FigureInfo] = []
         image_dir = output_dir / "images"
-        image_dir.mkdir(parents=True, exist_ok=True)
+        figures = _extract_figures(pdf_path, image_dir)
 
-        doc = fitz.open(pdf_path)
-        fig_index = 0
-        for page_num, page in enumerate(doc):
-            for img_info in page.get_images(full=True):
-                xref = img_info[0]
-                try:
-                    base_image = doc.extract_image(xref)
-                    ext = base_image["ext"]
-                    if ext not in ("png", "jpeg", "jpg"):
-                        continue
-                    img_bytes = base_image["image"]
-                    w, h = base_image["width"], base_image["height"]
-                    # Skip tiny images (icons, bullets, etc.)
-                    if w < 80 or h < 80:
-                        continue
-                    out_path = image_dir / f"fig_{fig_index:03d}.png"
-                    # Convert to PNG via pillow if needed
-                    try:
-                        from PIL import Image  # type: ignore
-                        import io
-                        img = Image.open(io.BytesIO(img_bytes))
-                        img.save(str(out_path), "PNG")
-                    except Exception:
-                        out_path.write_bytes(img_bytes)
-                    figures.append(FigureInfo(
-                        path=str(out_path),
-                        caption="",
-                        page_number=page_num,
-                        width=w,
-                        height=h,
-                    ))
-                    fig_index += 1
-                except Exception:
+        # Captions come from the rendered pass already. Fall back to the Markdown
+        # text only for figures recovered as bare bitmaps, which carry none.
+        if any(not f.caption for f in figures):
+            caption_pattern = re.compile(
+                r"(?:Figure|Fig\.?)\s+(\d+)[.:]?\s+(.*?)(?:\n|$)",
+                re.IGNORECASE,
+            )
+            # Keyed by the figure's own printed number, not by list position.
+            # Raster figures come out in page/xref order, which is not
+            # figure-number order (and _render_figures dedupes, shifting
+            # positions further), so a caption attached by index landed on the
+            # wrong image whenever there was a gap. A missing caption is a fine
+            # outcome here; a mismatched one is worse, so figures whose number
+            # can't be determined are left uncaptioned rather than guessed at.
+            caption_map: Dict[int, str] = {}
+            for m in caption_pattern.finditer(md_text):
+                caption_map[int(m.group(1))] = m.group(2).strip()
+            for fig in figures:
+                if fig.caption:
                     continue
-        doc.close()
-
-        # Try to match captions from Markdown text
-        caption_pattern = re.compile(
-            r"(?:Figure|Fig\.?|TABLE)\s+(\d+)[.:]?\s+(.*?)(?:\n|$)",
-            re.IGNORECASE,
-        )
-        caption_map: Dict[int, str] = {}
-        for m in caption_pattern.finditer(md_text):
-            idx = int(m.group(1)) - 1
-            caption_map[idx] = m.group(2).strip()
-        for i, fig in enumerate(figures):
-            if i in caption_map:
-                fig.caption = caption_map[i]
-                fig.figure_number = f"Figure {i + 1}"
+                number = _parse_figure_number(fig.figure_number)
+                if number is not None and number in caption_map:
+                    fig.caption = caption_map[number]
 
         return ExtractionResult(
             sections=sections,
@@ -514,14 +818,19 @@ DEFAULT_BACKENDS: List[PdfBackend] = [
 
 def extract_pdf(
     pdf_path: str,
-    prefer_mineru: bool = True,
+    prefer_mineru: Optional[bool] = None,
     backends: Optional[Sequence[PdfBackend]] = None,
 ) -> ExtractionResult:
     """Extract sections, figures, tables and metadata from an academic PDF.
 
     Args:
         pdf_path: Absolute path to the PDF.
-        prefer_mineru: If False, skip the (slow, model-backed) MinerU tier.
+        prefer_mineru: If False, skip the (slow, model-backed) MinerU tier. If
+            None (the default), read ``PAPERMIND_ENABLE_MINERU`` — MinerU's
+            local model install is a common source of silent breakage (missing
+            or version-mismatched weights that make it exit 0 having written
+            nothing), so it's opt-in rather than attempted by default. Set the
+            env var once your local ``magic-pdf`` install is verified working.
         backends: Override the backend chain. Mainly for tests — production
             callers should use the default registry.
 
@@ -529,11 +838,26 @@ def extract_pdf(
         An :class:`ExtractionResult`. Always returns a result; the final backend
         is a fallback that cannot decline.
     """
+    if prefer_mineru is None:
+        prefer_mineru = os.environ.get("PAPERMIND_ENABLE_MINERU", "").lower() in ("1", "true", "yes")
+
     chain = list(backends if backends is not None else DEFAULT_BACKENDS)
     if not prefer_mineru:
         chain = [b for b in chain if b.name != "mineru"]
 
-    workdir = Path(tempfile.gettempdir()) / "papermind_extract" / _pdf_hash(pdf_path)
+    # Unique per call, not keyed by content hash. No backend here ever checks
+    # for pre-existing output before writing — extraction always runs fresh —
+    # so the hash-keyed name bought no caching benefit while creating a real
+    # race: two calls on byte-identical content (a well-known paper uploaded by
+    # two users close together, or the same PDF reprocessed) shared one
+    # directory, and MinerU/pymupdf4llm's own `work_dir.glob("*.md")` /
+    # `*_content_list.json` lookups could pick up a stale or partially-written
+    # file left by the other call. Content hash is kept in the name only as a
+    # debugging aid in logs/paths, not for identity.
+    workdir = (
+        Path(tempfile.gettempdir()) / "papermind_extract"
+        / f"{_pdf_hash(pdf_path)}-{uuid.uuid4().hex[:8]}"
+    )
     workdir.mkdir(parents=True, exist_ok=True)
 
     result: Optional[ExtractionResult] = None
@@ -587,7 +911,12 @@ def _enrich_result(result: ExtractionResult, pdf_path: str) -> None:
     # separately, and without them the summariser's results extraction has no
     # tabular input and falls back to scraping prose.
     if not result.tables:
-        result.tables = extract_tables(pdf_path)
+        result.tables, table_error = extract_tables_with_status(pdf_path)
+        if table_error:
+            # Surfaced through structure_agent.py's metadata and, from there,
+            # pipeline_status — so the UI can render "table extraction failed"
+            # instead of the identical-looking "no tables in this paper".
+            result.metadata["table_extraction_error"] = table_error
     if not result.tables_md:
         result.tables_md = tables_to_markdown(result.tables)
 
@@ -601,4 +930,11 @@ def _enrich_result(result: ExtractionResult, pdf_path: str) -> None:
             logger.debug("section_cleaning_failed", error=str(exc))
 
     result.metadata["section_count"] = len(result.sections)
-    result.metadata["table_count"] = len(result.tables)
+    # Two different counts, kept under distinct names rather than one shared
+    # `table_count` key: `tables` is the structured re-extraction the UI renders;
+    # `tables_md` is what the summariser reads, and on a MinerU paper it's MinerU's
+    # own markdown extraction, not this one — the two can genuinely disagree in
+    # both content and count. A single overwritten key previously let whichever
+    # wrote last (structure_agent.py) silently redefine what "table_count" meant.
+    result.metadata["structured_table_count"] = len(result.tables)
+    result.metadata["table_markdown_count"] = len(result.tables_md)

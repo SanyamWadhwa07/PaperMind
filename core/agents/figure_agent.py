@@ -9,16 +9,21 @@ Understanding:
   applies type-specific models (VLM, DePlot, pix2tex) to produce insights.
 """
 
+import re
 import sys
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
+import structlog
+
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from core.agents.base_agent import BaseAgent, AgentState
 from core.pipeline.diagram_processor import DiagramProcessor
-from core.pipeline.pdf_extractor import FigureInfo
+from core.pipeline.pdf_extractor import FigureInfo, _parse_figure_number
+
+logger = structlog.get_logger(__name__)
 
 
 class FigureAgent(BaseAgent):
@@ -127,6 +132,12 @@ class FigureAgent(BaseAgent):
                 legacy_figures = extractor.extract_figures(pdf_path, sections)
                 raw_figures = self._materialize_legacy_figures(legacy_figures)
             else:
+                # Silent before: the backend.main import error is swallowed in
+                # _get_legacy_extractor, so an unavailable extractor produced an
+                # empty list indistinguishable from a paper with no figures.
+                logger.warning("figure_extraction_unavailable",
+                               has_extractor=bool(extractor),
+                               has_pdf_path=bool(pdf_path))
                 raw_figures = []
 
         # ── Step 2: classify + understand with DiagramProcessor ───────────
@@ -184,16 +195,27 @@ class FigureAgent(BaseAgent):
 
         for i, fig in enumerate(figures):
             score = 0.0
-            fig_id = (fig.get("id", "") or f"figure {i + 1}").lower()
             caption_lower = fig.get("caption", "").lower()
 
-            references = all_text.count(fig_id)
+            # Cross-reference against how the paper actually refers to a figure
+            # — "Fig. 3" / "Fig 3" / "Figure 3" — not against fig["id"], which
+            # DiagramProcessor always sets to a "fig_000"-style extraction index
+            # that never appears anywhere in the paper's own text. That made
+            # every bonus below dead code, and ranking collapsed to caption
+            # length + type bonus + extraction-order position.
+            number = _parse_figure_number(fig.get("figure_number"))
+            mention_re = (
+                re.compile(rf"\bfig(?:ure)?\.?\s*{number}\b", re.IGNORECASE)
+                if number is not None else None
+            )
+
+            references = len(mention_re.findall(all_text)) if mention_re else 0
             fig["references"] = references
             score += references * 2
 
-            if fig_id in abstract or fig_id in introduction:
+            if mention_re and (mention_re.search(abstract) or mention_re.search(introduction)):
                 score += 10
-            if fig_id in results:
+            if mention_re and mention_re.search(results):
                 score += 5
 
             if caption_lower:

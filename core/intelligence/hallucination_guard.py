@@ -14,6 +14,7 @@ imported an ``EmbeddingService`` class this project never defined, so that
 failure path was the *only* path that ever ran.
 """
 
+import re
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -21,21 +22,74 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# Calibrated against all-MiniLM-L6-v2 cosine scores on real paper text. Because
-# the broken import meant this code never executed, the previous 0.75 was never
-# exercised — and it sits *inside* the genuine-claim range, so it would have
-# flagged faithful claims as hallucinations. Observed on a worked example:
-#   supported, near-verbatim ....... 0.92
-#   supported, paraphrased ......... 0.72
-#   supported, abstractive ......... 0.52
-#   unrelated (invented) ........... 0.09
-#   unrelated (nonsense) ........... 0.04
-# 0.45 sits in the empty band between the two clusters. Worth re-checking
-# against a larger labelled sample before treating it as settled.
+# Semantic similarity separates a claim about *this* paper from one about some
+# other paper. It does NOT separate a true number from a false one, and measuring
+# it settled that: over the labelled claim set in `evals/golden/`, cosine
+# similarity classified close negatives at chance — accuracy 0.500 at every
+# threshold from 0.05 to 0.50, peaking at 0.625. "The model reaches 28.4 BLEU"
+# and "…31.7 BLEU" are near-identical vectors, because they *are* near-identical
+# sentences; only one digit carries the falsehood.
+#
+# So the guard is two rules, not one:
+#   1. numeric  — deterministic, and decisive when it fires. A claim asserting a
+#                 number the paper never states is unsupported no matter how
+#                 similar it reads.
+#   2. semantic — cosine similarity, for everything the first rule cannot judge.
+#
+# Re-derive this constant with: python evals/golden_eval.py calibrate
 SIMILARITY_THRESHOLD = 0.45
 
 # Sentences shorter than this carry too little signal to match against.
 _MIN_CHUNK_CHARS = 20
+
+# pymupdf4llm renders a decimal point in prose as `_._`, so "28.4" reaches this
+# module as "28 _._ 4". Comparing numbers without repairing that first would
+# flag every correctly-extracted decimal as a hallucination.
+_DECIMAL_ARTEFACT_RE = re.compile(r"(\d)\s*_\.\_\s*(\d)")
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+# Numbers too generic to carry evidence. A year or a small ordinal appears in
+# almost any paper, so requiring it to match adds no signal and costs recall.
+_UNINFORMATIVE_NUMBERS = {str(y) for y in range(1900, 2100)}
+
+
+def normalise_numbers(text: str) -> str:
+    """Repair extractor artefacts so numbers can be compared as numbers."""
+    if not text:
+        return ""
+    repaired = _DECIMAL_ARTEFACT_RE.sub(r"\1.\2", text)
+    return re.sub(r"\s+", " ", repaired.replace("_", ""))
+
+
+def numbers_in(text: str) -> List[str]:
+    """Every number in `text`, normalised, with trailing zeros trimmed.
+
+    `28.40` and `28.4` are the same measurement; comparing the raw strings would
+    make a correct extraction indistinguishable from an invented one.
+    """
+    out: List[str] = []
+    for raw in _NUMBER_RE.findall(normalise_numbers(text)):
+        value = raw.rstrip("0").rstrip(".") if "." in raw else raw
+        out.append(value or "0")
+    return out
+
+
+def _numeric_verdict(claim: str, source_numbers: set) -> Tuple[bool, List[str]]:
+    """Do the numbers this claim asserts actually occur in the paper?
+
+    Returns ``(decided, missing)``. `decided` is False when the claim asserts no
+    informative number, in which case the semantic rule takes over.
+
+    Deliberately conservative in one direction: a number the summary *derived*
+    (a delta, a mean) will not appear verbatim and gets flagged. Surfacing a
+    correct-but-derived figure for review is the safe error; silently blessing a
+    fabricated one is not.
+    """
+    asserted = [n for n in numbers_in(claim) if n not in _UNINFORMATIVE_NUMBERS]
+    if not asserted:
+        return False, []
+    missing = [n for n in asserted if n not in source_numbers]
+    return True, missing
 
 
 def _unverified(claim: str, reason: str) -> Dict:
@@ -96,16 +150,36 @@ def verify_claims(
     # batch_embed normalises its output, so the dot product is the cosine similarity.
     sims = claim_emb @ chunk_emb.T          # (n_claims, n_chunks)
 
+    # Every number the paper actually states, gathered once.
+    source_numbers = set()
+    for _, sentence in source_chunks:
+        source_numbers.update(numbers_in(sentence))
+
     results: List[Dict] = []
     for claim, row in zip(claims, sims):
         best_idx = int(np.argmax(row))
         best_sim = float(row[best_idx])
-        results.append({
+
+        decided, missing = _numeric_verdict(claim, source_numbers)
+        if decided:
+            grounded = not missing
+            rule = "numeric"
+        else:
+            grounded = bool(best_sim >= SIMILARITY_THRESHOLD)
+            rule = "semantic"
+
+        entry = {
             "claim": claim,
-            "grounded": bool(best_sim >= SIMILARITY_THRESHOLD),
+            "grounded": grounded,
             "best_similarity": round(best_sim, 4),
             "source_section": source_chunks[best_idx][0],
-        })
+            "rule": rule,
+        }
+        if missing:
+            # Naming the offending value makes the flag actionable instead of a
+            # bare red badge the reader has to re-derive.
+            entry["unsupported_numbers"] = missing
+        results.append(entry)
     return results
 
 

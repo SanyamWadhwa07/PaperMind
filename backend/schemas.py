@@ -1,6 +1,6 @@
 """Pydantic models for FastAPI request/response validation."""
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, Any
 import re
 
@@ -96,6 +96,47 @@ class ArxivProcessRequest(BaseModel):
         if not match:
             raise ValueError('Invalid arXiv ID format. Expected e.g. 2311.12345 or 2311.12345v2')
         return match.group(1)
+
+
+class ArxivJobRequest(BaseModel):
+    """POST /api/process/jobs/arxiv — enqueue rather than process inline."""
+    arxiv_id: str
+    # 0 = interactive (Home, Discover). BatchPage sends 10 explicitly via
+    # ArxivBatchJobRequest below; this default is for the single-paper path.
+    # Bounded deliberately: this is client-supplied and feeds the queue's
+    # `ORDER BY priority ASC`, so an unbounded value let one caller send
+    # priority=-2**31 and jump ahead of every other user's interactive job.
+    priority: int = Field(default=0, ge=0, le=10)
+
+    @field_validator('arxiv_id')
+    @classmethod
+    def validate_arxiv_id(cls, v: str) -> str:
+        v = v.strip()
+        match = re.search(r'(\d{4}\.\d{4,5}(?:v\d+)?)', v)
+        if not match:
+            raise ValueError('Invalid arXiv ID format. Expected e.g. 2311.12345 or 2311.12345v2')
+        return match.group(1)
+
+
+class ArxivBatchJobRequest(BaseModel):
+    """POST /api/process/jobs/batch"""
+    arxiv_ids: list[str]
+
+    @field_validator('arxiv_ids')
+    @classmethod
+    def validate_ids(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError('Provide at least 1 arXiv ID')
+        if len(v) > 10:
+            raise ValueError('Maximum 10 papers per batch')
+        cleaned = []
+        for raw in v:
+            match = re.search(r'(\d{4}\.\d{4,5}(?:v\d+)?)', str(raw).strip())
+            if match:
+                cleaned.append(match.group(1))
+        if not cleaned:
+            raise ValueError('None of the provided IDs looked like a valid arXiv ID')
+        return cleaned
 
 
 class FeedbackRequest(BaseModel):

@@ -137,7 +137,7 @@ export default function DashboardPage() {
   const [sortBy, setSortBy] = useState('created_at')
   const [searchMode, setSearchMode] = useState('keyword') // 'keyword' | 'semantic'
   const [semanticSearching, setSemanticSearching] = useState(false)
-  const [monthlySummaries, setMonthlySummaries] = useState({})
+  const [dailySummaries, setDailySummaries] = useState({})
   const [recentActivity, setRecentActivity] = useState([])
 
   // `searchTerm` is deliberately read from a ref rather than listed as a
@@ -173,7 +173,7 @@ export default function DashboardPage() {
         if (statsResult.status === 'fulfilled') {
           const data = statsResult.value
           setStats(data.stats)
-          setMonthlySummaries(data.monthly_summaries || {})
+          setDailySummaries(data.daily_summaries || {})
           setRecentActivity(data.recent_activity || [])
         }
 
@@ -285,7 +285,7 @@ export default function DashboardPage() {
       </Card>
 
       <ActivityChart
-        monthlySummaries={monthlySummaries}
+        dailySummaries={dailySummaries}
         recentActivity={recentActivity}
       />
 

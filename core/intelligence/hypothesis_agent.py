@@ -37,14 +37,16 @@ class HypothesisGenerator(BackendAwareReActAgent):
         parsed = parse_json_object(final_answer)
         if parsed:
             return parsed
-        # Fallback: wrap raw text as a single hypothesis
+        # Fallback: wrap the raw text as a single hypothesis rather than dropping it, but
+        # don't invent a novelty_score or a rationale the model never gave — a hardcoded
+        # 0.5 rendered next to real computed scores reads as a real one.
         return {
             "hypotheses": [
                 {
                     "statement": final_answer[:500],
-                    "rationale": "Generated from corpus analysis",
+                    "rationale": None,
                     "supporting_papers": input_data.get("paper_ids", []),
-                    "novelty_score": 0.5,
+                    "novelty_score": None,
                 }
             ]
         }

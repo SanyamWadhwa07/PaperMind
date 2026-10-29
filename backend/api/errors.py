@@ -26,10 +26,20 @@ class AppError(Exception):
     status_code: int = 400
     code: str = 'app_error'
 
-    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.details = details or {}
+        # Response headers the failure itself requires — a 429 without
+        # Retry-After leaves a well-behaved client guessing when to come back,
+        # and guessing clients retry in lockstep.
+        self.headers = headers or {}
 
 
 class ValidationError(AppError):
@@ -98,6 +108,7 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(code=exc.code, message=exc.message, details=exc.details),
+            headers=getattr(exc, 'headers', None) or None,
         )
 
     @app.exception_handler(RepositoryError)

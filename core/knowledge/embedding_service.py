@@ -5,11 +5,11 @@ Used for paper-to-paper similarity search via Supabase pgvector.
 """
 
 from __future__ import annotations
-import logging
+import structlog
 from typing import List, Optional, Dict, Any
 import numpy as np
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _model_instance = None
 
@@ -20,9 +20,9 @@ def _get_model():
         try:
             from sentence_transformers import SentenceTransformer
             _model_instance = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("embedding_model_loaded: all-MiniLM-L6-v2")
+            logger.info("embedding_model_loaded", model="all-MiniLM-L6-v2")
         except Exception as e:
-            logger.error("embedding_model_load_failed: %s", str(e))
+            logger.error("embedding_model_load_failed", error=str(e))
             raise
     return _model_instance
 
@@ -72,5 +72,5 @@ def find_similar_papers(
         ).execute()
         return result.data or []
     except Exception as e:
-        logger.warning("similarity_search_failed: %s", str(e))
+        logger.warning("similarity_search_failed", error=str(e))
         return []

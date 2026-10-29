@@ -5,7 +5,7 @@ import {
   Upload, Search, X, BarChart2, FileText, CheckCircle2, AlertCircle, Circle
 } from 'lucide-react'
 import { batch, papers } from '../lib/api'
-import { invalidate } from '../lib/query'
+import { enqueueArxivBatch, enqueueUpload, useProcessingJobs } from '../lib/processingStore'
 import {
   Bento,
   BentoItem,
@@ -21,14 +21,43 @@ import {
 } from '../components/ui/primitives'
 
 const STATUS_ICON = {
-  processing: <Spinner size="sm" className="text-accent" />,
-  done: <CheckCircle2 className="h-4 w-4 text-success" />,
-  error: <AlertCircle className="h-4 w-4 text-danger" />,
+  queued: <Circle className="h-3.5 w-3.5 text-ink-faint" aria-hidden="true" />,
+  running: <Spinner size="sm" className="text-accent" />,
+  succeeded: <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />,
+  failed: <AlertCircle className="h-4 w-4 text-danger" aria-hidden="true" />,
+  duplicate: <CheckCircle2 className="h-4 w-4 text-ink-faint" aria-hidden="true" />,
+  cancelled: <AlertCircle className="h-4 w-4 text-ink-faint" aria-hidden="true" />,
 }
 
 /** Matches the server's cap in `BatchCompareRequest` — over ten, the comparison
  *  request is rejected by validation before it reaches the service. */
 const MAX_QUEUE = 10
+
+/** Remembers which jobs belong to "this" batch across a reload — the jobs
+ *  themselves live server-side (`processingStore` polls `GET /process/jobs`
+ *  regardless of this page), but without this the submitted-status view had
+ *  no way to know which of those rows were this page's, so a reload silently
+ *  reset the batch to empty. */
+const STORAGE_KEY = 'papermind:batch-submission'
+
+function loadSubmission() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    return parsed && Array.isArray(parsed.jobIds) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function saveSubmission(submission) {
+  try {
+    if (submission) localStorage.setItem(STORAGE_KEY, JSON.stringify(submission))
+    else localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // Private browsing / storage full — the batch just won't survive a reload.
+  }
+}
 
 export default function BatchPage() {
   const toast = useToast()
@@ -38,13 +67,28 @@ export default function BatchPage() {
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
 
-  // queue: [{id?, arxivId?, title, status, summaryId?}]
+  // Pre-submission staging list: [{id, arxivId?, file?, title}]. Nothing here
+  // has a status of its own — items just sit until Queue is pressed, at which
+  // point the pipeline runs server-side and this list is cleared in favor of
+  // the submitted-jobs view below.
   const [queue, setQueue] = useState([])
-  const [processing, setProcessing] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // The batch actually sent to the server: which job ids (and, for the arXiv
+  // half, which batch_id) to pick out of the global job list polled by
+  // processingStore. Persisted so a reload doesn't lose track of it.
+  const [submission, setSubmission] = useState(loadSubmission)
 
   // comparison
   const [comparing, setComparing] = useState(false)
   const [comparisonData, setComparisonData] = useState(null)
+
+  const allJobs = useProcessingJobs()
+  const submittedJobs = submission
+    ? allJobs
+        .filter((j) => j.batch_id === submission.batchId || submission.jobIds.includes(j.id))
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    : []
 
   // ── arXiv search ────────────────────────────────────────────────────────────
   const handleSearch = async (e) => {
@@ -73,14 +117,12 @@ export default function BatchPage() {
     }
     setQueue((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), arxivId: paper.arxiv_id, title: paper.title, status: 'pending', summaryId: null },
+      { id: crypto.randomUUID(), arxivId: paper.arxiv_id, title: paper.title },
     ])
-    setComparisonData(null)
   }
 
   const removeFromQueue = (id) => {
     setQueue((prev) => prev.filter((q) => q.id !== id))
-    setComparisonData(null)
   }
 
   // ── PDF upload → queue ───────────────────────────────────────────────────────
@@ -99,10 +141,10 @@ export default function BatchPage() {
       )
     }
 
-    // One functional update for the whole selection. The previous version
-    // called setQueue per file while testing `queue.length` from the render
-    // closure, so that length never moved: selecting 15 PDFs at once passed the
-    // cap check 15 times and queued all of them.
+    // One functional update for the whole selection. A version that called
+    // setQueue per file while testing `queue.length` from the render closure
+    // would never see that length move: selecting 15 PDFs at once would pass
+    // the cap check 15 times and queue all of them.
     let overflow = 0
     setQueue((prev) => {
       const room = MAX_QUEUE - prev.length
@@ -113,94 +155,78 @@ export default function BatchPage() {
           id: crypto.randomUUID(),
           file,
           title: file.name.replace(/\.pdf$/i, ''),
-          status: 'pending',
-          summaryId: null,
         })),
       ]
     })
     if (overflow) {
       toast.error(`Queue holds ${MAX_QUEUE} papers — ${overflow} left out`)
     }
-    setComparisonData(null)
   }
 
-  // ── process one item ─────────────────────────────────────────────────────────
-  /** Resolves to true when the paper was summarised and saved. */
-  const processItem = async (item) => {
-    setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'processing' } : q))
+  // ── submit the whole staging list ────────────────────────────────────────────
+  // Enqueues and returns almost immediately — the pipeline runs in the
+  // background (see the processing tray) — so unlike the old sequential
+  // per-item loop, this is one round trip for the arXiv half (one batch_id)
+  // plus one parallel round trip per upload, not a loop that burns through
+  // provider rate limits waiting on a full pipeline run per item.
+  const handleSubmit = async () => {
+    if (!queue.length) { toast.error('Add at least one paper to the queue'); return }
+    setSubmitting(true)
     try {
-      // The upload field is named `file` to match the API; sending `pdf` was
-      // rejected with a validation error before it ever reached the pipeline.
-      const data = item.file
-        ? await papers.processUpload(item.file)
-        : await papers.processArxiv(item.arxivId)
+      const arxivItems = queue.filter((q) => q.arxivId)
+      const fileItems = queue.filter((q) => q.file)
+      const jobIds = []
+      let batchId = null
 
-      const summaryId = data?.summary_id || data?.id
-      if (!summaryId) {
-        // A 2xx with no id means the row was never written. Recording it as
-        // done produced a queue item that looked finished but could not be
-        // opened, and silently shrank the comparison below the two-paper floor.
-        throw new Error('Processed, but no summary was saved')
+      if (arxivItems.length) {
+        const result = await enqueueArxivBatch(arxivItems.map((q) => q.arxivId))
+        batchId = result.batch_id
+        jobIds.push(...result.jobs.map((j) => j.id))
+        if (result.rejected?.length) {
+          toast.error(
+            `${result.rejected.length} paper${result.rejected.length === 1 ? '' : 's'} skipped — already queued or in your library`,
+          )
+        }
       }
-      setQueue((prev) =>
-        prev.map((q) => q.id === item.id ? { ...q, status: 'done', summaryId } : q)
-      )
-      return true
-    } catch (error) {
-      setQueue((prev) =>
-        prev.map((q) =>
-          q.id === item.id
-            ? { ...q, status: 'error', error: error.message || 'Processing failed' }
-            : q,
-        ),
-      )
-      return false
-    }
-  }
 
-  // ── process all pending ───────────────────────────────────────────────────────
-  const processBatch = async () => {
-    const pending = queue.filter((q) => q.status === 'pending')
-    if (!pending.length) {
-      toast.error('No pending papers to process')
-      return
-    }
-    setComparisonData(null)
-    setProcessing(true)
-
-    // Sequential on purpose. Each paper runs a full LLM pipeline, so firing the
-    // whole queue at once burns through provider rate limits and every request
-    // fails together.
-    let ok = 0
-    try {
-      for (const item of pending) {
-        if (await processItem(item)) ok += 1
+      if (fileItems.length) {
+        const settled = await Promise.allSettled(fileItems.map((q) => enqueueUpload(q.file)))
+        let failed = 0
+        for (const r of settled) {
+          if (r.status === 'fulfilled') jobIds.push(r.value.id)
+          else failed += 1
+        }
+        if (failed) {
+          toast.error(`${failed} upload${failed === 1 ? '' : 's'} failed to queue`)
+        }
       }
+
+      if (!jobIds.length) {
+        toast.error('Nothing was queued')
+        return
+      }
+
+      const next = { batchId, jobIds }
+      setSubmission(next)
+      saveSubmission(next)
+      setQueue([])
+      setComparisonData(null)
+      toast.success(`Queued ${jobIds.length} paper${jobIds.length === 1 ? '' : 's'} — track progress in the tray`)
     } finally {
-      setProcessing(false)
+      setSubmitting(false)
     }
+  }
 
-    // Every paper in the queue is a new row, so the library, the corpus graphs,
-    // and the dashboard counts are all stale now.
-    invalidate('summaries')
-    invalidate('corpus')
-    invalidate('graph')
-
-    // This reported success unconditionally, so a batch where all ten papers
-    // failed still ended on "Batch processing complete".
-    const failed = pending.length - ok
-    if (!ok) {
-      toast.error(`All ${failed} papers failed to process`)
-    } else if (failed) {
-      toast.info(`${ok} of ${pending.length} processed — ${failed} failed`)
-    } else {
-      toast.success(`Processed ${ok} paper${ok === 1 ? '' : 's'}`)
-    }
+  const startNewBatch = () => {
+    setSubmission(null)
+    saveSubmission(null)
+    setComparisonData(null)
   }
 
   // ── compare all done papers ───────────────────────────────────────────────────
+  const doneJobs = submittedJobs.filter((j) => j.status === 'succeeded' && j.result_summary_id)
   const compareAll = async () => {
-    const ids = queue.filter((q) => q.status === 'done' && q.summaryId).map((q) => q.summaryId)
+    const ids = doneJobs.map((j) => j.result_summary_id)
     if (ids.length < 2) { toast.error('Need at least 2 processed papers to compare'); return }
     setComparing(true)
     setComparisonData(null)
@@ -213,9 +239,8 @@ export default function BatchPage() {
     }
   }
 
-  const doneCount = queue.filter((q) => q.status === 'done').length
-  const pendingCount = queue.filter((q) => q.status === 'pending').length
-  const errorCount = queue.filter((q) => q.status === 'error').length
+  const activeCount = submittedJobs.filter((j) => j.status === 'queued' || j.status === 'running').length
+  const failedCount = submittedJobs.filter((j) => j.status === 'failed').length
 
   return (
     <div className="animate-rise mx-auto max-w-6xl space-y-8 3xl:max-w-7xl">
@@ -223,8 +248,9 @@ export default function BatchPage() {
         <Eyebrow className="block">Many at once</Eyebrow>
         <h1 className="display mt-2 text-display-sm text-ink">Batch</h1>
         <p className="mt-2 max-w-prose text-sm text-ink-muted">
-          Queue up to ten papers. They run one at a time, and once they are done
-          you can compare what each of them measured.
+          Queue up to ten papers. They process in the background — track
+          progress in the tray, top right — and once they&apos;re done you can
+          compare what each of them measured.
         </p>
       </header>
 
@@ -318,88 +344,107 @@ export default function BatchPage() {
         <Card>
           <CardHeader
             title="Queue"
-            description={
-              [
-                `${queue.length} of ${MAX_QUEUE} slots used`,
-                doneCount ? `${doneCount} done` : null,
-                errorCount ? `${errorCount} failed` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')
-            }
+            description={`${queue.length} of ${MAX_QUEUE} slots used`}
             action={
-              <div className="flex shrink-0 gap-2">
-                {pendingCount > 0 && (
-                  <Button size="sm" onClick={processBatch} loading={processing}>
-                    Process {pendingCount}
-                  </Button>
-                )}
-                {doneCount >= 2 && (
-                  <Button
-                    size="sm"
-                    variant="contrast"
-                    onClick={compareAll}
-                    loading={comparing}
-                    // Comparing halfway through a run compares half a batch and
-                    // caches the result as if it were the whole thing.
-                    disabled={processing}
-                  >
-                    <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    Compare {doneCount}
-                  </Button>
-                )}
-              </div>
+              <Button size="sm" onClick={handleSubmit} loading={submitting}>
+                Queue {queue.length}
+              </Button>
             }
           />
-          {/* Ten rows is taller than it looks once errors wrap, and the queue
-              sits above the comparison it produces — letting it grow pushes the
-              actual result off-screen. */}
-          <ScrollArea maxHeight="22rem" aria-label="Processing queue">
+          <ScrollArea maxHeight="22rem" aria-label="Papers staged for this batch">
             <CardBody className="py-0">
               <ul className="divide-y divide-line">
                 {queue.map((item) => (
                   <li key={item.id} className="flex items-center gap-3 py-3">
-                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                      {STATUS_ICON[item.status] || (
-                        <Circle className="h-3.5 w-3.5 text-ink-faint" aria-hidden="true" />
-                      )}
-                    </span>
                     <span
                       className="min-w-0 flex-1 truncate font-serif text-sm text-ink"
                       title={item.title}
                     >
                       {item.title}
                     </span>
-                    {item.status === 'error' && (
+                    <button
+                      type="button"
+                      onClick={() => removeFromQueue(item.id)}
+                      className="shrink-0 rounded-sm p-1 text-ink-faint transition-colors duration-fast ease-out hover:text-danger disabled:opacity-40"
+                      disabled={submitting}
+                      aria-label={`Remove ${item.title}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </CardBody>
+          </ScrollArea>
+        </Card>
+      )}
+
+      {submission && (
+        <Card>
+          <CardHeader
+            title="Submitted"
+            description={
+              [
+                submittedJobs.length ? `${submittedJobs.length} in this batch` : null,
+                activeCount ? `${activeCount} in progress` : null,
+                doneJobs.length ? `${doneJobs.length} done` : null,
+                failedCount ? `${failedCount} failed` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || 'Waiting on the queue…'
+            }
+            action={
+              <div className="flex shrink-0 gap-2">
+                {doneJobs.length >= 2 && (
+                  <Button
+                    size="sm"
+                    variant="contrast"
+                    onClick={compareAll}
+                    loading={comparing}
+                  >
+                    <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Compare {doneJobs.length}
+                  </Button>
+                )}
+                <Button size="sm" variant="secondary" onClick={startNewBatch}>
+                  New batch
+                </Button>
+              </div>
+            }
+          />
+          <ScrollArea maxHeight="22rem" aria-label="Submitted batch status">
+            <CardBody className="py-0">
+              <ul className="divide-y divide-line">
+                {submittedJobs.map((job) => (
+                  <li key={job.id} className="flex items-center gap-3 py-3">
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                      {STATUS_ICON[job.status] || (
+                        <Circle className="h-3.5 w-3.5 text-ink-faint" aria-hidden="true" />
+                      )}
+                    </span>
+                    <span
+                      className="min-w-0 flex-1 truncate font-serif text-sm text-ink"
+                      title={job.display_title}
+                    >
+                      {job.display_title}
+                    </span>
+                    {job.status === 'failed' && job.error_message && (
                       <span
                         className="max-w-[16rem] shrink-0 truncate text-caption text-danger"
-                        title={item.error}
+                        title={job.error_message}
                       >
-                        {item.error}
+                        {job.error_message}
                       </span>
                     )}
-                    {item.status === 'done' && item.summaryId && (
+                    {(job.status === 'succeeded' || job.status === 'duplicate') && job.result_summary_id && (
                       <a
-                        href={`/summary/${item.summaryId}`}
+                        href={`/summary/${job.result_summary_id}`}
                         className="shrink-0 text-caption text-accent hover:underline"
                         target="_blank"
                         rel="noreferrer"
                       >
                         Open
                       </a>
-                    )}
-                    {item.status !== 'processing' && (
-                      <button
-                        type="button"
-                        onClick={() => removeFromQueue(item.id)}
-                        className="shrink-0 rounded-sm p-1 text-ink-faint transition-colors duration-fast ease-out hover:text-danger disabled:opacity-40"
-                        // Removing a queued paper mid-run drops it from the loop
-                        // already iterating over it.
-                        disabled={processing}
-                        aria-label={`Remove ${item.title}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
                     )}
                   </li>
                 ))}

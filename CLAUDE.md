@@ -62,7 +62,8 @@ PaperMind/
 ├── README.md
 ├── requirements.txt               # Root Python deps
 ├── requirements-dev.txt           # pytest, rouge-score — dev/test/eval only
-├── docker-compose.yml             # api + web + redis (+ optional workers profile)
+├── docker-compose.yml             # api + web + redis (+ commented-out `workers`
+│                                   #   profile — see the note at the bottom of the file)
 ├── docs/                          # TESTING.md, BENCHMARKS.md, assets/
 ├── evals/run_benchmark.py         # full-pipeline benchmark against real PDFs
 ├── setups/                        # one-shot PowerShell setup scripts (Windows)
@@ -92,8 +93,11 @@ PaperMind/
 │   │   ├── deps.py                 # DI wiring — every repo/service as a FastAPI Depends
 │   │   ├── errors.py               # AppError hierarchy + handlers → one JSON envelope
 │   │   ├── middleware.py           # RequestContext (X-Request-ID) + SecurityHeaders
-│   │   ├── rate_limit.py           # Named limit buckets, per-user keying. Applied
-│   │   │                           #   to the pipeline routes and /batch/compare.
+│   │   ├── rate_limit.py           # Token bucket, per-user keying. Shared across
+│   │   │                           #   processes via an atomic Redis Lua script;
+│   │   │                           #   per-process buckets (N workers = N x the
+│   │   │                           #   limit) without Redis. Applied to the
+│   │   │                           #   pipeline routes, auth, and /batch/compare.
 │   │   ├── response_cache.py       # Short-TTL cache for the corpus-wide read models
 │   │   │                           #   (/api/corpus/*). Redis when reachable, per-worker
 │   │   │                           #   LRU otherwise. Keyed per user; every write path
@@ -102,7 +106,10 @@ PaperMind/
 │   │   └── logging_config.py       # structlog; JSON in prod, console in dev
 │   │
 │   ├── routes/                     # HTTP-only concerns; delegate to services/
-│   │   ├── process_paper.py        # /api/process/upload, /api/process/arxiv
+│   │   ├── process_jobs.py         # /api/process/jobs* — enqueue + poll background
+│   │   │                           #   processing jobs; what the SPA actually calls
+│   │   ├── process_paper.py        # /api/process/upload, /api/process/arxiv — sync,
+│   │   │                           #   deprecated, kept for evals/scripts/tests only
 │   │   ├── summaries.py            # /api/summaries CRUD
 │   │   ├── search.py               # /api/search — arXiv keyword search
 │   │   ├── profile.py              # /api/profile/*, avatar upload
@@ -321,6 +328,7 @@ extracted values; the orchestrator resolves via voting.
 | `summary_feedback` | 1–5 star ratings + comments |
 | `collections`, `collection_papers` | User paper folders (M2M) |
 | `paper_lineage` | Temporal/relational links, written by `RelationAgent` |
+| `processing_jobs` | Background paper-processing queue (upload/arXiv), claimed by `JobWorker` via `claim_processing_job`/`heartbeat_processing_job`/`release_processing_job` RPCs — see `migrations/012_processing_jobs.sql` |
 
 ---
 
@@ -343,8 +351,14 @@ at `/api/docs` (disabled when `APP_ENV=production`).
 ### Paper Processing
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| POST | `/api/process/upload` | ✓ | Upload PDF → process → save |
-| POST | `/api/process/arxiv` | ✓ | arXiv ID → download → process → save |
+| POST | `/api/process/jobs` | ✓ | Enqueue a PDF upload; returns 202 + job immediately |
+| POST | `/api/process/jobs/arxiv` | ✓ | Enqueue one arXiv id; returns 202 + job immediately |
+| POST | `/api/process/jobs/batch` | ✓ | Enqueue up to 10 arXiv ids under one `batch_id` |
+| GET | `/api/process/jobs` | ✓ | List this user's jobs (optionally `active=true`) |
+| GET | `/api/process/jobs/{id}` | ✓ | Single job status |
+| DELETE | `/api/process/jobs/{id}` | ✓ | Cancel a queued job, or dismiss a terminal one |
+| POST | `/api/process/upload` | ✓ | **Deprecated**, synchronous — blocks for the full pipeline. Kept for evals/scripts/tests; the SPA uses the jobs routes above |
+| POST | `/api/process/arxiv` | ✓ | **Deprecated**, synchronous — same as above |
 
 ### Summaries & Search
 | Method | Endpoint | Auth | Description |

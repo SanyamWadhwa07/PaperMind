@@ -39,8 +39,17 @@ def _get_redis():
     return _redis_client
 
 
+# Bump when a pipeline change makes previously-cached payloads wrong. Entries
+# under an older version are simply never read again and expire on their own TTL.
+# v2: entries written before the `_store_figures` fix carry figures with no
+# `image_url` (the upload result was discarded on the success path), and a cache
+# hit skips figure storage entirely — so every hit would have rendered
+# caption-only forever without this.
+_CACHE_VERSION = 'v2'
+
+
 def pdf_cache_key(pdf_bytes: bytes) -> str:
-    return 'papermind:pdf:' + hashlib.sha256(pdf_bytes).hexdigest()
+    return f'papermind:pdf:{_CACHE_VERSION}:' + hashlib.sha256(pdf_bytes).hexdigest()
 
 
 def get_cached_result(pdf_bytes: bytes) -> Optional[Dict[str, Any]]:

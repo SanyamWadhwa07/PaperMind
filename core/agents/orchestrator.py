@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Set
 import asyncio
 import time
-import logging
 import structlog
 from collections import defaultdict
 
@@ -206,6 +205,17 @@ class ParallelAgentOrchestrator:
                     unpacked.append(_res if isinstance(_res, dict) else {})
 
             stage_status['structure'] = {'status': 'ok', 'error': None}
+            # Table extraction is a sub-step of the (sequential, already-succeeded)
+            # structure stage, not its own agent — but its failure mode is
+            # identical in shape to the parallel agents' above ("no tables" and
+            # "extraction crashed" both look like an empty list), so it gets its
+            # own stage_status entry rather than silently sharing 'structure's
+            # unconditional 'ok'.
+            table_error = structure_result.get('metadata', {}).get('table_extraction_error')
+            stage_status['tables'] = (
+                {'status': 'failed', 'error': table_error} if table_error
+                else {'status': 'ok', 'error': None}
+            )
             self.stage_status = stage_status
 
             (entity_result, results_result, figure_result, reasoning_result,

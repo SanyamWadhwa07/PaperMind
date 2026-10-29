@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { FileUp, Search, Sparkles, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { papers } from '../lib/api'
+import { enqueueUpload, enqueueArxiv, useJobFor } from '../lib/processingStore'
+import { UploadProgressRow } from '../components/ProcessingTray'
 import { useAuth } from '../contexts/AuthContext'
 import {
   Badge,
@@ -12,74 +14,14 @@ import {
   Eyebrow,
   Identifier,
   Input,
-  Spinner,
 } from '../components/ui/primitives'
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
-/** The four stages the pipeline moves through, shown while a paper processes. */
-const STAGES = [
-  { id: 'extract', label: 'Reading the PDF' },
-  { id: 'analyse', label: 'Extracting entities and results' },
-  { id: 'summarise', label: 'Writing summaries' },
-  { id: 'link', label: 'Linking to your library' },
-]
+function SearchResult({ paper, onProcess }) {
+  const job = useJobFor(paper.arxiv_id)
+  const busy = Boolean(job)
 
-function ProcessingPanel({ stage, progress }) {
-  return (
-    <Card>
-      <CardBody>
-        <div className="flex items-center gap-3">
-          <Spinner className="text-accent" />
-          <div>
-            <p className="text-sm font-medium text-ink">Processing your paper</p>
-            <p className="text-xs text-ink-muted">
-              A full pass takes a few minutes. You can leave this page open.
-            </p>
-          </div>
-        </div>
-
-        {/* The section spine, reused as a progress indicator: each stage is a
-            node on the same rail that structures a paper. */}
-        <ol className="spine mt-5 space-y-3">
-          {STAGES.map((item, index) => (
-            <li
-              key={item.id}
-              className="spine-node"
-              data-active={index <= stage}
-            >
-              <span
-                className={
-                  index <= stage
-                    ? 'text-sm text-ink'
-                    : 'text-sm text-ink-faint'
-                }
-              >
-                {item.label}
-              </span>
-            </li>
-          ))}
-        </ol>
-
-        {progress > 0 && progress < 100 && (
-          <div className="mt-4">
-            <div className="h-1 overflow-hidden rounded-full bg-surface-sunk">
-              <div
-                className="h-full rounded-full bg-accent transition-[width] duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="mt-1.5 font-mono tabular text-xs text-ink-faint">
-              {progress}% uploaded
-            </p>
-          </div>
-        )}
-      </CardBody>
-    </Card>
-  )
-}
-
-function SearchResult({ paper, onProcess, busy }) {
   return (
     <Card interactive>
       <CardBody className="space-y-2">
@@ -102,7 +44,7 @@ function SearchResult({ paper, onProcess, busy }) {
 
         <div className="pt-1">
           <Button size="sm" onClick={() => onProcess(paper.arxiv_id)} disabled={busy}>
-            Summarise this paper
+            {busy ? 'Queued' : 'Summarise this paper'}
           </Button>
         </div>
       </CardBody>
@@ -118,10 +60,10 @@ export default function HomePage() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
-  const [processing, setProcessing] = useState(false)
-  const [stage, setStage] = useState(0)
-  const [uploadProgress, setUploadProgress] = useState(0)
   const [dragging, setDragging] = useState(false)
+  // Only tracks the multipart body upload itself — the job doesn't exist yet
+  // while this runs, so processingStore has nothing to show for it.
+  const [uploading, setUploading] = useState(null) // { progress } | null
 
   const requireAuth = useCallback(() => {
     if (isAuthenticated) return true
@@ -148,32 +90,17 @@ export default function HomePage() {
     }
   }
 
-  /** Advance the stage indicator while the request is in flight. */
-  const runWithStages = async (work) => {
-    setProcessing(true)
-    setStage(0)
-    const timers = [
-      setTimeout(() => setStage(1), 4000),
-      setTimeout(() => setStage(2), 20000),
-      setTimeout(() => setStage(3), 60000),
-    ]
-    try {
-      return await work()
-    } finally {
-      timers.forEach(clearTimeout)
-      setProcessing(false)
-      setUploadProgress(0)
-    }
-  }
-
   const processArxiv = async (arxivId) => {
     if (!requireAuth()) return
     try {
-      const data = await runWithStages(() => papers.processArxiv(arxivId))
-      toast.success('Paper summarised')
-      navigate(`/summary/${data.summary_id || data.id}`)
+      const job = await enqueueArxiv(arxivId)
+      toast.success(`Queued — "${job.display_title}"`)
     } catch (error) {
-      toast.error(error.message)
+      if (error.status === 409) {
+        toast(error.message, { icon: 'ℹ️' })
+      } else {
+        toast.error(error.message)
+      }
     }
   }
 
@@ -189,14 +116,20 @@ export default function HomePage() {
       return
     }
 
+    setUploading({ progress: 0 })
     try {
-      const data = await runWithStages(() =>
-        papers.processUpload(file, { onProgress: setUploadProgress }),
-      )
-      toast.success('Paper summarised')
-      navigate(`/summary/${data.summary_id || data.id}`)
+      const job = await enqueueUpload(file, {
+        onProgress: (progress) => setUploading({ progress }),
+      })
+      toast.success(`Queued — "${job.display_title}"`)
     } catch (error) {
-      toast.error(error.message)
+      if (error.status === 409) {
+        toast(error.message, { icon: 'ℹ️' })
+      } else {
+        toast.error(error.message)
+      }
+    } finally {
+      setUploading(null)
     }
   }
 
@@ -222,113 +155,117 @@ export default function HomePage() {
         </p>
       </section>
 
-      {processing ? (
-        <ProcessingPanel stage={stage} progress={uploadProgress} />
-      ) : (
-        <>
-          <section
-            onDragOver={(e) => {
-              e.preventDefault()
-              setDragging(true)
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            className={`rounded-lg border-2 border-dashed p-10 text-center transition-colors ${
-              dragging
-                ? 'border-accent bg-accent-soft'
-                : 'border-line hover:border-line-strong'
-            }`}
-          >
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-surface-sunk">
-              <FileUp className="h-5 w-5 text-ink-faint" aria-hidden="true" />
-            </div>
-            <p className="text-sm font-medium text-ink">
-              Drop a PDF here, or choose a file
+      {/* The input UI never unmounts while a paper processes — that used to be
+          replaced wholesale by a full-page progress panel, which is also why
+          this page could only ever track one paper at a time. Progress now
+          lives in the tray (components/ProcessingTray.jsx), which follows
+          across every route. */}
+      <section
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        className={`rounded-lg border-2 border-dashed p-10 text-center transition-colors ${
+          dragging
+            ? 'border-accent bg-accent-soft'
+            : 'border-line hover:border-line-strong'
+        }`}
+      >
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-surface-sunk">
+          <FileUp className="h-5 w-5 text-ink-faint" aria-hidden="true" />
+        </div>
+        <p className="text-sm font-medium text-ink">
+          Drop a PDF here, or choose a file
+        </p>
+        <p className="mt-1 text-xs text-ink-muted">PDF up to 50 MB</p>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="sr-only"
+          onChange={(e) => processFile(e.target.files?.[0])}
+        />
+        <Button
+          variant="secondary"
+          className="mt-4"
+          onClick={() => fileInputRef.current?.click()}
+          loading={Boolean(uploading)}
+        >
+          Choose file
+        </Button>
+
+        {uploading && (
+          <div className="mx-auto mt-4 max-w-xs">
+            <UploadProgressRow progress={uploading.progress} />
+            <p className="mt-1.5 font-mono tabular text-xs text-ink-faint">
+              {uploading.progress}% uploaded
             </p>
-            <p className="mt-1 text-xs text-ink-muted">PDF up to 50 MB</p>
+          </div>
+        )}
+      </section>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="sr-only"
-              onChange={(e) => processFile(e.target.files?.[0])}
+      <section>
+        <form onSubmit={onSearch} className="flex gap-2">
+          <div className="relative flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"
+              aria-hidden="true"
             />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search arXiv, or paste an ID like 1706.03762"
+              className="pl-9"
+              aria-label="Search arXiv"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('')
+                  setResults([])
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-ink-faint hover:text-ink"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <Button type="submit" loading={searching} disabled={!query.trim()}>
+            Search
+          </Button>
+        </form>
+
+        {/* A bare arXiv ID is a direct instruction, not a search term. */}
+        {/^\d{4}\.\d{4,5}(v\d+)?$/.test(query.trim()) && (
+          <div className="mt-3 flex items-center gap-2 rounded border border-accent/30 bg-accent-soft px-3 py-2">
+            <Sparkles className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+            <span className="text-sm text-ink">
+              That looks like an arXiv ID.
+            </span>
             <Button
-              variant="secondary"
-              className="mt-4"
-              onClick={() => fileInputRef.current?.click()}
+              size="sm"
+              className="ml-auto"
+              onClick={() => processArxiv(query.trim())}
             >
-              Choose file
+              Summarise it
             </Button>
-          </section>
+          </div>
+        )}
 
-          <section>
-            <form onSubmit={onSearch} className="flex gap-2">
-              <div className="relative flex-1">
-                <Search
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"
-                  aria-hidden="true"
-                />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search arXiv, or paste an ID like 1706.03762"
-                  className="pl-9"
-                  aria-label="Search arXiv"
-                />
-                {query && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuery('')
-                      setResults([])
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-ink-faint hover:text-ink"
-                    aria-label="Clear search"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              <Button type="submit" loading={searching} disabled={!query.trim()}>
-                Search
-              </Button>
-            </form>
-
-            {/* A bare arXiv ID is a direct instruction, not a search term. */}
-            {/^\d{4}\.\d{4,5}(v\d+)?$/.test(query.trim()) && (
-              <div className="mt-3 flex items-center gap-2 rounded border border-accent/30 bg-accent-soft px-3 py-2">
-                <Sparkles className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
-                <span className="text-sm text-ink">
-                  That looks like an arXiv ID.
-                </span>
-                <Button
-                  size="sm"
-                  className="ml-auto"
-                  onClick={() => processArxiv(query.trim())}
-                >
-                  Summarise it
-                </Button>
-              </div>
-            )}
-
-            {results.length > 0 && (
-              <div className="mt-5 space-y-3">
-                <Eyebrow>{results.length} results</Eyebrow>
-                {results.map((paper) => (
-                  <SearchResult
-                    key={paper.arxiv_id}
-                    paper={paper}
-                    onProcess={processArxiv}
-                    busy={processing}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        </>
-      )}
+        {results.length > 0 && (
+          <div className="mt-5 space-y-3">
+            <Eyebrow>{results.length} results</Eyebrow>
+            {results.map((paper) => (
+              <SearchResult key={paper.arxiv_id} paper={paper} onProcess={processArxiv} />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }

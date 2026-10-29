@@ -76,6 +76,12 @@ async def run_graph_summary(input_data: Dict[str, Any]) -> Dict[str, Any]:
     from core.llm.providers import resolve_provider, get_provider_info
     provider_info = get_provider_info()
 
+    # What the run actually did — models observed, tokens, per-node timing, and
+    # the prompt fingerprint. `llm_model` below is the *configured* primary and
+    # can differ from what answered whenever the fallback chain fires, so
+    # `models_observed` is the field to trust when attributing a regression.
+    run_meta = state.get("run_meta", {}) or {}
+
     # None when the judge never ran — kept as None all the way to the DB column
     # so an ungraded summary is not shown as a real score.
     raw_score = grade.get("score")
@@ -84,6 +90,17 @@ async def run_graph_summary(input_data: Dict[str, Any]) -> Dict[str, Any]:
     degraded_sections = [
         d["section"] for d in state.get("digests", []) if d.get("degraded")
     ]
+
+    # Per-claim groundedness from the graph's verify step. Three-valued on
+    # purpose: `grounded=None` means the claim could not be checked, and must
+    # never be rolled up as if it had passed.
+    claims = state.get("claims", []) or []
+    grounding = {
+        "checked": len(claims),
+        "grounded": sum(1 for c in claims if c.get("grounded") is True),
+        "ungrounded": sum(1 for c in claims if c.get("grounded") is False),
+        "unverified": sum(1 for c in claims if c.get("grounded") is None),
+    }
 
     return {
         # SummaryAgent-compatible keys
@@ -104,10 +121,12 @@ async def run_graph_summary(input_data: Dict[str, Any]) -> Dict[str, Any]:
         "graph_entities_legacy": _legacy_entities(graph_entities),
         "graph_results": graph_results,
         "grade": grade,
+        "claims": claims,
         "metadata": {
             "engine": "langgraph",
-            "llm_provider": provider_info["provider"],
-            "llm_model": provider_info["models"]["smart"],
+            "llm_provider": provider_info["provider"],          # configured primary
+            "llm_model": provider_info["models"]["smart"],      # configured, not observed
+            "run_meta": run_meta,
             "domain": domain,
             "summary_quality": quality,
             "graded": grade.get("graded", True),
@@ -116,5 +135,6 @@ async def run_graph_summary(input_data: Dict[str, Any]) -> Dict[str, Any]:
             "specific": grade.get("specific"),
             # Sections where the map step failed and raw paper text stood in.
             "degraded_sections": degraded_sections,
+            "grounding": grounding,
         },
     }

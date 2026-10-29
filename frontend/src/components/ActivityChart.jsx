@@ -49,12 +49,12 @@ const VIEWS = [
   { id: 'doughnut', label: 'Mix' },
 ];
 
-export default function ActivityChart({ monthlySummaries = {}, recentActivity = [] }) {
+export default function ActivityChart({ dailySummaries = {}, recentActivity = [] }) {
   const [chartType, setChartType] = useState('line');
   const { theme } = useTheme();
 
-  const months = Object.keys(monthlySummaries).sort();
-  const counts = months.map((month) => monthlySummaries[month]);
+  const days = Object.keys(dailySummaries).sort();
+  const counts = days.map((day) => dailySummaries[day]);
 
   const palette = useMemo(
     () => ({
@@ -72,13 +72,13 @@ export default function ActivityChart({ monthlySummaries = {}, recentActivity = 
     [theme]
   );
 
-  const monthLabel = (m, opts) => {
-    const [year, month] = m.split('-');
-    return new Date(year, month - 1).toLocaleDateString('en-US', opts);
+  const dayLabel = (d, opts) => {
+    const [year, month, date] = d.split('-');
+    return new Date(year, month - 1, date).toLocaleDateString('en-US', opts);
   };
 
   const lineChartData = {
-    labels: months.map((m) => monthLabel(m, { month: 'short', year: 'numeric' })),
+    labels: days.map((d) => dayLabel(d, { month: 'short', day: 'numeric' })),
     datasets: [
       {
         label: 'Papers summarised',
@@ -98,10 +98,10 @@ export default function ActivityChart({ monthlySummaries = {}, recentActivity = 
   };
 
   const barChartData = {
-    labels: months.map((m) => monthLabel(m, { month: 'short' })),
+    labels: days.map((d) => dayLabel(d, { month: 'short', day: 'numeric' })),
     datasets: [
       {
-        label: 'Papers per month',
+        label: 'Papers per day',
         data: counts,
         backgroundColor: palette.accent,
         borderRadius: 4,
@@ -193,7 +193,9 @@ export default function ActivityChart({ monthlySummaries = {}, recentActivity = 
     },
   };
 
-  const isEmpty = months.length === 0 && recentActivity.length === 0;
+  // days.length is never 0 — the backend zero-fills the whole window so the
+  // chart has no gaps — so emptiness is "nothing happened", not "no buckets".
+  const isEmpty = recentActivity.length === 0 && counts.every((c) => c === 0);
 
   return (
     <Card>
