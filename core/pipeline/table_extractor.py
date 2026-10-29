@@ -436,6 +436,9 @@ def _extract_in_subprocess(
     ``None`` means "retry, then fall back in-process"; ``([], "no such file")``
     means the extraction genuinely failed and no fallback will do better.
     """
+    # The child runs from the repo root, so a path relative to the caller's cwd
+    # (e.g. the job worker's uploads/jobs/<id>.pdf) must be made absolute first.
+    pdf_path = str(Path(pdf_path).resolve())
     try:
         proc = subprocess.run(
             [sys.executable, "-m", "core.pipeline.table_extractor", pdf_path, str(max_tables)],
