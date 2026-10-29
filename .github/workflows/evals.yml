@@ -35,6 +35,15 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r requirements-dev.txt
 
+      # backend/arxiv_papers/ is gitignored, so fetch each labelled paper's PDF.
+      - name: Fetch golden-set PDFs
+        run: |
+          mkdir -p backend/arxiv_papers
+          for f in evals/golden/*.json; do
+            id=$(basename "$f" .json)
+            curl -fsSL -A "PaperMind-eval/1.0" -o "backend/arxiv_papers/$id.pdf" "https://arxiv.org/pdf/$id"
+          done
+
       - name: Validate the golden set
         run: python evals/label.py check --strict -v
 

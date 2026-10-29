@@ -188,7 +188,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     stub: Dict[str, Any] = {
         "paper_id": paper_id,
-        "source_pdf": str(pdf_path.relative_to(ROOT)) if pdf_path.is_relative_to(ROOT) else str(pdf_path),
+        "source_pdf": pdf_path.relative_to(ROOT).as_posix() if pdf_path.is_relative_to(ROOT) else pdf_path.as_posix(),
         "domain": args.domain,
         "title": (result.metadata or {}).get("title", ""),
         "labelled_on": date.today().isoformat(),

@@ -104,7 +104,8 @@ def _paper_sections(doc: Dict[str, Any]) -> Dict[str, str]:
     """The paper's own text, for verifying claims against."""
     from core.pipeline.pdf_extractor import extract_pdf
 
-    pdf = ROOT / doc["source_pdf"]
+    # Labels written on Windows store backslashes; normalise so Linux CI finds the file.
+    pdf = ROOT / doc["source_pdf"].replace("\\", "/")
     if not pdf.exists():
         raise FileNotFoundError(f"{pdf} — re-fetch with: python evals/label.py init {doc['paper_id']}")
     return extract_pdf(str(pdf)).sections or {}
