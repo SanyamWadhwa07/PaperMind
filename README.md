@@ -14,6 +14,12 @@
 
 **Read a paper once. Keep what it said, what it measured, and how it relates to everything else you've read.**
 
+<br/>
+
+<a href="docs/assets/papermind-demo.mp4"><img src="docs/assets/papermind-demo.gif" alt="PaperMind demo: an arXiv ID goes in, the processing tray runs, the summary shows key findings with their numbers, then the figures extracted from the PDF" width="100%"/></a>
+
+<sub>20 s demo of the deployed frontend, made with <a href="https://github.com/latent-spaces/brag">/brag</a>. The API responses are a recording of a real stored run of 1706.03762, which took 5 min 51 s and is shown sped up. <a href="docs/assets/papermind-demo.mp4">MP4 with sound</a></sub>
+
 </div>
 
 ---
