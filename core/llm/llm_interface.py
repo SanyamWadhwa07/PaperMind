@@ -185,7 +185,11 @@ class LocalLLM:
         if not OLLAMA_AVAILABLE:
             logger.warning("ollama_not_installed", instruction="pip install ollama")
             return False
-        
+
+        from core.llm.providers import ollama_enabled
+        if not ollama_enabled():
+            return False
+
         try:
             # Check if Ollama server is running and model exists
             result = ollama.list()
