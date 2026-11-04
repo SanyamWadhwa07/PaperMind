@@ -86,6 +86,31 @@ def test_provider_strict_single(monkeypatch):
     assert providers.provider_order() == ["ollama"]
 
 
+@pytest.mark.parametrize("primary", [None, "gemini"])
+def test_provider_order_without_ollama(monkeypatch, primary):
+    from core.llm import providers
+    monkeypatch.setenv("GOOGLE_API_KEY", "x")
+    monkeypatch.setenv("GROQ_API_KEY", "y")
+    monkeypatch.setenv("PAPERMIND_OLLAMA_ENABLED", "0")
+    monkeypatch.delenv("PAPERMIND_LLM_BACKEND", raising=False)
+    monkeypatch.delenv("PAPERMIND_LLM_STRICT", raising=False)
+    if primary:
+        monkeypatch.setenv("PAPERMIND_LLM_PROVIDER", primary)
+    else:
+        monkeypatch.delenv("PAPERMIND_LLM_PROVIDER", raising=False)
+    assert providers.provider_order() == ["gemini", "groq"]
+
+
+def test_local_llm_does_not_probe_disabled_ollama(monkeypatch):
+    from core.llm import llm_interface
+    if not llm_interface.OLLAMA_AVAILABLE:
+        pytest.skip("ollama package not installed")
+    monkeypatch.setenv("PAPERMIND_OLLAMA_ENABLED", "0")
+    monkeypatch.setattr(llm_interface.ollama, "list", lambda: pytest.fail("probed Ollama"))
+    llm = llm_interface.LocalLLM.__new__(llm_interface.LocalLLM)
+    assert llm._init_ollama() is False
+
+
 # ── Graph engine + adapter ─────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

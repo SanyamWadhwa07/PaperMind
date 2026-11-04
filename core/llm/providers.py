@@ -53,8 +53,11 @@ DEFAULTS: Dict[str, Dict[str, str]] = {
         "fast": "gemini-flash-lite-latest",
     },
     "groq": {
-        "smart": "llama-3.3-70b-versatile",
-        "fast": "llama-3.1-8b-instant",
+        # Groq retired the Llama 3.x ids this used (404 model_not_found), which
+        # left Gemini with no working fallback. Both of these return correct
+        # structured output; qwen/qwen3.8-27b, also on the free tier, did not.
+        "smart": "openai/gpt-oss-120b",
+        "fast": "openai/gpt-oss-20b",
     },
     "ollama": {
         # Tuned for a ~4GB GPU.
@@ -102,13 +105,25 @@ def _gemini_key() -> Optional[str]:
     return os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
 
 
+def ollama_enabled() -> bool:
+    """False when PAPERMIND_OLLAMA_ENABLED=0, i.e. on a host with no Ollama.
+
+    Ollama needs no key, so it is assumed present unless switched off. On a
+    deployment without it, leaving it in the chain means a call that fails on
+    Gemini and Groq reports a refused connection to localhost:11434 instead of
+    the error that actually caused it.
+    """
+    flag = (os.environ.get("PAPERMIND_OLLAMA_ENABLED") or "1").strip().lower()
+    return flag not in ("0", "false", "no")
+
+
 def _provider_available(provider: str) -> bool:
     if provider == "gemini":
         return bool(_gemini_key())
     if provider == "groq":
         return bool(os.environ.get("GROQ_API_KEY"))
     if provider == "ollama":
-        return True  # best-effort; may be down, but acts as last-resort
+        return ollama_enabled()  # best-effort; may be down, but acts as last-resort
     return False
 
 

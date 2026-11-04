@@ -185,7 +185,11 @@ class LocalLLM:
         if not OLLAMA_AVAILABLE:
             logger.warning("ollama_not_installed", instruction="pip install ollama")
             return False
-        
+
+        from core.llm.providers import ollama_enabled
+        if not ollama_enabled():
+            return False
+
         try:
             # Check if Ollama server is running and model exists
             result = ollama.list()
@@ -315,7 +319,7 @@ class LocalLLM:
             api_key=api_key,
             base_url="https://api.groq.com/openai/v1",
         )
-        self.model_name = os.environ.get('PAPERMIND_LLM_MODEL', 'llama-3.3-70b-versatile')
+        self.model_name = os.environ.get('PAPERMIND_LLM_MODEL', 'openai/gpt-oss-120b')
         self.backend = LLMBackend.GROQ
         logger.info("groq_initialized", model=self.model_name)
         return True
