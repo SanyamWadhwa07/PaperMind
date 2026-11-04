@@ -27,7 +27,11 @@ COPY backend/requirements.txt ./backend-requirements.txt
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# torch first, from the CPU index, so the unpinned `torch` in
+# backend-requirements.txt is already satisfied. The default Linux wheel pulls
+# ~3 GB of CUDA libraries this image has no GPU to use.
 RUN pip install --upgrade pip setuptools wheel \
+    && pip install torch --index-url https://download.pytorch.org/whl/cpu \
     && pip install -r requirements.txt -r backend-requirements.txt
 
 
