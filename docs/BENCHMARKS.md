@@ -88,6 +88,48 @@ attribution work (ResearchQA, L-CiteEval) takes.
 
 ---
 
+## Figure extraction audit
+
+Measured 2026-11-04 by [`evals/figure_audit.py`](../evals/figure_audit.py) on 16
+arXiv papers: 1406.2661, 1505.04597, 1512.03385, 1706.03762, 1810.04805,
+1907.11692, 2001.08844, 2005.14165, 2010.11929, 2011.11052, 2012.06469,
+2106.09685, 2302.05587, 2411.01896, 2502.12524, 2507.16724. No LLM is involved.
+
+Ground truth is the paper's own caption lines (`Figure 3:`, `Fig. 3.`,
+`Figure 3.1:`, `Figure G.1:`, Springer `Fig. 3 Overview`), matched line by line
+rather than by the block-level detector under test. A figure counts as found
+only if a render carries its label **and** comes from the page its caption is on.
+
+| | Before ([`fcb26da`](https://github.com/SanyamWadhwa07/PaperMind/commit/fcb26da)) | After (`fc40766`) |
+|---|---|---|
+| Caption labels found (label + page) | 80 / 178 (0.449) | **121 / 178 (0.680)** |
+| Figures with graphics found | 81 / 122 | **122 / 122** |
+| Papers with every caption found | 10 / 16 | 14 / 16 |
+| Uncaptioned bitmaps added by the raster fallback | 76 | 7 |
+
+The two rows differ by 56 labels in GPT-3 (2005.14165) that are typeset
+*text*: prompt and completion examples (3.14 to 3.17, F.1, G.1 to G.51) with
+no vector ink and no bitmap on the page, so there is nothing to crop. One label,
+ResNet "6", is a ground-truth false positive: an in-text line "Fig. 6 (middle)
+shows" on p7. The renderer correctly took the real caption on p8, which is why
+both versions show 122 rather than 121 in the second row.
+
+The 44 renders that were new or changed size were checked by eye. Known
+limits that remain:
+
+- **Stacked sub-panels separated by text only render the bottom panel.** In
+  2001.08844 Figs. 5 to 7, each of three confusion matrices sits under its own
+  text label, and the walk up from the caption stops at the gap.
+- **Axis labels set as text fall outside the crop** when the chart's vector
+  ink does not enclose them.
+- **YOLOv12 Fig. 4 includes the ablation table above it**, which sits directly
+  on the charts with no paragraph between. Before, the crop held one of its two
+  charts.
+- **Uncaptioned bitmaps on a page are still taken as figures**, such as a
+  journal logo (2001.08844 p1) or author photos (2302.05587 p16).
+
+---
+
 ## Headline numbers (8-paper run, Groq `llama-3.3-70b-versatile`)
 
 | Metric | Value |
