@@ -53,8 +53,11 @@ DEFAULTS: Dict[str, Dict[str, str]] = {
         "fast": "gemini-flash-lite-latest",
     },
     "groq": {
-        "smart": "llama-3.3-70b-versatile",
-        "fast": "llama-3.1-8b-instant",
+        # Groq retired the Llama 3.x ids this used (404 model_not_found), which
+        # left Gemini with no working fallback. Both of these return correct
+        # structured output; qwen/qwen3.8-27b, also on the free tier, did not.
+        "smart": "openai/gpt-oss-120b",
+        "fast": "openai/gpt-oss-20b",
     },
     "ollama": {
         # Tuned for a ~4GB GPU.
