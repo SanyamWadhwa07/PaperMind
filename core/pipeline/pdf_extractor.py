@@ -347,7 +347,12 @@ def _extract_mineru(pdf_path: str, output_dir: Path) -> Optional[ExtractionResul
 # ink in the same column tells us how far up it extends.
 # ---------------------------------------------------------------------------
 
-_FIG_CAPTION_RE = re.compile(r"^\s*fig(?:ure)?\s*\.?\s*(\d+)\s*[.:]?\s*(.*)", re.IGNORECASE | re.DOTALL)
+# The label keeps section and appendix numbering ("3.1", "G.1", "S2"): reading
+# only the leading digits merged Figure 3.1 … 3.13 into one "Figure 3".
+_FIG_CAPTION_RE = re.compile(
+    r"^\s*fig(?:ure)?\s*\.?\s*((?:[a-z]\.?)?\d+(?:\.\d+)*)(?!\.?\d)\s*([.:|])?\s*(.*)",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _parse_figure_number(label: Optional[str]) -> Optional[int]:
@@ -364,8 +369,17 @@ _PROSE_WORDS = 25
 # Ink separated by a bigger vertical gap than this belongs to another object.
 _INK_GAP_PT = 40.0
 
-# Smaller than this in either axis and it's a rule or a stray glyph box.
+# Smaller than this in both axes and it's a stray glyph box.
 _MIN_FIGURE_PT = 55.0
+
+# A figure can be a thin strip (a row of samples or interpolations), but
+# anything flatter than this is a rule.
+_MIN_STRIP_PT = 15.0
+
+# Sub-panel labels ("(a)", "(b) Cropped") typeset just above a caption often
+# land in the caption's text block. More words than this before "Figure N:" and
+# the line is wrapped prose, not a caption.
+_LABEL_WORDS = 6
 
 # 200 dpi keeps axis tick labels legible without producing megabyte PNGs.
 _FIGURE_DPI = 200
@@ -411,8 +425,19 @@ def _prose_blocks(page) -> List[tuple]:
     return blocks
 
 
+def _is_caption(match, lead_words: int) -> bool:
+    """A caption is punctuated ("Figure 3:", "Fig. 3.") or, Springer-style,
+    runs straight into a capitalised title ("Fig. 3 Overview"); "Figure 3
+    shows" is a reference. One that doesn't open its block must also be
+    punctuated, with no more than sub-panel labels before it."""
+    punct, rest = match.group(2), match.group(3).lstrip()
+    if lead_words:
+        return bool(punct) and lead_words <= _LABEL_WORDS
+    return bool(punct) or not rest or rest[0].isupper() or rest[0] == "("
+
+
 def _caption_blocks(page) -> List[tuple]:
-    """(bbox, figure_number, caption_text) for every 'Fig. N' line on the page."""
+    """(bbox, label, caption_text) for every 'Fig. N' caption on the page."""
     found: List[tuple] = []
     try:
         data = page.get_text("dict")
@@ -422,37 +447,51 @@ def _caption_blocks(page) -> List[tuple]:
     for block in data.get("blocks", []):
         if block.get("type") != 0:
             continue
-        text = " ".join(
-            span.get("text", "")
+        lines = [
+            (line["bbox"], " ".join(span.get("text", "") for span in line.get("spans", [])))
             for line in block.get("lines", [])
-            for span in line.get("spans", [])
-        ).strip()
-        m = _FIG_CAPTION_RE.match(text)
-        if m:
-            found.append((tuple(block["bbox"]), int(m.group(1)), re.sub(r"\s+", " ", m.group(2)).strip()))
+        ]
+        lead_words = 0
+        for i, (_, text) in enumerate(lines):
+            m = _FIG_CAPTION_RE.match(text)
+            if m and _is_caption(m, lead_words):
+                rest = lines[i:]
+                bbox = tuple(block["bbox"]) if not lead_words else (
+                    min(b[0] for b, _ in rest), rest[0][0][1],
+                    max(b[2] for b, _ in rest), block["bbox"][3],
+                )
+                caption = _FIG_CAPTION_RE.match(" ".join(t for _, t in rest).strip())
+                found.append((bbox, m.group(1), re.sub(r"\s+", " ", caption.group(3)).strip()))
+                break
+            lead_words += len(text.split())
 
     return sorted(found, key=lambda item: item[0][1])
 
 
 def _figure_region(caption_bbox: tuple, ink: Sequence[tuple],
-                   prose: Sequence[tuple]) -> Optional[tuple]:
+                   prose: Sequence[tuple],
+                   span: Optional[Tuple[float, float]] = None) -> Optional[tuple]:
     """Grow a figure region upward from its caption.
 
     Bounded on three sides by the caption's own column, and on top by whichever
     comes first: a vertical gap in the ink, or the body paragraph the figure sits
     below. Both bounds matter — the gap alone would swallow the plot above it in
     a single-column paper, and the paragraph alone would swallow a figure's own
-    whitespace in a two-column one.
+    whitespace in a two-column one. ``span`` replaces the caption's own column
+    as the horizontal bound when the caller knows the figure is wider.
     """
     cx0, cy0, cx1, _ = caption_bbox
     # Captions are typeset to the column, and a figure is often a little wider
-    # than its caption's text block, so allow some overhang either side.
+    # than its caption's text block, so allow some overhang either side. A
+    # figure centred over a short caption can be much wider than that.
     pad = 24.0
-    lo, hi = cx0 - pad, cx1 + pad
+    lo, hi = span if span else (cx0 - pad, cx1 + pad)
+    centre = (cx0 + cx1) / 2
 
     above = [
         r for r in ink
-        if r[3] <= cy0 + 2 and r[0] >= lo - pad and r[2] <= hi + pad and r[3] > cy0 - 700
+        if r[3] <= cy0 + 2 and r[3] > cy0 - 700
+        and ((r[0] >= lo - pad and r[2] <= hi + pad) or abs((r[0] + r[2]) / 2 - centre) <= pad)
     ]
     if not above:
         return None
@@ -466,12 +505,21 @@ def _figure_region(caption_bbox: tuple, ink: Sequence[tuple],
         x0, y0 = min(x0, rx0), min(y0, ry0)
         x1, y1 = max(x1, rx1), max(y1, ry1)
 
-    # Don't reach back over a paragraph that ends inside the region.
-    for px0, _, px1, py1 in prose:
-        if py1 <= y1 and py1 > y0 and not (px1 < x0 or px0 > x1):
-            y0 = max(y0, py1 + 2)
+    # Don't reach back over a paragraph in the caption's column that ends inside
+    # the region. A paragraph in the next column only trims the region's side:
+    # treating it as the top collapsed a figure that overhangs the gutter.
+    for px0, py0, px1, py1 in prose:
+        if px1 < x0 or px0 > x1 or py1 <= y0 or py0 >= y1:
+            continue
+        if not (px1 < cx0 or px0 > cx1):
+            if py1 <= y1:
+                y0 = max(y0, py1 + 2)
+        elif px0 > cx1:
+            x1 = min(x1, px0 - 2)
+        else:
+            x0 = max(x0, px1 + 2)
 
-    if x1 - x0 < _MIN_FIGURE_PT or y1 - y0 < _MIN_FIGURE_PT:
+    if min(x1 - x0, y1 - y0) < _MIN_STRIP_PT or max(x1 - x0, y1 - y0) < _MIN_FIGURE_PT:
         return None
     return (x0, y0, x1, y1)
 
@@ -504,11 +552,26 @@ def _render_figures(pdf_path: str, image_dir: Path) -> Tuple[List[FigureInfo], s
             prose = _prose_blocks(page)
             rendered_any = False
 
+            width = page.rect.width
             for caption_bbox, number, caption_text in captions:
-                region = _figure_region(caption_bbox, ink, prose)
+                # A caption centred on the page with none beside it can head a
+                # page-wide figure, such as a grid of panels, none of which
+                # sits over the caption itself.
+                centred = abs((caption_bbox[0] + caption_bbox[2]) / 2 - width / 2) <= 36
+                alone = not any(
+                    other[0] is not caption_bbox
+                    and other[0][1] < caption_bbox[3] and other[0][3] > caption_bbox[1]
+                    for other in captions
+                )
+                span = (0.0, width) if centred and alone else None
+                # Another figure's caption bounds this one the way a paragraph
+                # does; it is text, so the ink walk would step straight over it.
+                bounds = prose + [other[0] for other in captions if other[0] is not caption_bbox]
+                region = _figure_region(caption_bbox, ink, bounds, span)
                 if not region:
                     continue
-                out_path = image_dir / f"fig_{number:03d}_p{page_index + 1}.png"
+                stem = number.replace(".", "_").zfill(3)
+                out_path = image_dir / f"fig_{stem}_p{page_index + 1}.png"
                 try:
                     pix = page.get_pixmap(clip=fitz.Rect(*region), dpi=_FIGURE_DPI)
                     pix.save(str(out_path))
