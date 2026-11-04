@@ -8,8 +8,8 @@ services:
   - type: web
     name: papermind-api
     runtime: docker
-    # 1 CPU / 2 GB. With torch, transformers and sentence-transformers loaded
-    # the API idles at ~0.5 GB, which rules out the 512 MB plans.
+    # 1 CPU / 2 GB. The API holds ~0.4 GB of anonymous memory after import and
+    # ~1.2 GB with every figure model loaded, which rules out the 512 MB plans.
     plan: 1c-2g
     region: singapore
     dockerfilePath: ./backend/Dockerfile
